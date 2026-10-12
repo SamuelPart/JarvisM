@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Entornos
+.venv/
+venv/
+env/
+ENV/
+.uv/
+uv.lock
+
+# Secretos: NUNCA se versionan
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+secrets.toml
+
+# Datos locales de Jarvis (bd, logs, memoria, audio, modelos)
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.log
+jarvis.local.toml
+
+# Audio y modelos descargados (pesados)
+models/
+*.onnx
+*.pt
+*.bin
+*.gguf
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# IDE / SO
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Empaquetado
+*.spec.bak
+packaging/out/
+pyinstaller-build/
