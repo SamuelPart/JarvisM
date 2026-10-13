@@ -10,6 +10,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import httpx
+
 from jarvis.providers.base import (
     CompletionRequest,
     CompletionResult,
@@ -90,11 +92,23 @@ class OllamaProvider(LLMProvider):
             response = await self.client.post(
                 f"{self.base_url}/api/chat", json=build_payload(request), timeout=request.timeout_s
             )
-        except Exception as exc:
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            # Demonio apagado o puerto cerrado: reintentar contra lo mismo solo
+            # gasta el backoff antes de saltar a echo (medido: ~3 s por turno).
+            # Se marca no-retryable y el router hace failover inmediato.
             raise ProviderError(
                 ProviderErrorKind.NETWORK,
                 f"no se pudo conectar con Ollama en {self.base_url} ({exc}). "
                 "¿Está activo? `ollama serve` / `systemctl start ollama`",
+                provider=self.name,
+                retryable=False,
+            ) from exc
+        except Exception as exc:
+            # Timeout de lectura o error suelto del socket: eso sí puede ser un
+            # hipo pasajero (modelo cargando en VRAM) y merece reintento.
+            raise ProviderError(
+                ProviderErrorKind.NETWORK,
+                f"fallo de red con Ollama en {self.base_url} ({exc})",
                 provider=self.name,
                 retryable=True,
             ) from exc

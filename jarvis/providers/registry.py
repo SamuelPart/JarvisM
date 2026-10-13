@@ -26,6 +26,10 @@ _FACTORIES: dict[str, type[LLMProvider]] = {
     "echo": EchoProvider,
 }
 
+#: Proveedores que no salen a la nube, en orden de capacidad decreciente:
+#: Ollama razona de verdad, `echo` solo cierra el circuito sin gastar tokens ni red.
+LOCAL_PROVIDERS: tuple[str, ...] = ("ollama", "echo")
+
 
 @dataclass(slots=True)
 class CircuitState:
@@ -87,7 +91,10 @@ class ProviderRegistry:
         """
         ordered: list[str] = []
         if strict_offline or self.settings.privacy.offline:
-            ordered = ["ollama", "echo"]
+            # `prefer` manda también aquí si es local: pedir `--provider echo` en
+            # modo privado debe dar echo y no un Ollama que quizá no está levantado.
+            ordered = [p for p in (prefer,) if p in LOCAL_PROVIDERS]
+            ordered += list(LOCAL_PROVIDERS)
         else:
             if prefer and prefer in self._providers:
                 ordered.append(prefer)

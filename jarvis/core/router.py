@@ -21,6 +21,7 @@ from jarvis.core.events import (
     get_bus,
 )
 from jarvis.providers.base import (
+    RETRYABLE_KINDS,
     CompletionRequest,
     CompletionResult,
     LLMProvider,
@@ -28,18 +29,16 @@ from jarvis.providers.base import (
     ProviderErrorKind,
     ToolSpec,
 )
-from jarvis.providers.registry import ProviderRegistry
+from jarvis.providers.registry import LOCAL_PROVIDERS, ProviderRegistry
 from jarvis.safety.policy import BudgetGuard
 
 log = logging.getLogger("jarvis.router")
 
 #: Errores por los que merece la pena reintentar en el MISMO proveedor.
-RETRYABLE = {
-    ProviderErrorKind.RATE_LIMIT,
-    ProviderErrorKind.SERVER,
-    ProviderErrorKind.TIMEOUT,
-    ProviderErrorKind.NETWORK,
-}
+#: La tabla vive en `providers.base` para que un `retryable` explícito del
+#: proveedor pueda ganarle sin que el router tenga que saber nada especial
+#: (ver `ProviderError.should_retry`).
+RETRYABLE = RETRYABLE_KINDS
 #: Errores que hacen saltar directamente al siguiente proveedor.
 FATAL_FOR_PROVIDER = {ProviderErrorKind.AUTH, ProviderErrorKind.NO_KEY, ProviderErrorKind.MODEL_NOT_FOUND}
 
@@ -99,7 +98,7 @@ class Router:
         profile = (profile or router_cfg.profile or "general").lower()
         offline = self.settings.effective_offline()
         if offline or profile == "offline":
-            return "ollama", router_cfg.model_offline
+            return self._local_provider()
         mapping = {
             "cheap": router_cfg.model_cheap,
             "general": router_cfg.model_general,
@@ -111,6 +110,19 @@ class Router:
         # se deja que la cadena de failover decida.
         guessed = _guess_provider(model)
         return (guessed or (router_cfg.default_chain[0] if router_cfg.default_chain else "echo"), model)
+
+    def _local_provider(self) -> tuple[str, str]:
+        """Proveedor y modelo locales cuando no hay nube disponible.
+
+        Respeta el orden de `default_chain`: así `jarvis chat --provider echo`
+        (que reordena la cadena desde la CLI) se honra de verdad en vez de forzar
+        Ollama. El modelo sale de `[router.fallback_models]` para no hardcodear
+        nombres en el código (P10).
+        """
+        cfg = self.settings.router
+        candidates = [p for p in cfg.default_chain if p in LOCAL_PROVIDERS]
+        name = candidates[0] if candidates else LOCAL_PROVIDERS[0]
+        return name, cfg.fallback_models.get(name) or cfg.model_offline
 
     # -- rate limit ------------------------------------------------------- #
     async def _throttle(self) -> None:
@@ -166,7 +178,11 @@ class Router:
             )
             tools_for_call = tool_list if candidate.supports_tools else []
             if tool_list and not candidate.supports_tools:
-                log.warning("%s no soporta tool calling: se envía sin herramientas", candidate.name)
+                # Informativo, no un problema: la degradación está diseñada (el
+                # matcher local y el catálogo resuelven las órdenes directas).
+                # En nivel warning alarmaba al usuario en el primer arranque sin
+                # claves, que es justo el momento de menor confianza.
+                log.info("%s no soporta tool calling: se envía sin herramientas", candidate.name)
 
             request = CompletionRequest(
                 messages=list(messages),
@@ -241,7 +257,7 @@ class Router:
                 last_error = f"{exc.kind.value}: {exc}"
                 if exc.kind in FATAL_FOR_PROVIDER:
                     break
-                if exc.kind in RETRYABLE and attempt < max_retries:
+                if exc.should_retry and attempt < max_retries:
                     delay = self.settings.router.backoff_base_s * (2**attempt) + random.uniform(0, 0.3)
                     log.info(
                         "reintento %d/%d a %s en %.1f s (%s)",

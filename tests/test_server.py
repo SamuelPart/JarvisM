@@ -8,9 +8,12 @@ atraviesa el mismo policy engine que la CLI.
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
 
+# Debe ir ANTES del import de FastAPI: si falta (instalación solo-core), el
+# módulo entero se salta en vez de reventar la colecta de toda la suite.
 pytest.importorskip("fastapi", reason="los tests del servidor requieren el extra [ui]")
+
+from fastapi.testclient import TestClient
 
 pytestmark = pytest.mark.integration
 

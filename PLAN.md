@@ -318,7 +318,22 @@ Mientras tanto, el MVP de las Fases 0–2 ya está en el repo y es ejecutable: m
 |---|---|
 | Habilidades registradas | **27** (15 T0 · 8 T1 · 3 T2 · 1 T3) |
 | Cobertura del matcher local (N0) | **88 %** de un corpus de 24 órdenes canónicas, 0 tokens |
-| Tests | **278** en ~8 s, sin red y sin tocar el sistema real |
-| Cobertura | **66 %** global · `safety/policy` 92 % · `audit` 93 % · `orchestrator` 87 % · `matcher` 90 % |
+| Tests | **292** en ~5 s, sin red y sin tocar el sistema real |
+| Cobertura | **67 %** global · `safety/policy` 92 % · `audit` 93 % · `orchestrator` 87 % · `matcher` 90 % |
 | `ruff check` / `ruff format` / `mypy` | limpios (mypy estricto en `core/` y `safety/`) |
 | Adapters | Linux probado a fondo · Windows/macOS implementados y con tests simulados, **sin verificar en hardware real** |
+
+#### Revisión post-instalación (2026-10-12)
+
+Bugs encontrados instalando el MVP en un Kali limpio (sin claves de API), es decir
+en el primer arranque real del usuario, no en el portátil del desarrollador:
+
+| Síntoma | Causa raíz | Arreglo | Regresión |
+|---|---|---|---|
+| `jarvis chat --provider echo` tardaba ~3 s e ignoraba el proveedor pedido | `Router.model_for()` hardcodeaba `ollama` al detectar entorno sin claves, pisando la cadena reordenada por la CLI | `_local_provider()` respeta `default_chain` y saca el modelo de `[router.fallback_models]` (P10) | `test_model_for_respects_pinned_echo` |
+| Idem en modo privado (`privacy.offline`) | `ProviderRegistry.chain()` ignoraba `prefer` en la rama de offline estricto | `prefer` manda si es un proveedor local | `test_chain_honors_prefer_in_strict_offline` |
+| Un demonio Ollama apagado costaba 2 reintentos (~3 s) antes del failover | `NETWORK` estaba en la tabla de reintentables y el "connection refused" caía dentro | `ProviderError.retryable` pasa a tri-estado (`None` = decídelo por el tipo) + `ConnectError` se marca no reintentable | `test_connection_refused_fails_over_without_backoff` |
+| `pytest` no colectaba en una instalación limpia `--dev` | El extra `dev` no incluía las deps del servidor que usa `tests/test_server.py` | FastAPI/uvicorn/websockets añadidos a `dev` + `importorskip` antes del import | suite completa verde en clon nuevo |
+
+Medido tras el arreglo: `--provider echo` responde en **14 ms** (antes ~3 s con
+warnings) y `jarvis chat` sin claves en **67 ms**.
