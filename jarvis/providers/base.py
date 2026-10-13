@@ -123,8 +123,28 @@ class ProviderErrorKind(str, enum.Enum):
     NO_KEY = "no_key"
 
 
+#: Tipos de error que merecen reintento cuando el proveedor no dice lo contrario.
+#: Un `retryable` explícito en el `ProviderError` siempre gana sobre esta tabla.
+RETRYABLE_KINDS = frozenset(
+    {
+        ProviderErrorKind.RATE_LIMIT,
+        ProviderErrorKind.SERVER,
+        ProviderErrorKind.TIMEOUT,
+        ProviderErrorKind.NETWORK,
+    }
+)
+
+
 class ProviderError(Exception):
-    """Error normalizado. Es lo único que consume el circuit breaker."""
+    """Error normalizado. Es lo único que consume el circuit breaker.
+
+    `retryable` es tri-estado a propósito: `None` significa "decídelo por el tipo
+    de error" (tabla `RETRYABLE_KINDS`) y `True`/`False` significa "el proveedor
+    sabe algo que el tipo no captura". El caso real que motivó esto es el
+    "connection refused": es kind=NETWORK (retryable en teoría) pero reintentar
+    contra un demonio que no está escuchando solo gasta el backoff antes de
+    hacer failover (medido: ~3 s por turno con Ollama apagado).
+    """
 
     def __init__(
         self,
@@ -133,13 +153,20 @@ class ProviderError(Exception):
         *,
         provider: str = "",
         status: int = 0,
-        retryable: bool = False,
+        retryable: bool | None = None,
     ) -> None:
         super().__init__(f"[{provider or '?'}] {kind.value}: {message}")
         self.kind = kind
         self.provider = provider
         self.status = status
         self.retryable = retryable
+
+    @property
+    def should_retry(self) -> bool:
+        """¿Reintentar en el MISMO proveedor antes de saltar al siguiente?"""
+        if self.retryable is not None:
+            return self.retryable
+        return self.kind in RETRYABLE_KINDS
 
 
 @dataclass(slots=True)

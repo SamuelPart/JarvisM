@@ -234,7 +234,7 @@ class MySkill(Skill):
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                              # 278 tests en ~8 s, sin red y sin tocar tu sistema
+pytest -q                              # 292 tests en ~5 s, sin red y sin tocar tu sistema
 pytest --cov=jarvis --cov-report=term
 ruff check . && ruff format --check . && mypy jarvis
 pre-commit install                     # o pre-commit run --all-files
