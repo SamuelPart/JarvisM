@@ -61,6 +61,87 @@ def convert_messages(messages: list[Message]) -> tuple[dict[str, Any] | None, li
     return system_instruction, contents
 
 
+#: Claves de JSON Schema que la API de Gemini NO acepta dentro de
+#: `functionDeclarations[].parameters`. Google implementa un subconjunto de
+#: OpenAPI 3.0 y rechaza el resto con HTTP 400: "Unknown name
+#: \"additionalProperties\"". El caso real: TODAS las skills declaran
+#: `additionalProperties: false` (que es lo correcto para OpenAI y para validar
+#: los argumentos en local), así que Gemini fallaba en el 100 % de los turnos de
+#: conversación con herramientas — es decir, siempre.
+_UNSUPPORTED_SCHEMA_KEYS = frozenset(
+    {
+        "additionalProperties",
+        "$schema",
+        "$id",
+        "$comment",
+        "$anchor",
+        "$defs",
+        "definitions",
+        "patternProperties",
+        "unevaluatedProperties",
+        "propertyNames",
+        "dependentRequired",
+        "dependentSchemas",
+        "dependencies",
+        "if",
+        "then",
+        "else",
+        "not",
+        "examples",
+    }
+)
+
+#: Claves cuyo valor es un esquema hijo (o una lista de ellos).
+_SCHEMA_KEYS = frozenset({"items", "additionalItems", "contains"})
+_SCHEMA_LIST_KEYS = frozenset({"anyOf", "allOf", "oneOf", "prefixItems"})
+
+
+def sanitize_schema_for_gemini(schema: Any) -> Any:
+    """Adapta un JSON Schema al subconjunto que acepta la API de Gemini.
+
+    Recursivo y **no muta** el esquema original: la limpieza se hace justo antes
+    de enviar, así el mismo esquema sigue validando los argumentos en local
+    (que es donde tiene que ser estricto).
+
+    Conversiones que hace, además de borrar lo no soportado:
+
+    - `const: X` -> `enum: [X]` (Gemini no tiene `const`).
+    - `type: ["string", "null"]` -> `type: "string"` + `nullable: true`
+      (Gemini no acepta `type` como lista).
+    """
+    if isinstance(schema, list):
+        return [sanitize_schema_for_gemini(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in _UNSUPPORTED_SCHEMA_KEYS:
+            continue
+        if key == "const":
+            out["enum"] = [value]
+            continue
+        if key == "type" and isinstance(value, list):
+            non_null = [v for v in value if v != "null"]
+            if "null" in value:
+                out["nullable"] = True
+            if len(non_null) == 1:
+                out["type"] = non_null[0]
+            # Con varios tipos reales Gemini no tiene equivalente: se omite
+            # `type` en vez de inventarse un `anyOf` que puede no encajar.
+            continue
+        if key == "properties" and isinstance(value, dict):
+            out[key] = {name: sanitize_schema_for_gemini(sub) for name, sub in value.items()}
+            continue
+        if key in _SCHEMA_KEYS:
+            out[key] = sanitize_schema_for_gemini(value)
+            continue
+        if key in _SCHEMA_LIST_KEYS and isinstance(value, list):
+            out[key] = [sanitize_schema_for_gemini(item) for item in value]
+            continue
+        out[key] = value
+    return out
+
+
 def build_payload(request: CompletionRequest) -> dict[str, Any]:
     system_instruction, contents = convert_messages(request.messages)
     payload: dict[str, Any] = {
@@ -79,7 +160,9 @@ def build_payload(request: CompletionRequest) -> dict[str, Any]:
                     {
                         "name": t.name.replace(".", "_"),  # Gemini no admite puntos en nombres
                         "description": t.description,
-                        "parameters": t.parameters,
+                        # Limpio: los esquemas de las skills traen
+                        # `additionalProperties` y Gemini responde 400 si lo ve.
+                        "parameters": sanitize_schema_for_gemini(t.parameters),
                     }
                     for t in request.tools
                 ]

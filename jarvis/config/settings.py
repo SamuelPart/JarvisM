@@ -15,11 +15,11 @@ import contextlib
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, get_origin
 
 import tomllib
 from platformdirs import user_config_dir, user_data_dir, user_log_dir
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 APP_NAME = "jarvis"
 RESOURCES = Path(__file__).resolve().parent.parent / "resources"
@@ -108,9 +108,45 @@ DEFAULT_EXCLUDE_PATHS = [
 
 
 # --------------------------------------------------------------------------- #
+# Coerción de listas
+# --------------------------------------------------------------------------- #
+def split_csv(value: Any) -> Any:
+    """Convierte `"a,b"` o `"a"` en lista; deja pasar lo que ya es lista.
+
+    `_coerce` (el que lee variables de entorno) solo convierte a lista las cadenas
+    que CONTIENEN una coma, así que un valor único llegaba como `str` y pydantic
+    reventaba: `JARVIS__ROUTER__DEFAULT_CHAIN=gemini` (un solo proveedor, algo
+    perfectamente razonable) producía un ValidationError de diez líneas.
+    """
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return value
+
+
+class _ConfigBase(BaseModel):
+    """Base de los configs con campos `list[str]`: los normaliza al entrar.
+
+    Se hace en `mode="before"` para que dé igual de dónde venga el valor
+    (TOML, variable de entorno, `Settings(...)` a mano): el campo siempre acaba
+    siendo una lista de verdad.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_list_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for name, field in cls.model_fields.items():
+            if name in out and isinstance(out[name], str) and get_origin(field.annotation) is list:
+                out[name] = split_csv(out[name])
+        return out
+
+
+# --------------------------------------------------------------------------- #
 # Modelos
 # --------------------------------------------------------------------------- #
-class IdentityConfig(BaseModel):
+class IdentityConfig(_ConfigBase):
     name: str = "Jarvis"
     language: str = "es"
     tone: str = "formal"
@@ -118,8 +154,10 @@ class IdentityConfig(BaseModel):
     wake_words: list[str] = Field(default_factory=lambda: ["jarvis"])
 
 
-class RouterConfig(BaseModel):
-    default_chain: list[str] = Field(default_factory=lambda: ["gemini", "anthropic", "openai", "ollama"])
+class RouterConfig(_ConfigBase):
+    default_chain: list[str] = Field(
+        default_factory=lambda: ["gemini", "nvidia", "anthropic", "openai", "ollama"]
+    )
     profile: str = "general"
     max_steps_per_turn: int = 6
     timeout_s: float = 30.0
@@ -140,6 +178,7 @@ class RouterConfig(BaseModel):
             "openai": "gpt-5.6-luna",
             "anthropic": "claude-haiku-4-5",
             "gemini": "gemini-3.7-flash",
+            "nvidia": "deepseek-ai/deepseek-v3.2",
             "ollama": "qwen2.5:7b-instruct",
             "echo": "echo-local",
         }
@@ -196,6 +235,7 @@ class ProvidersConfig(BaseModel):
     openai: ProviderConfig = Field(default_factory=ProviderConfig)
     anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
     gemini: ProviderConfig = Field(default_factory=ProviderConfig)
+    nvidia: ProviderConfig = Field(default_factory=ProviderConfig)
     ollama: ProviderConfig = Field(default_factory=ProviderConfig)
 
 
@@ -206,14 +246,14 @@ class MemoryConfig(BaseModel):
     persist_sessions: bool = True
 
 
-class PrivacyConfig(BaseModel):
+class PrivacyConfig(_ConfigBase):
     offline: bool = False
     redact_secrets: bool = True
     store_transcripts: bool = True
     exclude_paths: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATHS))
 
 
-class PolicyConfig(BaseModel):
+class PolicyConfig(_ConfigBase):
     auto_approve_max_tier: str = "T1"
     approval_timeout_s: int = 60
     require_typed_confirmation_for_t3: bool = True
@@ -224,7 +264,7 @@ class PolicyConfig(BaseModel):
     restricted_binaries: list[str] = Field(default_factory=lambda: list(DEFAULT_RESTRICTED_BINARIES))
 
 
-class WatchdogConfig(BaseModel):
+class WatchdogConfig(_ConfigBase):
     enabled: bool = True
     interval_s: int = 30
     disk_warn_pct: int = 85
@@ -256,7 +296,7 @@ class VoiceConfig(BaseModel):
     barge_in: bool = True
 
 
-class ServerConfig(BaseModel):
+class ServerConfig(_ConfigBase):
     enabled: bool = False
     host: str = "127.0.0.1"
     port: int = 8765
@@ -324,7 +364,7 @@ class Settings(BaseModel):
         """Offline explícito o implícito (ningún proveedor en la nube tiene clave)."""
         if self.privacy.offline:
             return True
-        cloud = ("openai", "anthropic", "gemini")
+        cloud = ("openai", "anthropic", "gemini", "nvidia")
         return not any(getattr(self.providers, p).resolve_api_key() for p in cloud)
 
 
@@ -395,6 +435,7 @@ def _apply_env(config: dict[str, Any]) -> list[str]:
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "gemini": "GEMINI_API_KEY",
+        "nvidia": "NVIDIA_API_KEY",
         "ollama": "OLLAMA_API_KEY",
     }.items():
         value = os.environ.get(env_name)
@@ -402,7 +443,7 @@ def _apply_env(config: dict[str, Any]) -> list[str]:
             config.setdefault("providers", {}).setdefault(provider, {})["api_key"] = value
             applied.append(env_name)
 
-    for provider in ("openai", "anthropic", "gemini", "ollama"):
+    for provider in ("openai", "anthropic", "gemini", "nvidia", "ollama"):
         value = os.environ.get(f"{provider.upper()}_BASE_URL")
         if value:
             config.setdefault("providers", {}).setdefault(provider, {})["base_url"] = value

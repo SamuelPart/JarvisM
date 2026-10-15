@@ -7,10 +7,32 @@
 | Proveedor | URL | Tarjeta | Notas |
 |---|---|---|---|
 | **Google Gemini** | https://aistudio.google.com/app/apikey | No (free tier) | El más fácil para empezar. Free tier solo en Flash/Flash-Lite |
+| **NVIDIA NIM** | https://build.nvidia.com | No | Gratis (~40 RPM, sin tope diario). 100+ modelos abiertos con IDs `org/modelo`. OpenAI-compatible |
 | **OpenAI** | https://platform.openai.com/api-keys | Sí | Requiere saldo prepago; revisa el límite de gasto en el panel |
 | **Anthropic** | https://console.anthropic.com/settings/keys | Sí | Tool calling muy fiable; ideal como "razonador" |
 | **Ollama** (local) | https://ollama.com | No | `ollama pull qwen2.5:7b-instruct` — coste 0, sin red |
 | Groq / OpenRouter / Mistral | respectivos paneles | Variable | El contrato `LLMProvider` los admite con ~40 líneas cada uno |
+
+### Detalles de clave que ahorran una tarde
+
+- **Gemini emite claves `AQ.Ab…`** desde el 28-may-2026 (antes `AIza…`). Las `AQ.` son
+  *auth keys* y **solo** funcionan por cabecera: JarvisM ya las manda en
+  `x-goog-api-key`, así que se pegan tal cual. Las claves `AIza` sin restringir se
+  rechazan desde el 19-jun-2026 y todas desde septiembre de 2026.
+- **NVIDIA NIM usa IDs con prefijo `org/modelo`** (`deepseek-ai/deepseek-v3.2`,
+  `meta/llama-4-scout-17b-16e-instruct`). Para ver los que tu cuenta tiene ahora:
+
+  ```bash
+  curl -s https://integrate.api.nvidia.com/v1/models \
+    -H "Authorization: Bearer $NVIDIA_API_KEY" \
+    | python3 -c "import json,sys; print('\n'.join(m['id'] for m in json.load(sys.stdin)['data']))" | head -20
+  ```
+
+  Ese ID va en `.env` como `JARVIS__ROUTER__FALLBACK_MODELS__NVIDIA=…`, que es de donde
+  lo leen tanto el failover como el health check.
+- **Herramientas y Gemini:** `parameters` es un subconjunto de OpenAPI 3.0 y no admite
+  `additionalProperties`. JarvisM lo limpia antes de enviar (`sanitize_schema_for_gemini`),
+  conservando el esquema estricto para validar los argumentos en local.
 
 Almacena las claves en `.env` con `chmod 600`, o mejor en el **keyring del sistema**
 (Secret Service en Linux, Keychain en macOS, DPAPI en Windows): `jarvis config set-key gemini`.
@@ -68,7 +90,7 @@ petición entrante
    │
    ├─► health check con caché 60 s + circuit breaker (3 fallos → 5 min fuera)
    ├─► envío con retry + backoff exponencial (429/5xx/timeouts)
-   ├─► failover a la cadena configurada
+   ├─► failover a la cadena configurada (por defecto: gemini → nvidia → anthropic → openai → ollama → echo)
    └─► contabilidad: tokens, coste estimado, latencia → event bus + budget guard
 ```
 

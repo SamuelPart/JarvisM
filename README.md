@@ -21,7 +21,7 @@ jarvis chat                        # empieza a hablarle
 | | Estado |
 |---|---|
 | 🗣️ **Voz**: wake word, STT y TTS locales (sin nube) | Interfaces definidas, implementación en **Fase 3** |
-| 💬 **Conversación** con Gemini / OpenAI / Anthropic / Ollama y *failover* automático | ✅ Funcionando |
+| 💬 **Conversación** con Gemini / NVIDIA NIM / OpenAI / Anthropic / Ollama y *failover* automático | ✅ Funcionando |
 | 🖥️ **Control del sistema**: apps, ventanas, archivos, volumen, brillo, portapapeles, web | ✅ 27 habilidades |
 | 🛡️ **Gobernanza**: 4 niveles de riesgo, denylist, jaula de rutas, aprobación humana, auditoría | ✅ Funcionando |
 | 🔭 **Proactividad**: watchdog con 5 monitores y sugerencias accionables | ✅ MVP; se amplía en **Fase 4** |
@@ -169,7 +169,9 @@ o `pip install pycaw` (volumen).
 
 ### Dependencias de IA
 
-Con **una** clave basta. La más fácil es Gemini, que es gratis y no pide tarjeta:
+Con **una** clave basta. Las dos más fáciles son gratis y no piden tarjeta: Gemini
+(https://aistudio.google.com/app/apikey) y NVIDIA NIM (https://build.nvidia.com,
+~40 RPM sin tope diario, 100+ modelos abiertos). Gemini, además:
 
 ```bash
 cp .env.example .env && chmod 600 .env
@@ -198,7 +200,7 @@ jarvis/
 ├── cli.py             Typer + Rich: chat, run, doctor, skills, policy, audit, watch, serve
 ├── config/            settings por capas (TOML→env→CLI) + personas y system prompt
 ├── core/              orquestador (bucle del agente) · router multi-LLM · matcher N0 · memoria
-├── providers/         openai · anthropic · gemini · ollama · echo (contrato único sobre httpx)
+├── providers/         openai · anthropic · gemini · nvidia · ollama · echo (contrato único sobre httpx)
 ├── skills/            27 habilidades declarativas con tier de riesgo y JSON Schema
 ├── platforms/         OSAdapter: linux · windows · macos (único sitio con subprocess)
 ├── safety/            policy engine (tiers, denylist, jaula, presupuesto) · audit con hash chain
@@ -239,7 +241,7 @@ class MySkill(Skill):
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                              # 292 tests en ~5 s, sin red y sin tocar tu sistema
+pytest -q                              # 322 tests en ~4 s, sin red y sin tocar tu sistema
 pytest --cov=jarvis --cov-report=term
 ruff check . && ruff format --check . && mypy jarvis
 pre-commit install                     # o pre-commit run --all-files

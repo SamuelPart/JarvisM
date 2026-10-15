@@ -318,7 +318,7 @@ Mientras tanto, el MVP de las Fases 0–2 ya está en el repo y es ejecutable: m
 |---|---|
 | Habilidades registradas | **27** (15 T0 · 8 T1 · 3 T2 · 1 T3) |
 | Cobertura del matcher local (N0) | **88 %** de un corpus de 24 órdenes canónicas, 0 tokens |
-| Tests | **292** en ~5 s, sin red y sin tocar el sistema real |
+| Tests | **322** en ~4 s, sin red y sin tocar el sistema real |
 | Cobertura | **67 %** global · `safety/policy` 92 % · `audit` 93 % · `orchestrator` 87 % · `matcher` 90 % |
 | `ruff check` / `ruff format` / `mypy` | limpios (mypy estricto en `core/` y `safety/`) |
 | Adapters | Linux probado a fondo · Windows/macOS implementados y con tests simulados, **sin verificar en hardware real** |
@@ -337,3 +337,23 @@ en el primer arranque real del usuario, no en el portátil del desarrollador:
 
 Medido tras el arreglo: `--provider echo` responde en **14 ms** (antes ~3 s con
 warnings) y `jarvis chat` sin claves en **67 ms**.
+
+#### Revisión con claves reales (2026-10-14)
+
+Primer uso real con clave de Gemini (`AQ.`) y de NVIDIA NIM. Los dos fallos más
+graves del proyecto hasta la fecha salieron aquí:
+
+| Síntoma | Causa raíz | Arreglo | Regresión |
+|---|---|---|---|
+| **Gemini fallaba el 100 % de los turnos de conversación** con `HTTP 400: Unknown name "additionalProperties"` | `parameters` de una `functionDeclaration` es un subconjunto de OpenAPI 3.0 y no admite `additionalProperties`, que **todas** las skills declaran (correctamente, para validar en local) | `sanitize_schema_for_gemini()`: limpia el esquema justo antes de enviarlo, **sin mutar el original**, y convierte `const`→`enum` y `type: [T,"null"]`→`nullable` | `test_gemini_schema.py` (8 tests, incluido uno que recorre las 27 skills reales) |
+| Failover a NVIDIA = `HTTP 404 modelo inexistente` sin decir qué modelo | El mensaje de error no incluía el modelo, así que un 404 era indistinguible de "endpoint roto"; y el health check mandaba el modelo barato de **otro** proveedor | El modelo va en el log y en el error; `request_model_for_health()` usa `[router.fallback_models]`, la tabla donde vive el nombre de cada proveedor | `test_nvidia_provider.py` |
+| `JARVIS__ROUTER__DEFAULT_CHAIN=gemini` (un solo proveedor) reventaba con `ValidationError` | `_coerce` solo convertía a lista las cadenas **con coma** | `_ConfigBase` normaliza cualquier `list[str]` en `mode="before"`, venga de donde venga | `test_settings.py` (5 tests) |
+| `org/modelo` (IDs de NIM) se enrutaba a Ollama por contener "llama"/"qwen" | Heurística por subcadena sin distinguir namespaced de tag local | Regla: `/` y sin `:` → NVIDIA; `:` → Ollama | `test_model_name_routing` |
+| `entra a google` iba al LLM (y con Gemini roto, acababa en eco) | El matcher solo resolvía URLs completas | Alias de sitios frecuentes + dominios sueltos en `_match_web` | `test_matcher.py` |
+
+**NVIDIA NIM entra como proveedor de primera clase** (`jarvis/providers/nvidia_provider.py`):
+OpenAI-compatible, gratis (~40 RPM, sin tope diario), 100+ modelos abiertos. Va
+**segundo en la cascada** (`gemini → nvidia → anthropic → openai → ollama → echo`),
+de modo que el relevo de Gemini también es gratis. Verificado con un servidor
+Gemini falso que aplica la misma validación de esquemas que Google: el payload con
+las 27 herramientas se acepta.

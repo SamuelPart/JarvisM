@@ -180,7 +180,7 @@ def doctor(
 @app.command()
 def chat(
     provider: str | None = typer.Option(
-        None, "--provider", "-p", help="gemini | openai | anthropic | ollama | echo"
+        None, "--provider", "-p", help="gemini | nvidia | openai | anthropic | ollama | echo"
     ),
     model: str | None = typer.Option(None, "--model", "-m", help="Sobrescribe el modelo del perfil general."),
     profile: str | None = typer.Option(
@@ -722,7 +722,7 @@ def config(
         console.print(f"capas aplicadas: {' ← '.join(settings.sources) or 'defaults'}")
         return
     data = json.loads(settings.model_dump_json())
-    for provider in ("openai", "anthropic", "gemini", "ollama"):
+    for provider in ("openai", "anthropic", "gemini", "nvidia", "ollama"):
         if provider in data.get("providers", {}) and data["providers"][provider].get("api_key"):
             data["providers"][provider]["api_key"] = "***REDACTADO***"
     if get:

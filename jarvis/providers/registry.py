@@ -15,6 +15,7 @@ from jarvis.providers.anthropic_provider import AnthropicProvider
 from jarvis.providers.base import LLMProvider, ProviderHealth
 from jarvis.providers.echo_provider import EchoProvider
 from jarvis.providers.gemini_provider import GeminiProvider
+from jarvis.providers.nvidia_provider import NvidiaProvider
 from jarvis.providers.ollama_provider import OllamaProvider
 from jarvis.providers.openai_provider import OpenAIProvider
 
@@ -22,6 +23,7 @@ _FACTORIES: dict[str, type[LLMProvider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
+    "nvidia": NvidiaProvider,
     "ollama": OllamaProvider,
     "echo": EchoProvider,
 }
