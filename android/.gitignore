@@ -1,0 +1,26 @@
+# Artefactos de build
+build/
+.gradle/
+.kotlin/
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.hprof
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Claves y secretos: NUNCA al repositorio.
+# La clave de Gemini se introduce en los Ajustes de la app, no en un fichero.
+secrets.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Salidas de APK/AAB
+*.apk
+*.aab
+*.ap_
+release/

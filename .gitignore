@@ -37,7 +37,11 @@ id_rsa*
 secrets.toml
 
 # Datos locales de Jarvis (bd, logs, memoria, audio, modelos)
-data/
+# OJO: la barra inicial es obligatoria. Sin ella, este patrón ignora CUALQUIER
+# carpeta llamada "data" de cualquier nivel, incluido el paquete Kotlin
+# `android/app/src/main/java/com/samuelpart/jarvispro/data/` — y la app Android
+# dejaría de compilar en un clon nuevo sin que se vea el motivo.
+/data/
 *.sqlite
 *.sqlite3
 *.db
