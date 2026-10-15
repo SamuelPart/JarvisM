@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">JARVIS Pro</string>
+
+    <!-- Pantalla de chat -->
+    <string name="chat_hint">Pídele algo a Jarvis…</string>
+    <string name="send">Enviar</string>
+    <string name="stop">Detener</string>
+    <string name="speak">Escuchar</string>
+    <string name="speak_stop">Parar de escuchar</string>
+    <string name="settings">Ajustes</string>
+    <string name="clear_chat">Borrar conversación</string>
+    <string name="thinking">Pensando…</string>
+    <string name="listening">Te escucho…</string>
+
+    <!-- Ajustes -->
+    <string name="settings_title">Ajustes</string>
+    <string name="api_key">Clave de la API de Gemini</string>
+    <string name="api_key_hint">AQ.Ab8… (AI Studio → Get API key)</string>
+    <string name="api_key_help">La clave se guarda solo en este teléfono, en el almacén privado de la app. No se sube a ningún sitio ni entra en copias de seguridad.</string>
+    <string name="model">Modelo</string>
+    <string name="system_prompt">Personalidad (instrucciones del sistema)</string>
+    <string name="temperature">Creatividad</string>
+    <string name="speak_replies">Leer las respuestas en voz alta</string>
+    <string name="stream_responses">Mostrar la respuesta mientras se escribe</string>
+    <string name="confirm_all">Pedir confirmación antes de CADA acción</string>
+    <string name="allow_sms">Permitir enviar SMS (acción irreversible)</string>
+    <string name="save_history">Guardar el historial en el teléfono</string>
+    <string name="test_connection">Probar conexión</string>
+    <string name="list_models">Ver modelos disponibles</string>
+    <string name="back">Volver</string>
+    <string name="save">Guardar</string>
+
+    <!-- Confirmaciones de acciones -->
+    <string name="confirm_title">Jarvis quiere hacer esto</string>
+    <string name="confirm_allow">Permitir</string>
+    <string name="confirm_deny">Cancelar</string>
+</resources>

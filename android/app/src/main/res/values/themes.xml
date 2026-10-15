@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Tema del sistema mínimo: la interfaz real la dibuja Jetpack Compose.
+      Se usa `android:Theme.Material.NoActionBar` (no Material Components) para
+      no arrastrar la dependencia com.google.android.material solo por un tema.
+    -->
+    <style name="Theme.JarvisPro" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/jarvis_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/jarvis_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

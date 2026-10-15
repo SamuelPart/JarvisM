@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icono: un anillo tipo "reactor" con una J dentro.
+  Se dibuja con vectores para no meter binarios al repositorio: se ve nítido a
+  cualquier densidad y se puede editar en texto.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Anillo exterior -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#57C8FF"
+        android:strokeWidth="3.5"
+        android:pathData="M54,20 A34,34 0 1 1 53.9,20 Z" />
+
+    <!-- Anillo interior tenue -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#2E7FA8"
+        android:strokeWidth="2"
+        android:pathData="M54,29 A25,25 0 1 1 53.9,29 Z" />
+
+    <!-- La J -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#EAF6FF"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:pathData="M57,38 L57,62 A9,9 0 0 1 39,62" />
+</vector>

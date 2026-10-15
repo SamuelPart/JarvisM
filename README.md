@@ -119,6 +119,22 @@ Modelo de amenazas completo: **[docs/03-seguridad-y-permisos.md](docs/03-segurid
 
 ---
 
+## Versión para Android: JARVIS Pro (`android/`)
+
+En este mismo repositorio vive una **app Android nativa** con el mismo espíritu pero
+otra plataforma: asistente de voz y texto para el teléfono que usa **únicamente la
+API de Gemini** y puede actuar sobre el dispositivo (abrir apps, alarmas, volumen,
+linterna, batería, SMS preparados) con una política de riesgo T0–T3 y confirmación
+en pantalla para todo lo que sale de la app.
+
+Es un proyecto Gradle **independiente**: en Android Studio hay que abrir la carpeta
+**`android/`**, no la raíz del repositorio.
+
+Guía paso a paso (instalar, clonar, abrir, ejecutar y resolver errores):
+**[android/docs/COMPILAR-EN-ANDROID-STUDIO.md](android/docs/COMPILAR-EN-ANDROID-STUDIO.md)**.
+
+---
+
 ## Instalación
 
 ### Linux (Kali, Debian, Ubuntu, derivados)
