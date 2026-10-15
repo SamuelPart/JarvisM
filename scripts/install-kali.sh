@@ -37,6 +37,21 @@ die()  { printf '%s[error]%s %s\n' "${C_ERR}" "${C_OFF}" "$*" >&2; exit 1; }
 note() { printf '%s    %s%s\n' "${C_DIM}" "$*" "${C_OFF}"; }
 
 # --------------------------------------------------------------------------- #
+# Guardarraíl de directorio de trabajo
+# --------------------------------------------------------------------------- #
+# Un shell atrapado dentro de un directorio BORRADO rompe cualquier comando con
+# "No such file or directory" (hasta un `touch`), pero el prompt sigue mostrando
+# `[~/JarvisM]`, así que parece que el culpable es el repo o el clon. Detectarlo
+# convierte media hora de confusión en un aviso de una línea. Ojo: `cd .` NO sirve
+# como test (bash lo permite en un cwd borrado); `[[ -d $PWD ]]` sí.
+if [[ ! -d "${PWD}" ]]; then
+  warn "tu directorio actual (${PWD}) ya no existe: esa es la causa de los errores"
+  warn "'No such file or directory' en comandos que antes funcionaban"
+  cd "${HOME:-/tmp}" || die "no se puede acceder ni a \$HOME"
+  note "seguimos desde ${PWD}; el instalador trabaja con rutas absolutas"
+fi
+
+# --------------------------------------------------------------------------- #
 # Argumentos
 # --------------------------------------------------------------------------- #
 while [[ $# -gt 0 ]]; do
