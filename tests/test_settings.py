@@ -205,3 +205,50 @@ def test_data_paths_point_inside_data_dir(settings: Settings) -> None:
     assert settings.audit_db.parent == settings.data_dir
     assert settings.memory_db.parent == settings.data_dir
     assert Path(settings.log_file).name == "jarvis.log"
+
+
+# --------------------------------------------------------------------------- #
+# Listas desde el entorno
+# --------------------------------------------------------------------------- #
+def test_single_item_list_from_env(monkeypatch) -> None:
+    """Regresión: `JARVIS__ROUTER__DEFAULT_CHAIN=gemini` reventaba con ValidationError.
+
+    `_coerce` solo convertía a lista las cadenas CON coma, así que un valor único
+    llegaba como `str` y pydantic fallaba. Configurar un solo proveedor es algo
+    perfectamente normal (probar Gemini aislado, por ejemplo).
+    """
+    monkeypatch.setenv("JARVIS__ROUTER__DEFAULT_CHAIN", "gemini")
+    settings = reload_settings()
+    assert settings.router.default_chain == ["gemini"]
+
+
+def test_comma_list_from_env_still_works(monkeypatch) -> None:
+    monkeypatch.setenv("JARVIS__ROUTER__DEFAULT_CHAIN", "gemini,nvidia,echo")
+    settings = reload_settings()
+    assert settings.router.default_chain == ["gemini", "nvidia", "echo"]
+
+
+def test_single_item_for_other_list_fields(monkeypatch) -> None:
+    """El arreglo es de la base común, no un parche de un solo campo."""
+    monkeypatch.setenv("JARVIS__POLICY__SHELL_ALLOWLIST", "/bin/ls")
+    settings = reload_settings()
+    assert settings.policy.shell_allowlist == ["/bin/ls"]
+
+
+def test_toml_lists_are_untouched(monkeypatch, tmp_path) -> None:
+    """Una lista de verdad en TOML no se toca (ni se parte por comas)."""
+    (tmp_path / "jarvis.toml").write_text(
+        '[policy]\nshell_allowlist = ["ls", "git status"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    settings = reload_settings()
+    assert settings.policy.shell_allowlist == ["ls", "git status"]
+
+
+def test_split_csv_helper_directly() -> None:
+    from jarvis.config.settings import split_csv
+
+    assert split_csv("a") == ["a"]
+    assert split_csv("a, b ,c") == ["a", "b", "c"]
+    assert split_csv(["a"]) == ["a"]
+    assert split_csv(7) == 7

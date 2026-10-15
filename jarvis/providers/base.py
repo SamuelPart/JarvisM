@@ -323,13 +323,19 @@ class LLMProvider:
 
 
 def request_model_for_health(provider: LLMProvider) -> str:
-    """Modelo por defecto para el health check (el más barato configurable)."""
+    """Modelo por defecto para el health check: uno que ESE proveedor conozca.
+
+    Antes se usaba `model_cheap` para todos, así que el ping a NVIDIA iba con un
+    modelo de Gemini y volvía un 404 que parecía "proveedor caído". Ahora se usa
+    el modelo configurado en `[router.fallback_models]` para ese proveedor, que
+    es exactamente la tabla donde vive el nombre de modelo de cada uno (P10).
+    """
     from jarvis.config.settings import get_settings
 
     settings = get_settings()
     if provider.name == "ollama":
         return settings.router.model_offline
-    return settings.router.model_cheap
+    return settings.router.fallback_models.get(provider.name) or settings.router.model_cheap
 
 
 def safe_json_loads(text: str) -> dict[str, Any]:

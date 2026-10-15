@@ -249,10 +249,51 @@ def _match_files(text: str) -> Match | None:
     return None
 
 
+#: Alias de sitios frecuentes. "entra a youtube" no trae URL, pero la intención
+#: es inequívoca y no merece gastar tokens (ni una llamada de red) en el LLM.
+_SITE_ALIASES: dict[str, str] = {
+    "google": "https://www.google.com",
+    "youtube": "https://www.youtube.com",
+    "gmail": "https://mail.google.com",
+    "correo": "https://mail.google.com",
+    "github": "https://github.com",
+    "gitlab": "https://gitlab.com",
+    "wikipedia": "https://es.wikipedia.org",
+    "maps": "https://maps.google.com",
+    "drive": "https://drive.google.com",
+    "chatgpt": "https://chatgpt.com",
+    "gemini": "https://gemini.google.com",
+    "reddit": "https://www.reddit.com",
+    "stackoverflow": "https://stackoverflow.com",
+    "stack overflow": "https://stackoverflow.com",
+    "twitter": "https://x.com",
+    "facebook": "https://www.facebook.com",
+    "instagram": "https://www.instagram.com",
+    "whatsapp": "https://web.whatsapp.com",
+    "netflix": "https://www.netflix.com",
+    "spotify": "https://open.spotify.com",
+}
+
+#: "entra a X", "ve a X", "navega a X", "anda a X". Se exige preposición para no
+#: pisar a `apps.launch` ("abre firefox") ni a `files.open`.
+_GO_TO_SITE = re.compile(
+    r"\b(?:entra|entrar|ve|vete|navega|anda)\s+(?:a|al|en|hacia)\s+([\w.-]+(?:\s+[\w.-]+)?)\s*$"
+)
+
+
 def _match_web(text: str) -> Match | None:
     url = _extract_url(text)
     if url and re.search(r"\b(abre|abrir|ve a|entra en|open)\b", text):
         return Match("web.open", {"target": url}, 0.9, "web.open.url")
+    m = _GO_TO_SITE.search(text)
+    if m:
+        target = m.group(1).strip().lower()
+        if alias := _SITE_ALIASES.get(target):
+            return Match("web.open", {"target": alias}, 0.89, "web.open.alias")
+        # Dominio suelto ("entra a github.com"). El TLD no se valida: si el
+        # usuario escribe "algo.xyz", el navegador es quien decide.
+        if re.fullmatch(r"[\w-]+(?:\.[\w-]+)+", target):
+            return Match("web.open", {"target": target}, 0.89, "web.open.domain")
     m = re.search(r"\b(?:busca en (?:internet|la web|google)|googlea|search)\s+(.+)$", text)
     if m:
         return Match("web.search", {"query": m.group(1).strip()}, 0.88, "web.search")

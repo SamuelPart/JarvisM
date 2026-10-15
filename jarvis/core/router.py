@@ -239,7 +239,16 @@ class Router:
 
             self.registry.report_failure(candidate.name)
             if index + 1 < len(chain):
-                log.warning("failover %s -> %s (%s)", candidate.name, chain[index + 1].name, attempt.error)
+                # El modelo va en el log a propósito: sin él, un 404 es
+                # indistinguible de "el endpoint no existe" y se convierte en
+                # adivinanza (pasó con la primera configuración de NVIDIA).
+                log.warning(
+                    "failover %s -> %s (%s) · modelo enviado: %s",
+                    candidate.name,
+                    chain[index + 1].name,
+                    attempt.error,
+                    attempt.model,
+                )
 
         return RouteResult(None, attempts, total_ms=(time.perf_counter() - started) * 1000)
 
@@ -254,7 +263,12 @@ class Router:
                 result = await provider.complete(request)
                 return result, RouteAttempt(provider.name, request.model, True, latency_ms=result.latency_ms)
             except ProviderError as exc:
-                last_error = f"{exc.kind.value}: {exc}"
+                # El modelo va en el mensaje: un 400/404 sin decir QUÉ modelo se
+                # envió obliga a adivinar. Un "not found" además casi siempre
+                # significa "ese modelo no existe en ese proveedor".
+                last_error = f"{exc.kind.value}: {exc} [modelo enviado: {request.model}]"
+                if exc.kind is ProviderErrorKind.MODEL_NOT_FOUND:
+                    last_error += " · revisa el nombre del modelo para ese proveedor"
                 if exc.kind in FATAL_FOR_PROVIDER:
                     break
                 if exc.should_retry and attempt < max_retries:
@@ -323,6 +337,12 @@ def _guess_provider(model: str) -> str | None:
         return "anthropic"
     if "gemini" in low or "gemma" in low:
         return "gemini"
+    # IDs con prefijo `org/modelo` (NVIDIA NIM, OpenRouter...) NO son etiquetas de
+    # Ollama aunque contengan "llama" o "qwen": "meta/llama-4-scout" acabaría en un
+    # Ollama que no tiene ese modelo. La barra los delata; los tags locales usan
+    # ":" (qwen2.5:7b-instruct), así que ambos casos quedan separados.
+    if "/" in low and ":" not in low:
+        return "nvidia"
     if ":" in low or "llama" in low or "qwen" in low or "mistral" in low or "phi" in low:
         return "ollama"
     return None
