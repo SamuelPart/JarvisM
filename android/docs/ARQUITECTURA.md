@@ -21,7 +21,7 @@ app/src/main/java/com/samuelpart/jarvispro/
 │   ├── AgentEvent.kt        lo que va pasando durante un turno
 │   ├── Tool.kt              interfaz de herramienta, registro y lectura de args
 │   ├── Policy.kt            niveles de riesgo y decisiones (puro, testeable)
-│   ├── JarvisTools.kt       catálogo de las 15 herramientas
+│   ├── JarvisTools.kt       catálogo de las 14 herramientas
 │   └── tools/               las herramientas, por familia
 ├── data/                    ajustes e historial
 ├── voice/                   dictado (SpeechRecognizer) y lectura (TTS)
@@ -43,7 +43,7 @@ La regla de oro: **las capas de abajo no saben que existen las de arriba.**
 ```
 usuario: "pon una alarma a las 6:30"
    │
-   ├─ JarvisAgent envía: conversación + systemPrompt + 15 declaraciones de herramientas
+   ├─ JarvisAgent envía: conversación + systemPrompt + 14 declaraciones de herramientas
    │
    ├─ Gemini responde (en streaming):
    │     texto: "Voy a programarla."
@@ -163,7 +163,8 @@ Todo esto está cubierto por `app/src/test/java/.../ToolSchemaTest.kt`.
 ## Tests
 
 Los tests viven en `app/src/test/` y **no necesitan teléfono ni emulador**
-(`./gradlew test`), porque todo lo que prueban es lógica pura:
+(`./gradlew test`), porque todo lo que prueban es lógica pura. Son **45 tests en 5
+ficheros**:
 
 | Fichero | Qué protege |
 |---|---|

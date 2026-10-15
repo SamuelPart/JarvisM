@@ -11,7 +11,7 @@ Qué está hecho, qué falta y en qué orden. Estado a **15 de octubre de 2026**
 | Cliente de Gemini (generación, streaming SSE, listado de modelos, errores traducidos) | ✅ |
 | Limpieza de esquemas de herramientas (el bug de `additionalProperties`) | ✅ |
 | Bucle de agente con *function calling*, reintentos de contexto y firmas de Gemini 3 | ✅ |
-| 15 herramientas del teléfono en 4 familias, con niveles de riesgo T0–T3 | ✅ |
+| 14 herramientas del teléfono, clasificadas por nivel de riesgo T0–T3 | ✅ |
 | Política de riesgo + confirmación en pantalla para lo que sale de la app | ✅ |
 | Chat con streaming, historial persistente y autoscroll | ✅ |
 | Ajustes: clave, modelo, personalidad, creatividad, voz, permisos peligrosos | ✅ |
