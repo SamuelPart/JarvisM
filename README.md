@@ -125,12 +125,17 @@ Modelo de amenazas completo: **[docs/03-seguridad-y-permisos.md](docs/03-segurid
 
 ```bash
 sudo apt install -y python3-venv git
+cd ~                                     # imprescindible si tu shell está en una carpeta borrada
 git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-kali.sh                 # --voice para audio, --ui para el HUD, --all para todo
+./scripts/install-kali.sh --no-system --dev   # --voice audio, --ui HUD, --all todo
 source .venv/bin/activate
 jarvis doctor
 ```
 
+> **Si ya tienes el repo, no vuelvas a clonarlo.** `git clone` dentro de `~/JarvisM` crea
+> `~/JarvisM/JarvisM` con el código *una capa más abajo*, y entonces `./scripts/install-kali.sh`
+> dice "No existe el fichero o el directorio". Para actualizar se usa `git pull`.
+>
 > **Kali y PEP 668:** nunca hagas `pip install` fuera del entorno virtual; Kali bloquea el Python
 > del sistema a propósito. Todo va dentro de `.venv`.
 >

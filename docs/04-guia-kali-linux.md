@@ -58,12 +58,22 @@ arecord -l                             # lista de micrófonos
 ### Opción A — script automático (recomendada)
 
 ```bash
+cd ~                                 # si tu shell está en una carpeta borrada, TODO falla aquí
 git clone https://github.com/SamuelPart/JarvisM.git
 cd JarvisM
-./scripts/install-kali.sh            # crea .venv, instala deps core + opcionales, valida
+./scripts/install-kali.sh --no-system --dev   # crea .venv, instala deps, valida
 source .venv/bin/activate
 jarvis doctor
 ```
+
+> **Dos trampas que cuestan 20 minutos cada una:**
+>
+> 1. **No clones dos veces.** Si ya hiciste `git clone` antes, `cd ~/JarvisM && git pull`.
+>    Un segundo clon dentro de `~/JarvisM` crea `~/JarvisM/JarvisM` y el instalador dice
+>    "No existe el fichero o el directorio" porque el script está una capa más abajo.
+> 2. **Comprueba dónde estás antes de clonar.** `pwd` debe devolver una carpeta que exista.
+>    Si tu shell quedó dentro de un directorio borrado, *cualquier* comando falla con
+>    "No such file or directory" hasta que hagas `cd ~`.
 
 ### Opción B — manual
 
@@ -213,6 +223,9 @@ al cierre de sesión.
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
+| `fatal: could not create work tree dir 'JarvisM': No such file or directory` | tu shell está en una carpeta que ya no existe | `cd ~` y repite. Compruébalo con `pwd` |
+| Igual, pero con `rm`/`touch`/`ls` y no con git | idéntico al anterior: el cwd no existe | `cd ~` |
+| `./scripts/install-kali.sh: No existe el fichero o el directorio` con el repo recién clonado | clonaste **dentro** de un clon previo: estás en `~/JarvisM` pero el código está en `~/JarvisM/JarvisM` | `cd ~ && mv JarvisM JarvisM.viejo && git clone https://github.com/SamuelPart/JarvisM.git` |
 | `error: externally-managed-environment` | `pip install` fuera del venv | `source .venv/bin/activate` (o `uv venv`) |
 | `OSError: PortAudio library not found` | falta `portaudio19-dev` | `sudo apt install portaudio19-dev` y reinstala `sounddevice` |
 | No detecta micrófono | PipeWire sin permisos / sesión sin audio | `arecord -l`; en VM, habilita el dispositivo de audio; `pactl list sources` |
@@ -238,8 +251,15 @@ JARVIS_LOG_LEVEL=DEBUG jarvis chat
 
 ## 8. Desinstalación limpia
 
+> **Sal primero del directorio.** Si borras `~/JarvisM` mientras tu shell está dentro,
+> la terminal queda apuntando a algo que ya no existe y *todos* los comandos fallan
+> con "No such file or directory" hasta que hagas `cd ~` (el prompt puede seguir
+> mostrando `[~/JarvisM]`, que es lo que confunde). El `cd ~` del bloque ya lo evita.
+
 ```bash
+cd ~                                        # imprescindible: fuera del directorio
 systemctl --user disable --now jarvis.service 2>/dev/null
-deactivate 2>/dev/null; cd .. && rm -rf JarvisM
+deactivate 2>/dev/null
+rm -rf ~/JarvisM
 rm -rf ~/.local/share/jarvis ~/.config/jarvis ~/.cache/jarvis
 ```
