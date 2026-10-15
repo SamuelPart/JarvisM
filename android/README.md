@@ -29,7 +29,7 @@ Otros documentos:
 - **Voz + texto**: dictado con el reconocedor de Android, respuestas leídas en voz
   alta (opcional).
 - **Streaming**: la respuesta aparece mientras se escribe.
-- **15 herramientas** del teléfono, clasificadas por riesgo (T0 leer → T3
+- **14 herramientas** del teléfono, clasificadas por riesgo (T0 leer → T3
   irreversible), con confirmación en pantalla para lo que sale de la app.
 - **Clave de API por el usuario**, en los ajustes, nunca compilada en el APK.
 
