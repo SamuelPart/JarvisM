@@ -263,7 +263,7 @@ private fun EmptyState(modifier: Modifier = Modifier, onSuggestion: (String) -> 
 @Composable
 private fun MessageBubble(item: ChatItem, onSpeak: () -> Unit) {
     val isUser = item.role == ChatItem.Role.USER
-    val alignment = if (isUser) Alignment.End else Alignment.Start
+    val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
 
     if (item.role == ChatItem.Role.NOTICE) {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
