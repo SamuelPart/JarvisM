@@ -8,19 +8,13 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * Adapta JSON Schemas al subconjunto que acepta la API de Gemini.
  *
- * **Este fichero existe por un bug real.** El campo `parameters` de una
- * `functionDeclaration` es un subconjunto de OpenAPI 3.0 y NO admite
- * `additionalProperties`. En la versión de escritorio (Python) del proyecto,
- * todas las herramientas lo declaraban — que es lo correcto para validar los
- * argumentos en local — y el resultado fue que Gemini rechazaba el 100 % de los
- * turnos de conversación con:
+ * El campo `parameters` de una `functionDeclaration` acepta solo un subconjunto
+ * de JSON Schema y no admite `additionalProperties`. Si se incluye esa clave, la
+ * API de Gemini rechaza la petición con HTTP 400.
  *
- *     HTTP 400: Invalid JSON payload received. Unknown name "additionalProperties"
- *     at 'tools[0].function_declarations[0].parameters': Cannot find field.
- *
- * Aquí se limpia el esquema justo antes de enviarlo, sin tocar el original (el
- * mismo esquema sigue validando en local, donde sí interesa que sea estricto).
- * Los tests cubren el caso exacto.
+ * Se eliminan las claves no compatibles justo antes de enviar la petición, sin
+ * modificar las declaraciones originales de las herramientas. Los tests cubren
+ * el caso y las demás conversiones necesarias.
  */
 object ToolSchema {
 

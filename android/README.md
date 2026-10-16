@@ -6,10 +6,8 @@ alarmas, cambiar el volumen, encender la linterna, leer la batería, preparar SM
 siempre pasando por una política de riesgo que decide qué se hace solo y qué pide
 permiso.
 
-> Esta carpeta es una **app Android independiente** dentro del repositorio. El
-> resto del repositorio (`jarvis/`, `tests/`…) es el proyecto de escritorio en
-> Python. **Al abrir en Android Studio hay que abrir la carpeta `android/`, no la
-> raíz del repositorio.**
+> Este repositorio está dedicado exclusivamente a la app Android. El proyecto
+> Gradle vive en esta carpeta: **al abrirlo en Android Studio selecciona `android/`**.
 
 ## Empezar
 
@@ -35,7 +33,7 @@ Otros documentos:
 
 ## Requisitos
 
-- Android Studio (versión estable reciente) con el **SDK 36** instalado.
+- Android Studio Panda 3 (2025.3.3 Patch 1) o posterior, con el **SDK 37** instalado.
 - JDK 17 o superior (Android Studio trae el suyo).
 - Un teléfono con **Android 8.0 (API 26)** o superior, o un emulador.
 - Una clave de la API de Gemini, gratis en <https://aistudio.google.com> →

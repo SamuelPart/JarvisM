@@ -1,81 +1,37 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# Gradle / Android build outputs
+.gradle/
+**/.gradle/
+**/build/
+local.properties
+**/local.properties
 
-# Entornos
-.venv/
-venv/
-env/
-ENV/
-.uv/
-uv.lock
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.hprof
+captures/
+.externalNativeBuild/
+.cxx/
 
-# Secretos: NUNCA se versionan
+# Secrets — never commit these
 .env
 .env.*
-!.env.example
+secrets.properties
+keystore.properties
+*.jks
+*.keystore
 *.pem
 *.key
-id_rsa*
-secrets.toml
 
-# Datos locales de Jarvis (bd, logs, memoria, audio, modelos)
-# OJO: la barra inicial es obligatoria. Sin ella, este patrón ignora CUALQUIER
-# carpeta llamada "data" de cualquier nivel, incluido el paquete Kotlin
-# `android/app/src/main/java/com/samuelpart/jarvispro/data/` — y la app Android
-# dejaría de compilar en un clon nuevo sin que se vea el motivo.
-/data/
-*.sqlite
-*.sqlite3
-*.db
-*.log
-jarvis.local.toml
+# Generated Android packages
+*.apk
+*.aab
+*.ap_
+release/
 
-# Audio y modelos descargados (pesados)
-models/
-*.onnx
-*.pt
-*.bin
-*.gguf
-
-# Tooling
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
-.tox/
-.nox/
-
-# IDE / SO
-.idea/
-.vscode/
+# Editor and operating-system files
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Empaquetado
-*.spec.bak
-packaging/out/
-pyinstaller-build/

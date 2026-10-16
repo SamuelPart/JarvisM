@@ -50,8 +50,8 @@ es estricto), batería y que la notificación sea honesta sobre lo que hace.
    extraer y guardar hechos ("trabaja de noche", "su hermana se llama Ana") en una
    tabla aparte y consultarlos cuando hagan falta, con un botón para verlos y
    borrarlos.
-3. **Automatizaciones**: "cuando llegue a casa, pon el volumen al 30 %" (traslada
-   ideas del proyecto de escritorio).
+3. **Automatizaciones**: "cuando llegue a casa, pon el volumen al 30 %", siempre
+   con permisos explícitos y bajo la política de riesgo de la app.
 4. **Más herramientas**: calendario (leer eventos, no solo crear), correo, música
    (control de reproducción), portapapeles, compartir pantalla… cada una con su
    nivel de riesgo y su confirmación.

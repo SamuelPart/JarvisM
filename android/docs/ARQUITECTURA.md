@@ -98,11 +98,10 @@ el modelo —o el texto de un mensaje ajeno— no pueda colar un `javascript:` o
 
 ---
 
-## El bug de `additionalProperties` (leer antes de tocar esquemas)
+## Compatibilidad de los esquemas de herramientas con Gemini
 
-En el proyecto de escritorio (Python), **todas** las herramientas declaraban
-`additionalProperties: false` en su esquema, que es lo correcto para validar
-argumentos en local. Gemini rechaza esa palabra clave:
+La API de Gemini acepta solo un subconjunto de JSON Schema para los parámetros de
+las herramientas. Rechaza la palabra clave `additionalProperties`:
 
 ```
 HTTP 400: Invalid JSON payload received. Unknown name "additionalProperties"

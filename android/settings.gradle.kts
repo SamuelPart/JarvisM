@@ -1,8 +1,7 @@
 // JarvisM Pro (Android) — configuración del proyecto Gradle.
 //
-// Nota para quien llegue aquí desde Android Studio: este proyecto es un módulo
-// Android independiente. Si vas a abrirlo, abre ESTA carpeta (android/), no la
-// raíz del repositorio JarvisM (que es el proyecto Python).
+// Este repositorio contiene únicamente la aplicación Android. Abre esta carpeta
+// (`android/`) en Android Studio para cargar el proyecto Gradle.
 
 pluginManagement {
     repositories {

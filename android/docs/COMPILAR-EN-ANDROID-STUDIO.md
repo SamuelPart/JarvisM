@@ -14,13 +14,13 @@ final está la tabla de errores frecuentes.
    `./android-studio/bin/studio.sh`).
 2. Ábrelo y deja que el asistente inicial termine. En la pantalla *Welcome*:
    - **More Actions → SDK Manager** (o *Tools → SDK Manager* ya dentro).
-   - Pestaña **SDK Platforms**: marca **Android 16 (API 36)**.
+   - Pestaña **SDK Platforms**: marca **Android 17 (API 37)**.
    - Pestaña **SDK Tools**: marca **Android SDK Build-Tools 36**, **Android SDK
      Platform-Tools** y **Android SDK Command-line Tools**.
    - Acepta las licencias y pulsa **Apply** (descargará unos cientos de MB).
 
-Android Studio ya trae su propio JDK (JBR, versión 21). No hace falta instalar
-Java aparte.
+Usa Android Studio Panda 3 (2025.3.3 Patch 1) o posterior para compatibilidad
+con API 37. Android Studio trae su propio JDK; no hace falta instalar Java aparte.
 
 **En el teléfono (si vas a usar el móvil, no un emulador):**
 
@@ -42,8 +42,7 @@ cd JarvisM
 ls android
 ```
 
-Lo que te importa es la carpeta **`android/`**: ahí está el proyecto de Android
-Studio. La raíz del repositorio es el proyecto de escritorio (Python).
+El proyecto de Android Studio está en la carpeta **`android/`** del clon.
 
 > No necesitas instalar Gradle ni Kotlin: el proyecto trae el *wrapper* de Gradle
 > (`android/gradlew` + `android/gradle/wrapper/`), y Android Studio descarga la
@@ -58,7 +57,7 @@ Studio. La raíz del repositorio es el proyecto de escritorio (Python).
    `android`, **no** `JarvisM` ni `app`. Pulsa **OK**.
 3. Si pregunta *"Trust project?"*, dile que sí.
 4. Empieza el **Gradle Sync** (barra inferior). La primera vez tarda varios minutos
-   porque descarga Gradle 8.14.6 y las dependencias (Compose, OkHttp…). Necesita
+   porque descarga Gradle 9.3.1 y las dependencias (Compose, OkHttp…). Necesita
    internet.
 5. Cuando termine, abajo debe poner **"Gradle sync finished"** o simplemente
    desaparecer la barra. Si sale un error rojo, ve a la sección 8.
@@ -90,8 +89,8 @@ La app se llama **JARVIS Pro**. Verás "JARVIS" grande y varios botones de ejemp
 ### Si prefieres un emulador
 
 1. **Tools → Device Manager → Create device**.
-2. Elige un **Pixel 7** (o similar) → *Next* → sistema **API 36** (si no está
-   descargado, pulsa el icono de descarga) → *Next* → **Finish**.
+2. Elige un **Pixel 7** (o similar) → *Next* → sistema **API 36** (o API 37 si
+   quieres probar la versión más reciente) → *Next* → **Finish**.
 3. Lanza el emulador con el ▶️ de al lado y luego ejecuta la app igual que antes.
 
 ---
@@ -177,7 +176,8 @@ sdk.dir=/home/TU_USUARIO/Android/Sdk
 | `SDK location not found` | Abre el proyecto desde Android Studio (lo rellena solo) o crea `local.properties` como en el paso 7 |
 | `Unsupported class file major version` / `invalid source release` | El JDK de Gradle es viejo: *Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK* → elige **jbr-21** (el que trae Android Studio) |
 | `Could not resolve androidx.compose...` / `Failed to download...` | Sin internet, o hay un proxy/VPN bloqueando `dl.google.com` y `repo.maven.apache.org`. Comprueba la conexión y reintenta *File → Sync Project with Gradle Files* |
-| `compileSdk 36 not found` / `platform 36 missing` | Falta el SDK 36: *Tools → SDK Manager → SDK Platforms* → marca **Android 16 (API 36)** → Apply |
+| `requires compileSdk 37` / `requires Android Gradle plugin 9.1.0 or higher` | El proyecto necesita AGP 9.1.1, Gradle 9.3.1 y SDK Platform 37. Confirma que Android Studio sincronizó la versión nueva; `targetSdk` puede seguir en 36. |
+| `compileSdk 37 not found` / `platform 37 missing` | Falta el SDK 37: *Tools → SDK Manager → SDK Platforms* → marca **Android 17 (API 37)** → Apply |
 | `Gradle sync failed: timeout` | Primera descarga lenta: reintenta. Si se repite, sube el límite en `android/gradle.properties` (`org.gradle.jvmargs`) o usa una red mejor |
 | Al ejecutar: `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Hay otra versión instalada con otra firma: desinstala "JARVIS Pro" del teléfono y vuelve a ejecutar |
 | La app abre pero dice *"Falta la clave"* | No has guardado la clave: ⚙️ → pega la clave → **Guardar** |

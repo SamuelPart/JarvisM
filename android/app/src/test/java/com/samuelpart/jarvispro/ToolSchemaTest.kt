@@ -15,10 +15,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Estos tests existen por un bug concreto y caro: en el proyecto de escritorio,
- * todas las herramientas declaraban `additionalProperties` en su esquema y Gemini
- * rechazaba el 100 % de las peticiones con HTTP 400. El saneado es la defensa, y
- * aquí se comprueba que siga en pie.
+ * Gemini no acepta `additionalProperties` en los esquemas de parámetros de sus
+ * herramientas. Estos tests comprueban que la app elimine esa clave y mantenga
+ * las demás conversiones compatibles con la API.
  */
 class ToolSchemaTest {
 

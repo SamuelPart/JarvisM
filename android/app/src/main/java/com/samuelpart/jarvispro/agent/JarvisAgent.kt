@@ -26,7 +26,7 @@ import kotlinx.serialization.json.put
  *      permiso; se ejecuta; se devuelve el resultado como `functionResponse`.
  *   4. Se repite hasta que el modelo responde sin pedir nada más.
  *
- * Dos reglas que no se pueden romper (aprendidas del proyecto de escritorio):
+ * Dos reglas que no se pueden romper para que las llamadas a herramientas sean seguras:
  *
  *   - **Los `parts` del modelo se reenvían tal cual**, con sus firmas. Si se
  *     reconstruyen, Gemini 3 responde 400.

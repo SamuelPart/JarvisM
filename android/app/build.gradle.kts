@@ -1,25 +1,25 @@
 // JarvisM Pro — módulo :app
 //
-// Todas las versiones están elegidas a propósito y comentadas: este proyecto se
-// escribió sin poder compilarlo (el autor no tiene el SDK de Android), así que
-// cada dependencia apunta a una versión que EXISTE y que es estable.
+// Las dependencias están versionadas explícitamente o agrupadas por BOM para
+// mantener builds reproducibles.
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
     namespace = "com.samuelpart.jarvispro"
-    compileSdk = 36
+    // Las versiones actuales de Compose y AndroidX requieren compilar contra API 37.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.samuelpart.jarvispro"
         // 26 = Android 8.0. Cubre prácticamente todo el parque móvil y es el
         // mínimo que nos deja usar iconos adaptativos y APIs modernas de audio.
         minSdk = 26
+        // Compilar con API 37 no activa los cambios de ejecución de target 37.
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

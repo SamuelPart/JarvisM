@@ -1,7 +1,7 @@
 package com.samuelpart.jarvispro.agent
 
 /**
- * Nivel de riesgo de una acción, igual que en la versión de escritorio:
+ * Nivel de riesgo de una acción que puede realizar la app Android:
  *
  *   T0  leer información           → sin efectos, se ejecuta siempre
  *   T1  cambiar algo reversible     → volumen, linterna; se ejecuta y se avisa
@@ -9,8 +9,7 @@ package com.samuelpart.jarvispro.agent
  *   T3  irreversible                → enviar un SMS no se puede deshacer
  *
  * Se compara SIEMPRE por `rank`, nunca con `<`/`>` entre enums: Kotlin no los hace
- * comparables, y añadirlo a mano rompe la simetría (en la versión Python se quitó
- * precisamente por eso).
+ * comparables. Así el orden de riesgo queda explícito y consistente.
  */
 enum class RiskTier(val rank: Int, val label: String) {
     T0(0, "solo lectura"),
