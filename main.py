@@ -3,22 +3,19 @@ from __future__ import annotations
 import json
 import os
 import sys
-import threading
 from pathlib import Path
 from dotenv import load_dotenv
+from voice import Voice
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / '.jarvis-state.json'
 
 
+voice = Voice()
+
+
 def speak(text):
-    def worker():
-        try:
-            import pyttsx3
-            engine = pyttsx3.init(); engine.say(text); engine.runAndWait(); engine.stop()
-        except Exception:
-            print('(Aviso: voz no disponible.)', flush=True)
-    threading.Thread(target=worker, daemon=True).start()
+    voice.speak(text)
 
 
 def announce(text):

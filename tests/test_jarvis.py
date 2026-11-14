@@ -71,3 +71,21 @@ def test_updater_fast_forward_and_dirty_guard(tmp_path, monkeypatch):
     assert updater.update() is True
     assert (clone / 'file.txt').read_text() == 'v2'
     assert updater.update() is False
+
+
+def test_voice_fallback_and_off(monkeypatch):
+    from voice import Voice
+    voice = Voice()
+    calls = []
+    def fail(text):
+        calls.append(('edge', text))
+        raise OSError('network')
+    monkeypatch.setattr(voice, '_neural', fail)
+    monkeypatch.setattr(voice, '_local', lambda text: calls.append(('local', text)))
+    monkeypatch.setenv('JARVIS_VOICE_MODE', 'edge')
+    voice.speak('Hola')
+    voice.queue.join()
+    assert calls == [('edge', 'Hola'), ('local', 'Hola')]
+    monkeypatch.setenv('JARVIS_VOICE_MODE', 'off')
+    voice.speak('No hablar')
+    assert len(calls) == 2
