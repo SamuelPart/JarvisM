@@ -58,3 +58,7 @@ Para comprobar automáticamente al iniciar, configure `JARVIS_AUTO_UPDATE=1`. Es
 Por defecto, Edge TTS usa `es-MX-JorgeNeural`. En `.env`, cambie `JARVIS_TTS_VOICE` a otra voz disponible, por ejemplo `es-ES-AlvaroNeural` o `es-ES-ElviraNeural`. Para consultar el catálogo actual ejecute `venv/bin/edge-tts --list-voices` (en Windows `venv\Scripts\edge-tts.exe --list-voices`). La disponibilidad depende del servicio externo. Reinicie JARVIS para aplicar los cambios.
 
 El texto pronunciado se envía a Microsoft: no use el modo neuronal con información que no desee compartir. Para no enviar texto a ese servicio, configure `JARVIS_VOICE_MODE=local`; para desactivar la voz, `JARVIS_VOICE_MODE=off`. Las respuestas se seguirán mostrando en consola. La reproducción es secuencial y se realiza en segundo plano; al salir del programa puede interrumpirse.
+
+## Interfaz de escritorio
+
+Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux o `venv\Scripts\python.exe gui.py` en Windows. La ventana permite chatear, escuchar respuestas, mantenerla siempre visible y aprobar o rechazar cada herramienta. La clave y la voz se configuran en el mismo `.env` que usa la consola; el texto hablado puede enviarse a Microsoft si está activado Edge TTS. La entrada de micrófono y el actualizador todavía están disponibles solo en consola (`python main.py`); la conversación de la ventana no persiste tras cerrarla. Se necesita una sesión gráfica. Para actualizar desde consola, salga de la interfaz primero.
