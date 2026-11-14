@@ -1,304 +1,52 @@
-# JarvisM
+# JARVIS — asistente Gemini para Windows y Linux
 
-**Asistente y agente de voz para tu sistema operativo.** Corre en tu máquina, entiende órdenes en
-lenguaje natural, **hace** cosas en tu sistema operativo y tus aplicaciones, y te **avisa** cuando
-algo va mal.
+JARVIS separa la conversación y las herramientas Gemini (`brain.py`), las operaciones locales (`system_control.py`), la consola y voz (`main.py`) y las actualizaciones (`updater.py`). La API recibe las conversaciones y resultados de herramientas; el historial vive en memoria durante la ejecución y no se guarda entre reinicios.
 
-Linux · Windows · macOS · Python 3.10+
+## Requisitos
 
-```bash
-git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-kali.sh          # Linux   ·  install-macos.sh (macOS) · install-windows.ps1 (Windows)
-source .venv/bin/activate
-jarvis doctor                      # te dice exactamente qué falta y cómo arreglarlo
-jarvis chat                        # empieza a hablarle
-```
+- Python 3.11+, Git y una clave de Google Gemini con acceso al modelo seleccionado.
+- Windows o Linux con sesión gráfica para automatización de interfaz.
+- En Debian/Ubuntu, para compilar PyAudio y disponer de voz, instale por ejemplo `sudo apt install python3-venv python3-dev portaudio19-dev espeak-ng`; pueden ser necesarias dependencias gráficas de PyAutoGUI. En Linux, volumen y brillo usan respectivamente `pactl` y `brightnessctl`. En Windows el brillo usa WMI si el hardware lo admite; el volumen no tiene implementación directa (puede usarse GUI bajo confirmación).
+- Reconocimiento de voz mediante SpeechRecognition/Google requiere micrófono e Internet; el audio se envía a Google. `pyttsx3` necesita un motor TTS disponible en el sistema y la voz española depende de las voces instaladas.
 
----
+## Subir a GitHub
 
-## Qué hace hoy (y qué hará)
-
-| | Estado |
-|---|---|
-| 🗣️ **Voz**: wake word, STT y TTS locales (sin nube) | Interfaces definidas, implementación en **Fase 3** |
-| 💬 **Conversación** con Gemini / NVIDIA NIM / OpenAI / Anthropic / Ollama y *failover* automático | ✅ Funcionando |
-| 🖥️ **Control del sistema**: apps, ventanas, archivos, volumen, brillo, portapapeles, web | ✅ 27 habilidades |
-| 🛡️ **Gobernanza**: 4 niveles de riesgo, denylist, jaula de rutas, aprobación humana, auditoría | ✅ Funcionando |
-| 🔭 **Proactividad**: watchdog con 5 monitores y sugerencias accionables | ✅ MVP; se amplía en **Fase 4** |
-| 🧠 **Memoria** de sesión y contexto | ✅ Básica; memoria semántica en **Fase 5** |
-| ✨ **Apariencia**: HUD, bandeja del sistema, panel web | Esqueleto API listo; **Fase 6** |
-
-Detalle completo, con criterios de aceptación por fase: **[docs/02-roadmap.md](docs/02-roadmap.md)**.
-
----
-
-## Por qué este proyecto es distinto
-
-Cualquier asistente con control del sistema es, técnicamente, un RAT. Lo que separa una herramienta
-útil de un incidente son **cuatro decisiones de diseño** que aquí están en código, no en un README:
-
-**1. El modelo no ejecuta nada.** El LLM solo puede emitir *tool calls* contra un catálogo cerrado de
-27 habilidades con JSON Schema. Entre la propuesta y la ejecución hay un *policy engine* determinista
-y testeado que puede permitir, exigir aprobación o denegar. ([ADR-0002](docs/adr/0002-llm-propone-policy-dispone.md))
-
-**2. Cuatro niveles de riesgo.**
-
-| Tier | Qué es | Comportamiento |
-|---|---|---|
-| **T0** | lectura inocua (estado, disco, procesos) | automático |
-| **T1** | escritura reversible (volumen, notas, clipboard) | automático + `jarvis undo` |
-| **T2** | irreversible o sale a internet (abrir web, cerrar ventana) | **te pregunta** |
-| **T3** | privilegiado o destructivo (`sudo`, `nmap`, `dd`) | **confirmación escrita: "APRUEBO"** |
-
-`rm -rf /`, `curl … | sh`, `dd of=/dev/sda` y 17 patrones más están **prohibidos siempre**, incluso con
-`--yes` y aunque subas el umbral de auto-aprobación. Hay un test que lo verifica para todas las
-configuraciones posibles.
-
-**3. Todo queda auditado.** Cada turno, decisión de política, ejecución y aprobación va a un log
-append-only con **cadena de hashes SHA-256**. `jarvis audit --verify` detecta cualquier edición.
-Si alguien borra una fila, se enteran.
-
-**4. Los datos externos no son órdenes.** Todo lo que viene de un archivo, una web, el OCR o el
-portapapeles entra etiquetado como `DATOS_NO_INSTRUCCIONES`. Ningún dato puede subir un tier ni
-saltarse una aprobación.
-
-Y una decisión de coste: **el LLM es el último recurso**, no el primero. Un matcher determinista
-resuelve el **88 %** de las órdenes frecuentes en ~5 ms y con **0 tokens**. ([ADR-0003](docs/adr/0003-cascade-routing.md))
-
----
-
-## Ejemplos de uso
-
-```bash
-# Órdenes directas: resueltas sin gastar un token
-jarvis chat --once "¿cuánta RAM me queda?"
-jarvis chat --once "abre el navegador"
-jarvis chat --once "qué procesos consumen más"
-jarvis chat --once "sube el volumen al 40"
-jarvis chat --once "busca los archivos *.pdf en ~/Documents"
-
-# Conversación abierta: aquí sí entra el modelo
-jarvis chat
-
-# Ejecutar una habilidad suelta, con su nivel de riesgo a la vista
-jarvis skills                       # catálogo completo
-jarvis run system.disk
-jarvis run shell.run command="df -h" reason="comprobar espacio"   # T3: pedirá APRUEBO
-jarvis run shell.run command="ls -la" reason="listar" --dry-run   # solo simula
-
-# Vigilancia proactiva
-jarvis watch --interval 30
-
-# Auditoría
-jarvis audit --tail 20
-jarvis audit --verify               # integridad de la cadena de hashes
-
-# Coste
-jarvis cost
-```
-
----
-
-## Seguridad: úsalo, no lo temas
-
-```bash
-jarvis doctor --security            # comprobaciones de seguridad del entorno
-jarvis policy                       # resumen de la política activa
-jarvis policy shell.run --explain command="ls" reason=x
-```
-
-- **Nunca lo ejecutes como root.** El instalador se niega y `doctor` te avisa si lo haces.
-- **Redacción de secretos** antes de enviar nada a un proveedor (claves, tokens, PEM, JWT).
-- **Rutas protegidas** (`~/.ssh`, `~/.gnupg`, `/etc/shadow`…) ni se leen ni se indexan.
-- **Kill switch**: `/kill` en el chat, `jarvis --kill`, o el endpoint de la API.
-- **Presupuesto duro**: 0,50 USD/día por defecto. Al agotarse, deja de llamar a la nube y sigue
-  funcionando con el matcher local.
-- **Modo offline real**: `jarvis chat --offline` fuerza Ollama + STT/TTS locales. Cero red.
-
-Modelo de amenazas completo: **[docs/03-seguridad-y-permisos.md](docs/03-seguridad-y-permisos.md)**.
-
----
-
-## Versión para Android: JARVIS Pro (`android/`)
-
-En este mismo repositorio vive una **app Android nativa** con el mismo espíritu pero
-otra plataforma: asistente de voz y texto para el teléfono que usa **únicamente la
-API de Gemini** y puede actuar sobre el dispositivo (abrir apps, alarmas, volumen,
-linterna, batería, SMS preparados) con una política de riesgo T0–T3 y confirmación
-en pantalla para todo lo que sale de la app.
-
-Es un proyecto Gradle **independiente**: en Android Studio hay que abrir la carpeta
-**`android/`**, no la raíz del repositorio.
-
-Guía paso a paso (instalar, clonar, abrir, ejecutar y resolver errores):
-**[android/docs/COMPILAR-EN-ANDROID-STUDIO.md](android/docs/COMPILAR-EN-ANDROID-STUDIO.md)**.
-
----
+Cree un repositorio en GitHub, añada estos archivos, revise `git status`, cree un commit y configure su remoto y rama de seguimiento con Git. No incluya `.env`, `venv/` ni `.jarvis-state.json`; están ignorados. La actualización requiere una rama con upstream configurado y acceso al remoto.
 
 ## Instalación
 
-### Linux (Kali, Debian, Ubuntu, derivados)
+Clone el repositorio confiable en su máquina. Desde la carpeta clonada:
 
+**Linux**
 ```bash
-sudo apt install -y python3-venv git
-cd ~                                     # imprescindible si tu shell está en una carpeta borrada
-git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-kali.sh --no-system --dev   # --voice audio, --ui HUD, --all todo
-source .venv/bin/activate
-jarvis doctor
+chmod +x install.sh
+./install.sh
+venv/bin/python main.py
 ```
 
-> **Si ya tienes el repo, no vuelvas a clonarlo.** `git clone` dentro de `~/JarvisM` crea
-> `~/JarvisM/JarvisM` con el código *una capa más abajo*, y entonces `./scripts/install-kali.sh`
-> dice "No existe el fichero o el directorio". Para actualizar se usa `git pull`.
->
-> **Kali y PEP 668:** nunca hagas `pip install` fuera del entorno virtual; Kali bloquea el Python
-> del sistema a propósito. Todo va dentro de `.venv`.
->
-> Guía paso a paso con un guion de pruebas completo: **[docs/04-guia-kali-linux.md](docs/04-guia-kali-linux.md)**.
-
-### macOS
-
-```bash
-brew install python@3.12 git
-git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-macos.sh
-source .venv/bin/activate
-jarvis doctor
+**Windows (CMD)**
+```bat
+install.bat
+venv\Scripts\python.exe main.py
 ```
 
-Concede **Accesibilidad** y **Grabación de pantalla** a tu terminal en
-*Ajustes del Sistema → Privacidad y seguridad* para que pueda controlar ventanas y micrófono.
+Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
 
-### Windows 10/11
-
-```powershell
-winget install Python.Python.3.12 Git.Git
-git clone https://github.com/SamuelPart/JarvisM.git; cd JarvisM
-.\scripts\install-windows.ps1 -All
-.\.venv\Scripts\Activate.ps1
-jarvis doctor
+```dotenv
+GEMINI_API_KEY=su_clave
+GEMINI_MODEL=gemini-2.5-flash
+JARVIS_NAME=Señor
+JARVIS_AUTO_UPDATE=0
 ```
 
-Extras recomendados: `pip install pywin32` (control de ventanas) y `winget install nircmd`
-o `pip install pycaw` (volumen).
+Se puede usar `gemini-2.5-pro` si está disponible para su cuenta. La clave es local y debe protegerse como un secreto; no la distribuya en un ejecutable ni la suba al repositorio. No hay autenticación remota ni proxy incluidos.
 
-### Dependencias de IA
+## Uso y seguridad
 
-Con **una** clave basta. Las dos más fáciles son gratis y no piden tarjeta: Gemini
-(https://aistudio.google.com/app/apikey) y NVIDIA NIM (https://build.nvidia.com,
-~40 RPM sin tope diario, 100+ modelos abiertos). Gemini, además:
+Al iniciar se anuncia «Activando protocolos de seguridad...» y se pide una confirmación inicial, guardada en `.jarvis-state.json`. Borre este archivo para volver a solicitarla. Escriba un mensaje o `/voz` para hablar, `/actualizar` para actualizar y `/salir` para cerrar. Las respuestas se muestran por texto y se intenta reproducirlas por voz. El asistente solicita confirmación separada con `SI` para **cada** herramienta, incluidas lecturas, apertura de sitios y comandos destructivos. Las herramientas se ejecutan con los permisos del usuario; no lo ejecute como administrador. Revise cada comando y ruta: no hay sandbox ni lista negra capaz de hacer seguro un shell arbitrario. Los resultados de herramientas y archivos pueden contener información privada enviada a Gemini, y las instrucciones maliciosas en datos externos siguen siendo un riesgo. La función de búsqueda abre el navegador: no lee ni resume resultados web.
 
-```bash
-cp .env.example .env && chmod 600 .env
-nano .env                     # pega GEMINI_API_KEY=...
-jarvis doctor --providers     # health check real contra cada API
-```
+## Actualizaciones
 
-O **sin ninguna clave ni internet**, 100 % local:
+`/actualizar` o «Jarvis, busca actualizaciones» pide confirmación y realiza `git fetch` del remoto de seguimiento. Se actualiza únicamente mediante fast-forward, sin borrar cambios locales ni resolver divergencias, y se bloquea si el árbol contiene cambios o archivos sin seguimiento. Si cambió `requirements.txt`, instala las dependencias con el Python activo. Tras una actualización correcta reinicia el programa. Si falla pip, el código ya actualizado permanece en disco: repare el entorno manualmente antes de iniciar de nuevo. `.env` y el estado local no se modifican por el actualizador.
 
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:7b-instruct
-jarvis chat --provider ollama
-```
-
-Sin clave y sin Ollama también funciona: `jarvis chat --provider echo` ejecuta órdenes directas
-reales (estado del sistema, apps, archivos, hora) para que puedas probar toda la tubería.
-Coste y estrategia de modelos: **[docs/05-proveedores-ia.md](docs/05-proveedores-ia.md)**.
-
----
-
-## Cómo está construido
-
-```
-jarvis/
-├── cli.py             Typer + Rich: chat, run, doctor, skills, policy, audit, watch, serve
-├── config/            settings por capas (TOML→env→CLI) + personas y system prompt
-├── core/              orquestador (bucle del agente) · router multi-LLM · matcher N0 · memoria
-├── providers/         openai · anthropic · gemini · nvidia · ollama · echo (contrato único sobre httpx)
-├── skills/            27 habilidades declarativas con tier de riesgo y JSON Schema
-├── platforms/         OSAdapter: linux · windows · macos (único sitio con subprocess)
-├── safety/            policy engine (tiers, denylist, jaula, presupuesto) · audit con hash chain
-├── proactive/         watchdog: monitores puros + cooldown + motor de sugerencias
-├── voice/             Fase 3 (dependencias opcionales; sin ellas todo sigue funcionando)
-├── server/            FastAPI + WebSocket para el HUD (Fase 6)
-└── ui/                TUI, aprobación interactiva, badges de riesgo
-```
-
-**Cinco capas, contratos claros:** percepción → cognición → gobernanza → ejecución → presentación.
-Cada capa se testea por separado inyectando dobles (`OSAdapter` falso, proveedor simulado), así que
-la suite corre **sin tocar la red ni tu sistema real**. Arquitectura detallada:
-**[docs/01-arquitectura.md](docs/01-arquitectura.md)**.
-
-**Añadir una habilidad** = una clase con `name`, `description`, `parameters` (JSON Schema), `tier` y
-`execute()`. Cero cambios en el core:
-
-```python
-class MySkill(Skill):
-    name = "mio.hacer_algo"
-    description = "Hace algo. Úsalo cuando el usuario pida X."
-    parameters = {
-        "type": "object",
-        "properties": {"param": {"type": "string"}},
-        "required": ["param"],
-        "additionalProperties": False,
-    }
-    tier = RiskTier.T1
-    undoable = True
-
-    def execute(self, param: str) -> SkillResult:
-        return SkillResult.success(f"Hecho: {param}")
-```
-
----
-
-## Desarrollo
-
-```bash
-pip install -e ".[dev]"
-pytest -q                              # 322 tests en ~4 s, sin red y sin tocar tu sistema
-pytest --cov=jarvis --cov-report=term
-ruff check . && ruff format --check . && mypy jarvis
-pre-commit install                     # o pre-commit run --all-files
-```
-
-La suite verifica, además de la funcionalidad, los **invariantes de arquitectura**
-(`tests/test_architecture.py`):
-
-- `subprocess` solo existe en `platforms/` y `skills/shell.py`.
-- no hay `exec`, `eval` ni `os.system` en el core;
-- ningún nombre de modelo está hardcodeado: todos viven en `config.default.toml`;
-- no hay claves ni rutas de usuario en el código;
-- las llamadas a APIs siempre son por HTTPS.
-
-CI en matriz de 3 sistemas operativos + job específico de invariantes de seguridad +
-instalación limpia desde los scripts reales. El pipeline está en **`docs/ci/ci.yml`**
-(fuera de `.github/` a propósito, para que una integración sin permisos de `workflow`
-no lo pierda): para activarlo, `mkdir -p .github/workflows && cp docs/ci/ci.yml .github/workflows/`
-
----
-
-## Estado y honestidad sobre límites
-
-Esto es un **MVP de las Fases 0–2**, no un producto terminado. Es honesto con lo que no hace:
-
-- La **voz es Fase 3**: hoy se le habla por texto.
-- El watchdog cubre disco, RAM, swap, carga, batería y temperatura. Faltan updates, servicios,
-  red, logs SMART y caches (Fase 4).
-- **macOS y Windows tienen adapters implementados pero sin verificar en hardware real** por el
-  autor; en Linux está probado a fondo. Los tests de esos adapters se ejecutan en la matriz de CI,
-  pero con datos simulados. Si encuentras algo, es un bug prioritario.
-- La memoria es de sesión; la semántica con embeddings es Fase 5.
-- El audio y el HUD no están implementados todavía.
-
-Roadmap con lo que viene: **[docs/02-roadmap.md](docs/02-roadmap.md)** ·
-Catálogo de mejoras priorizadas: **[docs/06-backlog-ideas.md](docs/06-backlog-ideas.md)**.
-
----
-
-## Licencia
-
-MIT. Úsalo sobre **sistemas propios o con autorización escrita explícita**. El proyecto no incluye
-ni distribuye exploits, payloads ni credenciales, y las capacidades de red y escaneo quedan
-desactivadas por defecto.
+Para comprobar automáticamente al iniciar, configure `JARVIS_AUTO_UPDATE=1`. Esto permite ejecutar código y dependencias nuevos del remoto sin confirmación adicional: úselo solo con repositorios, ramas y mantenedores de plena confianza. Proteja la rama y revise las dependencias; Git no verifica por sí solo que el código sea seguro. Se necesita red y autenticación Git ya configurada. El historial de conversación en memoria se pierde al reiniciar.
