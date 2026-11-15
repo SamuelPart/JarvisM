@@ -9,10 +9,9 @@ import threading
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
-from PyQt6.QtWidgets import (QApplication, QCheckBox,
-                             QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-                             QPushButton, QVBoxLayout,
-                             QWidget)
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
+                             QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
+                             QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget)
 
 from brain import Brain
 from main import ROOT, STATE
@@ -114,6 +113,66 @@ class VoiceWorker(QObject):
             self.finished.emit()
 
 
+class ChatWorker(QObject):
+    result = pyqtSignal(str)
+    error = pyqtSignal(str)
+    approval = pyqtSignal(str, object)
+    finished = pyqtSignal()
+
+    def __init__(self, brain, text):
+        super().__init__()
+        self.brain, self.text = brain, text
+        self.answer = False
+        self.ready = threading.Event()
+
+    def ask_approval(self, name, args):
+        self.answer = False
+        self.ready.clear()
+        self.approval.emit(name, args)
+        self.ready.wait()
+        return self.answer
+
+    def resolve_approval(self, approved):
+        self.answer = approved
+        self.ready.set()
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            self.brain.approve = self.ask_approval
+            self.result.emit(self.brain.ask(self.text))
+        except Exception as exc:
+            self.error.emit(f'No se pudo completar la solicitud ({type(exc).__name__}).')
+        finally:
+            self.finished.emit()
+
+
+class ApprovalDialog(QDialog):
+    def __init__(self, name, args, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Confirmar acción')
+        self.resize(560, 400)
+        layout = QVBoxLayout(self)
+        heading = QLabel('JARVIS solicita permiso')
+        heading.setObjectName('dialogTitle')
+        layout.addWidget(heading)
+        info = QLabel('Revisa la acción completa. Se ejecutará con tus permisos.')
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        details = QPlainTextEdit()
+        details.setReadOnly(True)
+        details.setPlainText(name + '\n\n' + json.dumps(args, ensure_ascii=False, indent=2, default=str))
+        layout.addWidget(details)
+        buttons = QDialogButtonBox()
+        deny = buttons.addButton('Rechazar', QDialogButtonBox.ButtonRole.RejectRole)
+        accept = buttons.addButton('Autorizar', QDialogButtonBox.ButtonRole.AcceptRole)
+        accept.setObjectName('approveButton')
+        deny.setDefault(True)
+        deny.clicked.connect(self.reject)
+        accept.clicked.connect(self.accept)
+        layout.addWidget(buttons)
+
+
 class JarvisWindow(QMainWindow):
     def __init__(self, brain, voice):
         super().__init__()
@@ -153,22 +212,90 @@ class JarvisWindow(QMainWindow):
         self.voice_signals.activity.connect(self.core.set_speaking)
         self.voice.on_activity = self.voice_signals.activity.emit
 
-        layout.addStretch(1)
         self.status = QLabel('Micrófono apagado')
         self.status.setObjectName('statusBadge')
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
+
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs, 1)
+        chat = QWidget()
+        chat_layout = QVBoxLayout(chat)
+        self.history = QPlainTextEdit()
+        self.history.setReadOnly(True)
+        self.history.setPlaceholderText('Tu conversación con JARVIS aparecerá aquí.')
+        chat_layout.addWidget(self.history, 1)
+        composer = QHBoxLayout()
+        self.input = QLineEdit()
+        self.input.setPlaceholderText('Escribe tu mensaje…')
+        self.input.returnPressed.connect(self.submit_chat)
+        composer.addWidget(self.input, 1)
+        self.send = QPushButton('Enviar')
+        self.send.setObjectName('send')
+        self.send.clicked.connect(self.submit_chat)
+        composer.addWidget(self.send)
+        chat_layout.addLayout(composer)
+        self.chat_audio = QCheckBox('Leer respuestas en voz alta')
+        self.chat_audio.setChecked(True)
+        chat_layout.addWidget(self.chat_audio)
+        self.tabs.addTab(chat, 'Chat')
+
+        voice_tab = QWidget()
+        voice_layout = QVBoxLayout(voice_tab)
+        voice_layout.addStretch(1)
         self.mic = QPushButton('Activar micrófono')
         self.mic.setObjectName('send')
         self.mic.setMinimumHeight(60)
         self.mic.clicked.connect(self.toggle_microphone)
-        layout.addWidget(self.mic)
+        voice_layout.addWidget(self.mic)
         info = QLabel('Di “Jarvis” para empezar y “autorizo” para aprobar una acción.')
         info.setObjectName('footer')
         info.setWordWrap(True)
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(info)
-        layout.addStretch(1)
+        voice_layout.addWidget(info)
+        voice_layout.addStretch(1)
+        self.tabs.addTab(voice_tab, 'Voz')
+
+    def append_chat(self, author, text):
+        self.history.appendPlainText(f'{author}: {text}\n')
+
+    def submit_chat(self):
+        text = self.input.text().strip()
+        if not text or self.thread is not None:
+            return
+        self.input.clear()
+        self.append_chat('Tú', text)
+        self.status.setText('JARVIS está pensando…')
+        self.send.setEnabled(False)
+        self.tabs.tabBar().setEnabled(False)
+        self.thread = QThread(self)
+        self.worker = ChatWorker(self.brain, text)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.approval.connect(self.request_chat_approval)
+        self.worker.result.connect(self.chat_result)
+        self.worker.error.connect(self.chat_error)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.cleanup)
+        self.thread.start()
+
+    @pyqtSlot(str, object)
+    def request_chat_approval(self, name, args):
+        self.status.setText('Esperando tu autorización…')
+        approved = ApprovalDialog(name, args, self).exec() == QDialog.DialogCode.Accepted
+        self.worker.resolve_approval(approved)
+        self.status.setText('JARVIS está trabajando…')
+
+    @pyqtSlot(str)
+    def chat_result(self, text):
+        self.append_chat('JARVIS', text)
+        if self.chat_audio.isChecked():
+            self.voice.speak(text)
+
+    @pyqtSlot(str)
+    def chat_error(self, error):
+        self.append_chat('Sistema', error)
 
     def toggle_pin(self, checked):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked)
@@ -189,6 +316,7 @@ class JarvisWindow(QMainWindow):
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.cleanup)
         self.mic.setText('Apagar micrófono')
+        self.tabs.tabBar().setEnabled(False)
         self.thread.start()
 
     @pyqtSlot()
@@ -200,13 +328,19 @@ class JarvisWindow(QMainWindow):
             self.status.setText('Micrófono apagado')
         self.mic.setText('Activar micrófono')
         self.mic.setEnabled(True)
+        self.send.setEnabled(True)
+        self.tabs.tabBar().setEnabled(True)
 
     def closeEvent(self, event):
         if self.thread is not None:
-            self.worker.session.stop()
-            self.mic.setEnabled(False)
-            self.status.setText('Deteniendo micrófono…')
-            QMessageBox.information(self, 'JARVIS', 'El micrófono se está deteniendo. Espera un momento y vuelve a cerrar la ventana.')
+            if isinstance(self.worker, VoiceWorker):
+                self.worker.session.stop()
+                self.mic.setEnabled(False)
+                self.status.setText('Deteniendo micrófono…')
+                message = 'El micrófono se está deteniendo. Espera y vuelve a cerrar la ventana.'
+            else:
+                message = 'Espera a que termine la solicitud antes de cerrar la ventana.'
+            QMessageBox.information(self, 'JARVIS', message)
             event.ignore()
         else:
             self.voice.on_activity = None
@@ -223,7 +357,7 @@ QLabel#footer { font-size: 11px; }
 QLabel#statusBadge { color: #74d8c4; font-size: 11px; font-weight: 700; }
 QLabel#model { color: #8296ab; font-size: 11px; }
 QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
-QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
+QLineEdit, QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
 QTextBrowser { border: none; line-height: 1.6; }
 QPushButton { border: 1px solid #31475b; border-radius: 9px; padding: 10px 16px; background: #1c2b3b; }
 QPushButton:hover { background: #294154; }
