@@ -426,7 +426,7 @@ def test_scoped_permission_cannot_allow_terminal(tmp_path, monkeypatch):
     assert not permissions.preapproved('play_music')
 
 
-def test_music_player_opens_first_result_in_browser(monkeypatch, tmp_path):
+def test_music_player_opens_verified_result(monkeypatch, tmp_path):
     import sys
     import music_player
     class Downloader:
@@ -436,29 +436,26 @@ def test_music_player_opens_first_result_in_browser(monkeypatch, tmp_path):
         def extract_info(self, query, download):
             assert query == 'ytsearch1:tema' and not download
             return {'entries': [{'title': 'Tema', 'id': 'dfojvebIwJc'}]}
-    opened = []
+    calls = []
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
     monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.webbrowser, 'open', lambda url, new: opened.append((url, new)) or True)
-    player = music_player.MusicPlayer()
-    result = player.play('tema')
-    assert result['opened'] and opened == [('https://www.youtube.com/watch?v=dfojvebIwJc', 2)]
-    assert 'no se ha confirmado' in result['note'].lower()
-    assert 'navegador' in player.stop()['note']
+    monkeypatch.setattr(music_player.browser_music, 'command', lambda action, **kwargs: calls.append((action, kwargs)) or {'opened': True, 'playing': True})
+    result = music_player.MusicPlayer().play('tema')
+    assert result['playing'] and calls == [('open', {'video_id': 'dfojvebIwJc', 'start': True})]
+    assert result['url'] == 'https://www.youtube.com/watch?v=dfojvebIwJc'
 
 
-def test_music_browser_failure_is_reported(monkeypatch, tmp_path):
+def test_music_control_preserves_failure(monkeypatch, tmp_path):
     import sys
     import music_player
     class Downloader:
         def __init__(self, options): pass
         def __enter__(self): return self
         def __exit__(self, *args): pass
-        def extract_info(self, *args, **kwargs):
-            return {'entries': [{'id': 'dfojvebIwJc', 'title': 'Tema'}]}
+        def extract_info(self, *args, **kwargs): return {'entries': [{'id': 'dfojvebIwJc', 'title': 'Tema'}]}
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
     monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.webbrowser, 'open', lambda *args, **kwargs: False)
+    monkeypatch.setattr(music_player.browser_music, 'command', lambda *args, **kwargs: {'opened': False, 'error': 'No se pudo abrir'})
     assert not music_player.MusicPlayer().play('tema')['opened']
 
 
@@ -836,44 +833,53 @@ def test_old_elevenlabs_mode_uses_edge(monkeypatch):
     assert calls == ['Hola']
 
 
-def test_browser_music_pause_checks_unique_playing_and_confirms(monkeypatch):
+
+def test_managed_browser_pause_does_not_touch_other_browser(monkeypatch):
     import music_player
-    monkeypatch.setattr(music_player.platform, 'system', lambda: 'Linux')
-    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/playerctl')
-    calls, status = [], ['Playing', 'Paused']
-    def run(args, **kwargs):
-        calls.append(args)
-        if args[-1] == '--list-all': return SimpleNamespace(returncode=0, stdout='chromium.instance1\n')
-        if args[-1] == 'status': return SimpleNamespace(returncode=0, stdout=status.pop(0))
-        if args[-1] == 'pause': return SimpleNamespace(returncode=0, stdout='')
-        pytest.fail('Comando inesperado')
-    monkeypatch.setattr(music_player.subprocess, 'run', run)
+    commands = []
+    monkeypatch.setattr(music_player.browser_music, 'command', lambda action: commands.append(action) or {'paused': True})
     assert music_player.MusicPlayer().stop()['paused']
-    assert calls[2] == ['/usr/bin/playerctl', '--player=chromium.instance1', 'pause']
-    assert not any('play-pause' in args for args in calls)
+    assert commands == ['pause']
 
 
-def test_browser_pause_refuses_multiple_playing(monkeypatch):
-    import music_player
-    monkeypatch.setattr(music_player.platform, 'system', lambda: 'Linux')
-    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/playerctl')
-    def run(args, **kwargs):
-        if args[-1] == '--list-all': return SimpleNamespace(returncode=0, stdout='chromium.a\nfirefox.b\n')
-        if args[-1] == 'status': return SimpleNamespace(returncode=0, stdout='Playing')
-        pytest.fail('No debe pausar si hay varias sesiones activas')
-    monkeypatch.setattr(music_player.subprocess, 'run', run)
-    result = music_player.MusicPlayer().stop()
-    assert not result['paused'] and 'varios' in result['error']
+def test_managed_browser_does_not_report_unconfirmed_pause(monkeypatch):
+    import browser_music_worker
+    music = browser_music_worker.BrowserMusic()
+    music.browser = SimpleNamespace(is_connected=lambda: True)
+    music.page = SimpleNamespace(is_closed=lambda: False, evaluate=lambda script: False)
+    assert not music.pause()['paused']
 
 
-def test_browser_pause_does_not_report_unconfirmed_success(monkeypatch):
-    import music_player
-    monkeypatch.setattr(music_player.platform, 'system', lambda: 'Linux')
-    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/playerctl')
-    def run(args, **kwargs):
-        if args[-1] == '--list-all': return SimpleNamespace(returncode=0, stdout='chrome.a\n')
-        if args[-1] == 'pause': return SimpleNamespace(returncode=0, stdout='')
-        return SimpleNamespace(returncode=0, stdout='Playing')
-    monkeypatch.setattr(music_player.subprocess, 'run', run)
-    result = music_player.MusicPlayer().stop()
-    assert not result['paused'] and 'confirmar' in result['error']
+def test_managed_browser_rejects_invalid_video_id():
+    from browser_music_worker import BrowserMusic
+    result = BrowserMusic().open('../malicious')
+    assert not result['opened']
+
+
+def test_managed_browser_checks_video_advances_and_ads(monkeypatch):
+    from browser_music_worker import BrowserMusic
+    class Page:
+        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
+        def is_closed(self): return False
+        def goto(self, *args, **kwargs): pass
+        def wait_for_selector(self, *args, **kwargs): pass
+        def evaluate(self, *args): pass
+        def wait_for_function(self, *args, **kwargs): pass
+        def locator(self, selector): return SimpleNamespace(count=lambda: 1)
+    music = BrowserMusic()
+    music.page = Page()
+    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
+    result = music.open('dfojvebIwJc')
+    assert result['opened'] and not result['playing'] and 'anuncio' in result['note']
+
+
+def test_managed_browser_does_not_confirm_redirect(monkeypatch):
+    from browser_music_worker import BrowserMusic
+    class Page:
+        url = 'https://consent.youtube.com/'
+        def is_closed(self): return False
+        def goto(self, *args, **kwargs): pass
+    music = BrowserMusic()
+    music.page = Page()
+    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
+    assert not music.open('dfojvebIwJc')['opened']

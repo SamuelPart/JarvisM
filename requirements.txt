@@ -12,3 +12,4 @@ requests>=2.31,<3
 ddgs>=9,<10
 yt-dlp>=2025.3.31
 google-auth-oauthlib>=1.2,<2
+playwright>=1.49,<2

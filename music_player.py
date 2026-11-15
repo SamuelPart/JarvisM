@@ -2,12 +2,10 @@
 import json
 import os
 import re
-import shutil
-import platform
 from pathlib import Path
 import psutil
 import subprocess
-import webbrowser
+import browser_music
 
 
 STATE = Path(__file__).resolve().parent / '.jarvis-music.json'
@@ -40,14 +38,10 @@ class MusicPlayer:
         prior = self._stop_legacy()
         if prior.get('error'):
             return {'started': False, 'error': prior['error']}
-        try:
-            opened = webbrowser.open(url, new=2)
-        except (OSError, webbrowser.Error):
-            opened = False
-        if not opened:
-            return {'opened': False, 'error': 'No se pudo abrir el navegador.', 'url': url}
-        return {'opened': True, 'title': title, 'url': url,
-                'note': 'Se solicitó abrir YouTube en el navegador. No se ha confirmado la reproducción; el navegador puede exigir pulsar reproducir. Para pausarla puedes pedirlo a JARVIS si el navegador expone controles multimedia.'}
+        result = browser_music.command('open', video_id=video_id, start=True)
+        result['title'] = title
+        result['url'] = url
+        return result
 
     def _clear_matching(self, pid):
         try:
@@ -57,51 +51,13 @@ class MusicPlayer:
             pass
 
     def stop(self):
-        """Pause one active browser media session, without toggle or guessing."""
-        if platform.system() != 'Linux':
+        result = browser_music.command('pause')
+        if result.get('available') is False:
             legacy = self._stop_legacy()
             if legacy.get('stopped') or legacy.get('error'):
                 return legacy
-            return {'paused': False, 'note': 'La pausa automática del navegador solo está disponible en Linux; pausa la pestaña manualmente.'}
-        playerctl = shutil.which('playerctl')
-        if not playerctl:
-            legacy = self._stop_legacy()
-            if legacy.get('stopped') or legacy.get('error'):
-                return legacy
-            return {'paused': False, 'note': 'Falta playerctl. Instálalo para intentar pausar el navegador, o pausa la pestaña manualmente.'}
-        try:
-            listing = subprocess.run([playerctl, '--list-all'], capture_output=True, text=True, timeout=3, check=False)
-            if listing.returncode and listing.stdout.strip():
-                return {'paused': False, 'error': 'No se pudieron consultar los reproductores multimedia.'}
-            names = [n for n in listing.stdout.splitlines()
-                     if re.fullmatch(r'[A-Za-z0-9_.-]{1,200}', n)
-                     and n.lower().startswith(('chromium', 'chrome', 'firefox', 'brave', 'microsoft-edge'))]
-            active, paused = [], []
-            for name in names:
-                status = subprocess.run([playerctl, '--player=' + name, 'status'], capture_output=True, text=True, timeout=3, check=False)
-                if status.returncode:
-                    return {'paused': False, 'error': 'No se pudo comprobar el estado del navegador.'}
-                if status.stdout.strip() == 'Playing': active.append(name)
-                elif status.stdout.strip() == 'Paused': paused.append(name)
-            if len(active) > 1:
-                return {'paused': False, 'error': 'Hay varios navegadores reproduciendo audio; pausa la pestaña deseada manualmente.'}
-            if not active:
-                legacy = self._stop_legacy()
-                if legacy.get('stopped') or legacy.get('error'):
-                    return legacy
-                if len(paused) == 1:
-                    return {'paused': True, 'already_paused': True, 'note': 'El navegador ya indica que está en pausa.'}
-                return {'paused': False, 'note': 'No se encontró una sesión activa del navegador; pausa la pestaña manualmente.'}
-            name = active[0]
-            result = subprocess.run([playerctl, '--player=' + name, 'pause'], capture_output=True, text=True, timeout=3, check=False)
-            if result.returncode:
-                return {'paused': False, 'error': 'No se pudo pausar el navegador; pausa la pestaña manualmente.'}
-            status = subprocess.run([playerctl, '--player=' + name, 'status'], capture_output=True, text=True, timeout=3, check=False)
-            if not status.returncode and status.stdout.strip() in ('Paused', 'Stopped'):
-                return {'paused': True, 'note': 'El navegador informa que su reproducción se pausó. Puede tratarse de otra pestaña.'}
-            return {'paused': False, 'error': 'Se solicitó la pausa, pero no se pudo confirmar; revisa el navegador.'}
-        except (OSError, subprocess.TimeoutExpired):
-            return {'paused': False, 'error': 'No se pudieron consultar o pausar los controles multimedia.'}
+            return {'paused': False, 'note': 'No hay una ventana musical controlada activa.'}
+        return result
 
     def _stop_legacy(self):
         if self.process is not None:
