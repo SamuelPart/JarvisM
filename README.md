@@ -65,7 +65,7 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central es un rostro de partículas dibujado mediante Qt, inspirado en la referencia, sin GIF ni descarga externa. Parpadea y cambia sus expresiones según el estado; al hablar mueve la boca y las partículas. La animación es decorativa y no realiza sincronización labial real con el audio.
+El núcleo central es un rostro de partículas dibujado mediante Qt a partir de puntos extraídos de la imagen de referencia proporcionada, sin GIF ni descarga externa. No utiliza líneas para dibujar sus facciones. Parpadea y cambia sus expresiones según el estado; al hablar mueve la boca y las partículas. La animación es decorativa y no realiza sincronización labial real con el audio.
 
 La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
@@ -93,7 +93,7 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 
 ### Núcleo expresivo
 
-El rostro indica el estado: expresión tranquila en espera; cejas diferentes al procesar una solicitud; boca y partículas en movimiento durante la voz; y tono ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
+El rostro indica el estado: expresión tranquila en espera; movimientos sutiles al procesar una solicitud; boca y partículas en movimiento durante la voz; y tono ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
 
 ### Modo compacto flotante
 

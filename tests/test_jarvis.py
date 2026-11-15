@@ -887,12 +887,11 @@ def test_managed_browser_does_not_confirm_redirect(monkeypatch):
 
 def test_particle_face_geometry_is_deterministic_and_finite():
     import math
-    from face_particles import face_points, ambient_points
+    from face_particles import face_points
     face = face_points()
-    assert len(face) == 1900 and face == face_points()
-    assert len(ambient_points()) == 135
-    assert all(all(math.isfinite(n) for n in point) for point in face)
-    assert all(-76 <= p[0] <= 76 and -103 <= p[1] <= 103 for p in face)
+    assert len(face) > 2000 and face == face_points()
+    assert all(len(point) == 5 and all(math.isfinite(n) for n in point) for point in face)
+    assert all(-145 <= p[0] <= 145 and -128 <= p[1] <= 128 for p in face)
 
 
 def test_particle_face_speaking_and_reduced_motion():

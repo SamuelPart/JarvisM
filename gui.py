@@ -24,7 +24,7 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
-from face_particles import face_points, ambient_points, motion
+from face_particles import face_points, motion, deform
 from agenda import Agenda
 from approval import is_approved
 from permissions import read_state, set_network_permission, set_gmail_permission
@@ -49,7 +49,6 @@ class CoreAnimation(QWidget):
         self.mode = 'idle'
         self.phase = 0.0
         self.face = face_points()
-        self.ambient = ambient_points()
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
@@ -89,47 +88,14 @@ class CoreAnimation(QWidget):
             painter.setBrush(QColor(*tint, max(0, min(255, int(alpha)))))
             painter.drawEllipse(QPointF(x, y), size, size)
 
-        for x, y, light, offset, size in self.ambient:
-            flicker = 0.8 + 0.2 * math.sin(self.phase * 0.8 + offset)
-            dot(x + m['sway'] * 0.4, y, size * 0.8, 95 * light * flicker)
-        energy = 1.0 if self.mode != 'speaking' else 1.0 + 0.035 * math.sin(self.phase * 3.1)
         for x, y, light, offset, size in self.face:
-            drift = 0.0
+            px, py = deform(x, y, m)
+            # Micro-movement preserves the reference while making the whole cloud feel alive.
             if self.preferences['animation'] != 'desactivada':
-                drift = (0.7 if self.mode == 'speaking' else 0.25) * math.sin(self.phase * 1.6 + offset)
-            px = x * energy + m['sway'] + drift
-            py = y + drift * 0.45
-            dot(px, py, size * 0.65, 62 + 168 * light)
-
-        # Dotted eyebrows, eye contours and pupils; a periodic blink closes both eyes.
-        for side in (-1, 1):
-            center = side * 29 + m['sway']
-            for i in range(29):
-                t = i / 28 * 2 - 1
-                brow_y = -41 - 4 * (1 - t * t) + m['brow'] + side * t * (2 if self.mode == 'approval' else 0)
-                dot(center + t * 18, brow_y, 0.75, 210)
-                arch = math.sqrt(max(0.0, 1 - t * t)) * 6 * m['blink']
-                dot(center + t * 16, -25 - arch, 0.65, 230)
-                dot(center + t * 16, -25 + arch * 0.72, 0.6, 190)
-            for i in range(15):
-                angle = math.tau * i / 15
-                dot(center + 3.5 * math.cos(angle), -25 + 3.5 * math.sin(angle) * m['blink'], 0.7, 235)
-
-        # Nose bridge and nostrils remain defined even as the mouth moves.
-        for i in range(26):
-            t = i / 25
-            dot(m['sway'] + 4 * math.sin(t * 3), -20 + t * 48, 0.6, 125 + 75 * t)
-        for side in (-1, 1):
-            for i in range(12):
-                t = i / 11
-                dot(m['sway'] + side * (4 + t * 9), 27 + 2 * math.sin(t * math.pi), 0.65, 200)
-
-        for i in range(45):
-            t = i / 44 * 2 - 1
-            curve = math.sqrt(max(0.0, 1 - t * t))
-            x = m['sway'] + t * 23
-            dot(x, 51 - curve * (2 + m['mouth'] * 0.35), 0.7, 235)
-            dot(x, 51 + curve * m['mouth'], 0.72, 215)
+                strength = 0.7 if self.mode == 'speaking' else 0.16
+                px += strength * math.sin(self.phase * 1.6 + offset)
+                py += strength * 0.55 * math.cos(self.phase * 1.3 + offset)
+            dot(px, py, size, 150 + 100 * light)
         painter.end()
 
 
