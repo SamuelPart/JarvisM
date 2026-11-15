@@ -901,3 +901,51 @@ def test_sphere_surface_is_deterministic_and_moves_in_all_states():
 def test_disabled_animation_setting_migrates_to_reduced():
     from ui_settings import normalize
     assert normalize({'animation': 'desactivada'})['animation'] == 'reducida'
+
+
+def test_browser_worker_retries_once_after_window_closed(monkeypatch):
+    from browser_music_worker import BrowserMusic
+    music = BrowserMusic()
+    calls = []
+    resets = []
+    def action(video_id):
+        calls.append(video_id)
+        if len(calls) == 1:
+            raise RuntimeError('Target page, context or browser has been closed')
+        return {'opened': True, 'playing': True}
+    monkeypatch.setattr(music, '_open_once', action)
+    monkeypatch.setattr(music, '_reset', lambda: resets.append(True))
+    assert music.open('dfojvebIwJc')['playing']
+    assert len(calls) == 2 and resets == [True]
+
+
+def test_browser_errors_are_safe_and_distinguish_missing_chromium():
+    from browser_music_worker import safe_browser_error
+    message = safe_browser_error(Exception("Executable doesn't exist: secret-path"))
+    assert 'playwright install chromium' in message and 'secret-path' not in message
+    assert 'DNS' in safe_browser_error(Exception('net::ERR_NAME_NOT_RESOLVED secret'))
+    assert 'secret' not in safe_browser_error(Exception('secret unknown error'))
+
+
+def test_browser_worker_can_recreate_page_when_context_closed(monkeypatch):
+    from browser_music_worker import BrowserMusic
+    music = BrowserMusic()
+    events = []
+    class Page:
+        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
+        def is_closed(self): return False
+        def goto(self, *args, **kwargs): events.append('goto')
+        def wait_for_selector(self, *args, **kwargs): pass
+        def evaluate(self, *args): pass
+        def wait_for_function(self, *args, **kwargs): pass
+        def locator(self, selector): return SimpleNamespace(count=lambda: 0)
+    class Context:
+        def new_page(self): events.append('new_page'); return Page()
+    class Browser:
+        contexts = []
+        def new_context(self): events.append('new_context'); return Context()
+    music.browser = Browser()
+    music.page = SimpleNamespace(is_closed=lambda: True)
+    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
+    assert music.open('dfojvebIwJc')['playing']
+    assert events == ['new_context', 'new_page', 'goto']

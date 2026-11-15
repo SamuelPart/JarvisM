@@ -8,6 +8,32 @@ from urllib.parse import parse_qs, urlsplit
 from browser_music import socket_path
 
 
+def closed_error(exc):
+    text = str(exc).lower()
+    return (type(exc).__name__ == 'TargetClosedError' or
+            'target page, context or browser has been closed' in text or
+            'browser has been closed' in text or 'connection closed' in text)
+
+
+def safe_browser_error(exc):
+    text = str(exc).lower()
+    if isinstance(exc, ModuleNotFoundError) and (getattr(exc, 'name', '') or '').startswith('playwright'):
+        return 'Falta Playwright en el entorno de JARVIS; reinstala las dependencias de requirements.txt.'
+    if "executable doesn't exist" in text or 'executable does not exist' in text or 'playwright install' in text:
+        return 'Falta Chromium de Playwright; ejecuta venv/bin/python -m playwright install chromium.'
+    if 'missing dependencies' in text or 'error while loading shared libraries' in text or 'libnspr4' in text:
+        return 'Faltan bibliotecas del sistema para Chromium de Playwright.'
+    if 'missing x server' in text or 'no display' in text or 'without having a xserver' in text:
+        return 'Chromium no encontró una sesión gráfica; abre JARVIS desde tu escritorio.'
+    if 'err_name_not_resolved' in text or 'err_internet_disconnected' in text or 'err_connection' in text:
+        return 'Chromium no pudo conectar con YouTube; revisa la conexión y el DNS.'
+    if 'timeout' in text:
+        return 'YouTube o Chromium tardó demasiado en responder.'
+    if closed_error(exc):
+        return 'La ventana de Chromium se cerró antes de completar la solicitud.'
+    return 'No se pudo iniciar o utilizar Chromium; revisa la instalación y la sesión gráfica.'
+
+
 class BrowserMusic:
     def __init__(self):
         self.engine = None
@@ -17,6 +43,7 @@ class BrowserMusic:
     def _ensure_browser(self):
         if self.browser and self.browser.is_connected():
             return
+        self._reset()
         from playwright.sync_api import sync_playwright
         self.engine = sync_playwright().start()
         try:
@@ -24,17 +51,28 @@ class BrowserMusic:
             context = self.browser.new_context()
             self.page = context.new_page()
         except Exception:
-            self.engine.stop()
-            self.engine = None
+            self._reset()
             raise
 
     def open(self, video_id):
+        for attempt in range(2):
+            try:
+                return self._open_once(video_id)
+            except Exception as exc:
+                if attempt == 0 and closed_error(exc):
+                    self._reset()
+                    continue
+                return {'opened': False, 'error': safe_browser_error(exc)}
+
+    def _open_once(self, video_id):
         if not isinstance(video_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
             return {'opened': False, 'error': 'ID de video inválido.'}
         try:
             self._ensure_browser()
             if self.page.is_closed():
-                self.page = self.browser.contexts[0].new_page()
+                contexts = self.browser.contexts
+                context = contexts[0] if contexts else self.browser.new_context()
+                self.page = context.new_page()
             self.page.goto('https://www.youtube.com/watch?v=' + video_id, wait_until='domcontentloaded', timeout=30000)
             parsed = urlsplit(self.page.url)
             if parsed.hostname not in ('www.youtube.com', 'youtube.com', 'm.youtube.com') or parse_qs(parsed.query).get('v') != [video_id]:
@@ -47,10 +85,12 @@ class BrowserMusic:
                 if is_ad:
                     return {'opened': True, 'playing': False, 'note': 'La página abrió pero se está mostrando un anuncio; no se confirmó la canción.'}
                 return {'opened': True, 'playing': True, 'note': 'El reproductor de la página avanza; no se puede verificar el sonido del dispositivo.'}
-            except Exception:
+            except Exception as exc:
+                if closed_error(exc):
+                    raise
                 return {'opened': True, 'playing': False, 'note': 'La página abrió, pero no se pudo confirmar la reproducción. Revisa la ventana.'}
         except Exception:
-            return {'opened': False, 'error': 'No se pudo abrir YouTube en la ventana controlada. Comprueba Playwright, Chromium y la conexión.'}
+            raise
 
     def pause(self):
         try:
@@ -63,18 +103,28 @@ class BrowserMusic:
         except Exception:
             return {'paused': False, 'error': 'No se pudo confirmar la pausa en la ventana musical.'}
 
-    def close(self):
+    def _reset(self):
         try:
             if self.browser:
                 self.browser.close()
-        finally:
+        except Exception:
+            pass
+        try:
             if self.engine:
                 self.engine.stop()
+        except Exception:
+            pass
+        self.browser = None
+        self.page = None
+        self.engine = None
+
+    def close(self):
+        self._reset()
 
 
 def main():
     path = socket_path()
-    lock_path = path.parent / 'worker.lock'
+    lock_path = path.parent / 'worker-v2.lock'
     lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
     with os.fdopen(lock_fd, 'w') as lock:
         try:
@@ -90,8 +140,6 @@ def main():
         music = BrowserMusic()
         try:
             while True:
-                if music.browser and not music.browser.is_connected():
-                    break
                 try:
                     conn, _ = server.accept()
                 except socket.timeout:
