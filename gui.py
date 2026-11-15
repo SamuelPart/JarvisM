@@ -27,7 +27,7 @@ from core_state import CoreState
 from agenda import Agenda
 from permissions import read_state, set_network_permission
 from text_links import markup, speech_text
-from local_vision import analyze as analyze_local_image, read_image, validate_image, VisionError
+from nvidia_vision import analyze as analyze_image, read_image, validate_image, VisionError
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
@@ -425,7 +425,7 @@ class AgendaDialog(QDialog):
             QMessageBox.warning(self, 'Agenda', 'No se pudo eliminar el recordatorio.')
 
 
-class LocalVisionWorker(QObject):
+class NvidiaVisionWorker(QObject):
     result = pyqtSignal(str)
     error = pyqtSignal(str)
     finished = pyqtSignal()
@@ -437,29 +437,29 @@ class LocalVisionWorker(QObject):
     @pyqtSlot()
     def run(self):
         try:
-            self.result.emit(analyze_local_image(self.image, self.question))
+            self.result.emit(analyze_image(self.image, self.question))
         except VisionError as exc:
             self.error.emit(str(exc))
         except Exception:
-            self.error.emit('No se pudo completar el análisis local.')
+            self.error.emit('No se pudo completar el análisis con NVIDIA.')
         finally:
             self.image = b''
             self.finished.emit()
 
 
-class LocalVisionDialog(QDialog):
+class NvidiaVisionDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Visión local')
+        self.setWindowTitle('Visión con NVIDIA')
         self.resize(600, 450)
         self.thread = None
         self.worker = None
         self.image = None
         layout = QVBoxLayout(self)
-        title = QLabel('Analizar una imagen en este equipo')
+        title = QLabel('Analizar una imagen con NVIDIA')
         title.setObjectName('dialogTitle')
         layout.addWidget(title)
-        info = QLabel('La imagen y la pregunta se procesan con Ollama local. No se envían a NVIDIA ni a Gemini. Requiere el modelo local llava.')
+        info = QLabel('La imagen y la pregunta se enviarán a NVIDIA solo si confirmas. El resultado no se guarda en el chat ni se lee en voz alta.')
         info.setWordWrap(True)
         layout.addWidget(info)
         actions = QHBoxLayout()
@@ -477,12 +477,12 @@ class LocalVisionDialog(QDialog):
         self.question.setPlaceholderText('¿Qué quieres saber sobre la imagen?')
         self.question.setText('Describe esta imagen en español.')
         layout.addWidget(self.question)
-        self.submit = QPushButton('Analizar localmente')
+        self.submit = QPushButton('Enviar y analizar')
         self.submit.clicked.connect(self.start_analysis)
         layout.addWidget(self.submit)
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
-        self.output.setPlaceholderText('El resultado local aparecerá aquí. No se enviará al modelo remoto ni a la voz en la nube.')
+        self.output.setPlaceholderText('El resultado aparecerá aquí. El archivo original permanecerá en tu equipo.')
         layout.addWidget(self.output, 1)
 
     def choose_file(self):
@@ -492,23 +492,25 @@ class LocalVisionDialog(QDialog):
         try:
             self.image = read_image(path)
         except VisionError as exc:
-            QMessageBox.warning(self, 'Visión local', str(exc))
+            self.image = None
+            self.selected.setText('No hay ninguna imagen seleccionada')
+            QMessageBox.warning(self, 'Visión con NVIDIA', str(exc))
             return
         self.selected.setText('Imagen seleccionada: ' + path)
 
     def capture_screen(self):
         consent = QMessageBox.question(self, 'Capturar pantalla',
-            '¿Permites capturar la pantalla actual para analizarla solo en este equipo? La captura puede incluir información privada.',
+            '¿Permites capturar la pantalla actual? Puede contener información privada. Después deberás confirmar si quieres enviarla a NVIDIA.',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if consent != QMessageBox.StandardButton.Yes:
             return
         screen = QApplication.primaryScreen()
         if screen is None:
-            QMessageBox.warning(self, 'Visión local', 'No hay una pantalla disponible para capturar.')
+            QMessageBox.warning(self, 'Visión con NVIDIA', 'No hay una pantalla disponible para capturar.')
             return
         pixmap = screen.grabWindow(0)
         if pixmap.isNull():
-            QMessageBox.warning(self, 'Visión local', 'No se pudo capturar la pantalla. El sistema gráfico podría bloquear la captura.')
+            QMessageBox.warning(self, 'Visión con NVIDIA', 'No se pudo capturar la pantalla. El sistema gráfico podría bloquear la captura.')
             return
         buffer = QBuffer()
         buffer.open(QIODevice.OpenModeFlag.WriteOnly)
@@ -520,7 +522,9 @@ class LocalVisionDialog(QDialog):
                 raise VisionError('No se pudo preparar la captura.')
             self.image = validate_image(data)
         except VisionError as exc:
-            QMessageBox.warning(self, 'Visión local', str(exc))
+            self.image = None
+            self.selected.setText('No hay ninguna imagen seleccionada')
+            QMessageBox.warning(self, 'Visión con NVIDIA', str(exc))
             return
         self.selected.setText('Captura de la pantalla principal seleccionada')
 
@@ -528,18 +532,23 @@ class LocalVisionDialog(QDialog):
         if self.thread is not None:
             return
         if self.image is None:
-            QMessageBox.information(self, 'Visión local', 'Primero elige una imagen o captura la pantalla.')
+            QMessageBox.information(self, 'Visión con NVIDIA', 'Primero elige una imagen o captura la pantalla.')
             return
         question = self.question.text().strip()
         if not question or len(question) > 2000:
-            QMessageBox.warning(self, 'Visión local', 'Escribe una pregunta de hasta 2000 caracteres.')
+            QMessageBox.warning(self, 'Visión con NVIDIA', 'Escribe una pregunta de hasta 2000 caracteres.')
             return
-        self.output.setPlainText('Analizando localmente… Esto puede tardar varios minutos.')
+        consent = QMessageBox.question(self, 'Enviar imagen a NVIDIA',
+            'Se enviarán una copia de la imagen seleccionada y tu pregunta a NVIDIA para analizarlas. ¿Autorizas este envío?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if consent != QMessageBox.StandardButton.Yes:
+            return
+        self.output.setPlainText('Enviando la imagen a NVIDIA y analizando…')
         self.submit.setEnabled(False)
         self.file_button.setEnabled(False)
         self.screen_button.setEnabled(False)
         self.thread = QThread(self)
-        self.worker = LocalVisionWorker(self.image, question)
+        self.worker = NvidiaVisionWorker(self.image, question)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.result.connect(self.output.setPlainText)
@@ -560,14 +569,14 @@ class LocalVisionDialog(QDialog):
 
     def reject(self):
         if self.thread is not None:
-            QMessageBox.information(self, 'Visión local', 'Espera a que termine el análisis antes de cerrar.')
+            QMessageBox.information(self, 'Visión con NVIDIA', 'Espera a que termine el análisis antes de cerrar.')
             return
         self.image = None
         super().reject()
 
     def closeEvent(self, event):
         if self.thread is not None:
-            QMessageBox.information(self, 'Visión local', 'Espera a que termine el análisis antes de cerrar.')
+            QMessageBox.information(self, 'Visión con NVIDIA', 'Espera a que termine el análisis antes de cerrar.')
             event.ignore()
         else:
             self.image = None
@@ -605,8 +614,8 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
-        self.vision_button = QPushButton('Visión local')
-        self.vision_button.clicked.connect(self.open_local_vision)
+        self.vision_button = QPushButton('Visión con NVIDIA')
+        self.vision_button.clicked.connect(self.open_nvidia_vision)
         top.addWidget(self.vision_button)
         self.agenda_button = QPushButton('Agenda')
         self.agenda_button.clicked.connect(self.open_agenda)
@@ -757,11 +766,11 @@ class JarvisWindow(QMainWindow):
         else:
             self.set_task_state('idle')
 
-    def open_local_vision(self):
+    def open_nvidia_vision(self):
         if self.thread is not None:
-            QMessageBox.information(self, 'Visión local', 'Detén el micrófono o espera a que termine la solicitud antes de analizar una imagen.')
+            QMessageBox.information(self, 'Visión con NVIDIA', 'Detén el micrófono o espera a que termine la solicitud antes de analizar una imagen.')
             return
-        LocalVisionDialog(self).exec()
+        NvidiaVisionDialog(self).exec()
 
     def open_agenda(self):
         try:

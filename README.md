@@ -129,14 +129,8 @@ Las fuentes aparecen como enlaces clicables en el chat y no se leen en voz alta.
 
 Tras la confirmación inicial, JARVIS pregunta una vez si permite búsquedas web y música sin preguntar cada vez. Las consultas se envían a servicios externos y los contenidos web pueden inducir acciones no deseadas; active esta opción solo si acepta ese riesgo. Puede cambiarla en **Ajustes**. La autorización global no incluye terminal, archivos, interfaz, recordatorios, WhatsApp ni otras acciones: estas requieren confirmación cada vez. Si rechaza el permiso único, búsquedas y música también requieren confirmación individual. El estado se guarda en `.jarvis-state.json`.
 
-### Visión exclusivamente local
+### Visión con NVIDIA
 
-La opción **Visión local** de la ventana completa permite elegir un archivo PNG, JPEG o WebP de hasta 10 MB, o autorizar una captura de la pantalla principal. No envía imagen, pregunta ni resultado a Gemini, NVIDIA, Edge TTS ni a la memoria del chat. El resultado se muestra en una ventana local y no se lee con voz en la nube. La captura puede incluir información privada y, según el sistema gráfico (por ejemplo Wayland), podría no estar permitida. La herramienta no abre ni analiza archivos automáticamente: el usuario debe seleccionarlos o confirmar la captura.
+La opción **Visión con NVIDIA** permite elegir una imagen PNG, JPEG o WebP de hasta 10 MB, o capturar la pantalla principal tras confirmarlo. Antes de cada análisis JARVIS solicita otra confirmación para **enviar una copia de la imagen y la pregunta a NVIDIA**. El archivo original permanece en el equipo; el resultado se muestra en la ventana y no se incorpora automáticamente al chat ni se lee en voz alta. La captura puede contener información privada, y Wayland u otras configuraciones pueden bloquearla.
 
-Requisitos: [Ollama](https://ollama.com/) instalado y funcionando en el mismo equipo y el modelo local `llava` descargado. Instalar o descargar el modelo necesita Internet y varios gigabytes de espacio; no envía sus imágenes. Una vez instalado y disponible el servicio en `127.0.0.1:11434`, ejecute una vez:
-
-```bash
-ollama pull llava
-```
-
-Si Ollama no está ejecutándose, inícielo con `ollama serve` (algunas instalaciones ya ejecutan un servicio). La aplicación conecta exclusivamente a `http://127.0.0.1:11434/api/generate`, sin usar variables de proxy ni seguir redirecciones, con el modelo `llava:latest`; confíe solo en un servicio y un modelo local que usted controle. No utiliza modelos en la nube. El análisis puede tardar minutos en CPU y puede cometer errores. El resto de JARVIS sigue utilizando el proveedor de IA configurado y sus propios servicios de voz/red para conversaciones ordinarias; para datos sensibles, no copie manualmente el resultado al chat remoto.
+Requiere conexión, `NVIDIA_API_KEY` en `.env` y acceso al modelo `mistralai/mistral-large-4-1t-a52b`. Se puede cambiar el identificador mediante `NVIDIA_VISION_MODEL`. El análisis usa NVIDIA incluso si el chat está configurado con Gemini. La disponibilidad y cuota dependen de la cuenta; no está probado con un servicio real. No hace falta Ollama. Las imágenes se transmiten a NVIDIA y quedan sujetas a sus políticas; nunca seleccione información que no quiera compartir.

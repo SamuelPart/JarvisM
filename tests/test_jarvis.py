@@ -481,31 +481,36 @@ def test_speech_text_removes_markdown_stars_and_urls():
     assert '*' not in result and 'https://' not in result
 
 
-def test_local_vision_only_loopback_and_no_proxy():
+
+def test_nvidia_vision_request_encodes_selected_image(monkeypatch):
     import base64
-    from local_vision import analyze, LOCAL_URL
+    from nvidia_vision import analyze, NVIDIA_URL, DEFAULT_MODEL
+    monkeypatch.setenv('NVIDIA_API_KEY', 'test-key')
+    monkeypatch.delenv('NVIDIA_VISION_MODEL', raising=False)
     image = b'\x89PNG\r\n\x1a\n' + b'contenido'
     class Session:
         def __init__(self): self.trust_env = True; self.closed = False
         def post(self, url, **kwargs):
-            assert url == LOCAL_URL == 'http://127.0.0.1:11434/api/generate'
-            assert self.trust_env is False and kwargs['allow_redirects'] is False
-            assert base64.b64decode(kwargs['json']['images'][0]) == image
-            assert kwargs['json']['model'] == 'llava:latest'
-            return SimpleNamespace(status_code=200, json=lambda: {'response': 'Una imagen.'})
+            assert url == NVIDIA_URL and self.trust_env is False and kwargs['allow_redirects'] is False
+            assert kwargs['json']['model'] == DEFAULT_MODEL
+            image_url = kwargs['json']['messages'][0]['content'][1]['image_url']['url']
+            assert image_url.startswith('data:image/png;base64,')
+            assert base64.b64decode(image_url.split(',', 1)[1]) == image
+            return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'Una imagen.'}}]})
         def close(self): self.closed = True
     session = Session()
     assert analyze(image, 'Describe', session_factory=lambda: session) == 'Una imagen.'
     assert session.closed
 
 
-def test_local_vision_validation_and_model_missing(tmp_path):
-    from local_vision import VisionError, analyze, read_image
+def test_nvidia_vision_validation_and_quota(tmp_path, monkeypatch):
+    from nvidia_vision import VisionError, analyze, read_image
     bad = tmp_path / 'fake.png'
     bad.write_bytes(b'not an image')
     with pytest.raises(VisionError): read_image(bad)
+    monkeypatch.setenv('NVIDIA_API_KEY', 'test-key')
     class Session:
-        def post(self, *args, **kwargs): return SimpleNamespace(status_code=404)
+        def post(self, *args, **kwargs): return SimpleNamespace(status_code=429)
         def close(self): pass
-    with pytest.raises(VisionError, match='ollama pull llava'):
+    with pytest.raises(VisionError, match='429'):
         analyze(b'\xff\xd8\xff' + b'test', 'Describe', session_factory=Session)
