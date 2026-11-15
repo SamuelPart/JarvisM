@@ -779,3 +779,47 @@ def test_reply_included_in_gmail_permission_but_not_calendar(tmp_path, monkeypat
     assert permissions.preapproved('reply_gmail')
     assert not permissions.preapproved('list_calendar_events')
     assert not permissions.preapproved('list_reminders')
+
+
+def test_elevenlabs_voice_request_and_audio(monkeypatch):
+    import requests
+    from voice import Voice
+    calls, played = [], []
+    class Response:
+        status_code = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def iter_content(self, chunk_size): return iter([b'audio'])
+    class Session:
+        def __init__(self): self.trust_env = True
+        def post(self, url, **kwargs):
+            calls.append((url, kwargs, self.trust_env))
+            return Response()
+        def close(self): pass
+    monkeypatch.setattr(requests, 'Session', Session)
+    monkeypatch.setenv('ELEVENLABS_API_KEY', 'test-key')
+    monkeypatch.setenv('ELEVENLABS_VOICE_ID', 'voice123')
+    monkeypatch.setenv('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2')
+    voice = Voice()
+    monkeypatch.setattr(voice, '_play_file', lambda path: played.append(path.read_bytes()))
+    voice._elevenlabs('Buenos días')
+    assert played == [b'audio']
+    url, kwargs, trust = calls[0]
+    assert url == 'https://api.elevenlabs.io/v1/text-to-speech/voice123'
+    assert kwargs['headers']['xi-api-key'] == 'test-key' and kwargs['json']['text'] == 'Buenos días'
+    assert trust is False and kwargs['allow_redirects'] is False
+
+
+def test_elevenlabs_invalid_voice_and_network_error_do_not_leak_key(monkeypatch):
+    import requests
+    from voice import Voice, VoiceError
+    monkeypatch.setenv('ELEVENLABS_API_KEY', 'secret-test-key')
+    monkeypatch.setenv('ELEVENLABS_VOICE_ID', '../wrong')
+    with pytest.raises(VoiceError): Voice()._elevenlabs('Hola')
+    monkeypatch.setenv('ELEVENLABS_VOICE_ID', 'valid')
+    class Session:
+        def post(self, *args, **kwargs): raise requests.ConnectionError('secret-test-key')
+        def close(self): pass
+    monkeypatch.setattr(requests, 'Session', Session)
+    with pytest.raises(VoiceError) as error: Voice()._elevenlabs('Hola')
+    assert 'secret-test-key' not in str(error.value)

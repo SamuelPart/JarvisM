@@ -2,10 +2,15 @@
 import asyncio
 import os
 import queue
+import re
 import tempfile
 import threading
 import time
 from pathlib import Path
+
+
+class VoiceError(Exception):
+    pass
 
 
 class Voice:
@@ -42,15 +47,22 @@ class Voice:
             text, completion = self.queue.get()
             ok = False
             try:
-                if os.getenv('JARVIS_VOICE_MODE', 'edge').lower() == 'local':
+                mode = os.getenv('JARVIS_VOICE_MODE', 'edge').strip().lower()
+                if mode == 'local':
                     self._local(text)
-                else:
+                elif mode == 'elevenlabs':
+                    self._elevenlabs(text)
+                elif mode == 'edge':
                     try:
                         self._neural(text)
                     except Exception:
                         print('(Voz neuronal no disponible; intentando voz local.)', flush=True)
                         self._local(text)
+                else:
+                    raise VoiceError('Modo de voz no reconocido. Usa edge, elevenlabs, local u off.')
                 ok = True
+            except VoiceError as exc:
+                print('(Aviso de voz: ' + str(exc) + ')', flush=True)
             except Exception:
                 print('(Aviso: voz no disponible; la respuesta permanece en pantalla.)', flush=True)
             finally:
@@ -69,25 +81,66 @@ class Voice:
 
     def _neural(self, text):
         import edge_tts
-        import pygame
         voice = os.getenv('JARVIS_TTS_VOICE', 'es-MX-JorgeNeural')
         with tempfile.TemporaryDirectory(prefix='jarvis-tts-') as directory:
             path = Path(directory) / 'voice.mp3'
             async def synthesize():
                 await asyncio.wait_for(edge_tts.Communicate(text, voice).save(str(path)), timeout=30)
             asyncio.run(synthesize())
-            pygame.mixer.init()
-            try:
-                pygame.mixer.music.load(str(path))
-                pygame.mixer.music.play()
-                self._activity(True)
-                while pygame.mixer.music.get_busy():
-                    time.sleep(0.1)
-            finally:
-                self._activity(False)
-                pygame.mixer.music.stop()
-                pygame.mixer.music.unload()
-                pygame.mixer.quit()
+            self._play_file(path)
+
+    def _elevenlabs(self, text):
+        import requests
+        key = os.getenv('ELEVENLABS_API_KEY', '').strip()
+        voice_id = os.getenv('ELEVENLABS_VOICE_ID', 'JBFqnCBsd6RMkjVDRZzb').strip()
+        model = os.getenv('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2').strip()
+        if not key:
+            raise VoiceError('Falta ELEVENLABS_API_KEY en .env.')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', voice_id):
+            raise VoiceError('ELEVENLABS_VOICE_ID no es válido.')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', model):
+            raise VoiceError('ELEVENLABS_MODEL_ID no es válido.')
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            with session.post('https://api.elevenlabs.io/v1/text-to-speech/' + voice_id,
+                              headers={'xi-api-key': key, 'Accept': 'audio/mpeg'},
+                              json={'text': text, 'model_id': model},
+                              params={'output_format': 'mp3_44100_128'},
+                              timeout=(10, 90), allow_redirects=False, stream=True) as response:
+                if not 200 <= response.status_code < 300:
+                    raise VoiceError(f'ElevenLabs rechazó la solicitud (HTTP {response.status_code}); revisa la clave, la voz y la cuota.')
+                with tempfile.TemporaryDirectory(prefix='jarvis-tts-') as directory:
+                    path = Path(directory) / 'voice.mp3'
+                    size = 0
+                    with path.open('wb') as file:
+                        for chunk in response.iter_content(chunk_size=65536):
+                            size += len(chunk)
+                            if size > 20 * 1024 * 1024:
+                                raise VoiceError('El audio de ElevenLabs es demasiado grande.')
+                            file.write(chunk)
+                    if not size:
+                        raise VoiceError('ElevenLabs devolvió audio vacío.')
+                    self._play_file(path)
+        except requests.RequestException as exc:
+            raise VoiceError('No se pudo conectar con ElevenLabs o se agotó el tiempo de espera.') from exc
+        finally:
+            session.close()
+
+    def _play_file(self, path):
+        import pygame
+        pygame.mixer.init()
+        try:
+            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.play()
+            self._activity(True)
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.1)
+        finally:
+            self._activity(False)
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+            pygame.mixer.quit()
 
     def _local(self, text):
         import pyttsx3
