@@ -857,3 +857,16 @@ def test_music_does_not_stop_reused_or_foreign_process(tmp_path, monkeypatch):
     monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: Process())
     assert not music_player.MusicPlayer().stop()['stopped']
     assert not state.exists()
+
+
+def test_elevenlabs_error_shows_allowlisted_diagnosis_without_private_data():
+    from voice import elevenlabs_error
+    class Response:
+        status_code = 400
+        def __init__(self, data): self.data = data
+        def iter_content(self, chunk_size): return iter([self.data])
+    error = elevenlabs_error(Response(b'{"detail":{"status":"quota_exceeded","message":"secret"}}'))
+    assert 'cuota' in error and 'secret' not in error
+    error = elevenlabs_error(Response(b'{"detail":{"status":"secret","message":"private"}}'))
+    assert 'causa exacta no' in error and 'secret' not in error and 'private' not in error
+    assert 'HTTP 400' in elevenlabs_error(Response(b'not json'))

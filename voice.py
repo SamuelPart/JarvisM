@@ -1,5 +1,6 @@
 """Voz neuronal opcional con alternativa local y reproducción secuencial."""
 import asyncio
+import json
 import os
 import queue
 import re
@@ -11,6 +12,42 @@ from pathlib import Path
 
 class VoiceError(Exception):
     pass
+
+
+ELEVENLABS_ERRORS = {
+    'quota_exceeded': 'La cuenta alcanzó su cuota de ElevenLabs.',
+    'voice_not_found': 'ElevenLabs no encontró la voz; revisa el ID y que esté disponible en tu cuenta.',
+    'invalid_voice_id': 'El ID de voz no es válido para ElevenLabs.',
+    'model_not_found': 'ElevenLabs no encontró el modelo configurado.',
+    'invalid_model_id': 'El modelo de ElevenLabs no es válido.',
+    'invalid_api_key': 'ElevenLabs rechazó la clave API.',
+    'missing_permissions': 'La clave no tiene los permisos necesarios para texto a voz.',
+    'detected_unusual_activity': 'ElevenLabs detectó actividad inusual o restricciones de la cuenta. Revisa tu cuenta o contacta con su soporte.',
+    'free_users_not_allowed': 'Tu plan de ElevenLabs no permite esta solicitud o voz.',
+    'only_for_creator': 'Esta voz puede estar restringida a su creador.',
+    'too_many_concurrent_requests': 'Hay demasiadas solicitudes simultáneas a ElevenLabs.',
+}
+
+
+def elevenlabs_error(response):
+    """Only report a fixed allowlist; never expose provider messages, keys or text."""
+    explanation = None
+    try:
+        data = bytearray()
+        for chunk in response.iter_content(chunk_size=4096):
+            data.extend(chunk)
+            if len(data) > 16384:
+                break
+        if len(data) <= 16384:
+            payload = json.loads(data)
+            detail = payload.get('detail', {}) if isinstance(payload, dict) else {}
+            code = detail.get('status') if isinstance(detail, dict) else None
+            if isinstance(code, str):
+                explanation = ELEVENLABS_ERRORS.get(code)
+    except (ValueError, TypeError, OSError):
+        pass
+    generic = 'revisa la voz, el modelo, la clave y la cuota; la causa exacta no está disponible.'
+    return f'ElevenLabs rechazó la solicitud (HTTP {response.status_code}): ' + (explanation or generic)
 
 
 class Voice:
@@ -109,7 +146,7 @@ class Voice:
                               params={'output_format': 'mp3_44100_128'},
                               timeout=(10, 90), allow_redirects=False, stream=True) as response:
                 if not 200 <= response.status_code < 300:
-                    raise VoiceError(f'ElevenLabs rechazó la solicitud (HTTP {response.status_code}); revisa la clave, la voz y la cuota.')
+                    raise VoiceError(elevenlabs_error(response))
                 with tempfile.TemporaryDirectory(prefix='jarvis-tts-') as directory:
                     path = Path(directory) / 'voice.mp3'
                     size = 0
