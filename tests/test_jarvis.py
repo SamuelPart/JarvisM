@@ -377,3 +377,26 @@ def test_web_search_failure_is_safe():
         def text(self, *args, **kwargs): raise RuntimeError('dato-privado')
     result = search('consulta', Broken())
     assert result['results'] == [] and 'dato-privado' not in result['error']
+
+
+def test_search_fallback_second_provider():
+    from web_search import search
+    attempts = []
+    class Searcher:
+        def text(self, query, **kwargs):
+            attempts.append(kwargs['backend'])
+            if kwargs['backend'] == 'duckduckgo': raise RuntimeError('network')
+            return [{'title': 'Fuente', 'href': 'https://example.com', 'body': 'Resumen'}]
+    result = search('noticias', Searcher())
+    assert attempts == ['duckduckgo', 'brave']
+    assert result['provider'] == 'brave' and result['results'][0]['url'] == 'https://example.com'
+
+
+def test_music_search_opens_results_without_claiming_playback(monkeypatch):
+    import system_control
+    opened = []
+    monkeypatch.setattr(system_control.webbrowser, 'open', lambda url: opened.append(url) or True)
+    result = SystemController().music_search('amor y sol', 'youtube')
+    assert opened == ['https://www.youtube.com/results?search_query=amor+y+sol']
+    assert result['opened'] and 'usuario debe elegir' in result['note']
+    with pytest.raises(ValueError): SystemController().music_search('tema', 'servicio_desconocido')

@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import webbrowser
 from pathlib import Path
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote, quote_plus, urlparse
 
 import psutil
 from datetime import datetime
@@ -117,6 +117,21 @@ class SystemController:
         opened = webbrowser.open(url)
         return {'opened': opened, 'sent': False,
                 'note': 'Se solicitó abrir un borrador. El usuario debe revisar el destinatario y pulsar Enviar.'}
+
+    def music_search(self, query: str, service: str = 'youtube') -> dict:
+        """Open music search results; playback requires a user selection."""
+        query = query.strip()
+        if not query or len(query) > 300:
+            raise ValueError('Indica el título o artista de la canción (máximo 300 caracteres).')
+        if service == 'youtube':
+            url = 'https://www.youtube.com/results?search_query=' + quote_plus(query)
+        elif service == 'spotify':
+            url = 'https://open.spotify.com/search/' + quote(query, safe='')
+        else:
+            raise ValueError('El servicio debe ser youtube o spotify.')
+        opened = webbrowser.open(url)
+        return {'opened': opened, 'service': service,
+                'note': 'Se solicitó abrir los resultados. El usuario debe elegir y reproducir la canción; no se ha confirmado reproducción.'}
 
     def web_search(self, query: str) -> dict:
         """Return untrusted search snippets for the model to summarize with citations."""
