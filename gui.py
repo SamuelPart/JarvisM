@@ -7,11 +7,12 @@ import sys
 import threading
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
-                             QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
-                             QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget)
+                             QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
+                             QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
+                             QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
 from provider import create_brain
 from errors import describe_error
@@ -101,6 +102,60 @@ class CoreAnimation(QWidget):
             painter.setBrush(QColor(*( (255, 195, 100) if self.mode == 'approval' else (128, 136, 255) ), alpha))
             painter.drawEllipse(QPointF(x, y), dot, dot)
         painter.end()
+
+
+class ChatMessage(QFrame):
+    """A selectable, plain-text message with a short fade-in."""
+    def __init__(self, author, text, parent=None):
+        super().__init__(parent)
+        kind = 'user' if author == 'Tú' else 'system' if author == 'Sistema' else 'jarvis'
+        self.setObjectName('bubble_' + kind)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 13)
+        layout.setSpacing(6)
+        label = QLabel({'user': '●  TÚ', 'jarvis': '✦  JARVIS', 'system': '●  SISTEMA'}[kind])
+        label.setObjectName('sender_' + kind)
+        layout.addWidget(label)
+        body = QLabel()
+        body.setObjectName('messageText')
+        body.setTextFormat(Qt.TextFormat.PlainText)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        body.setWordWrap(True)
+        body.setText(text)
+        layout.addWidget(body)
+        self.opacity = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity)
+        self.animation = QPropertyAnimation(self.opacity, b'opacity', self)
+        self.animation.setDuration(260)
+        self.animation.setStartValue(0.0)
+        self.animation.setEndValue(1.0)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.animation.start()
+
+
+class ChatHistory(QScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('chatHistory')
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        container = QWidget()
+        container.setObjectName('chatContainer')
+        self.messages = QVBoxLayout(container)
+        self.messages.setContentsMargins(8, 10, 8, 10)
+        self.messages.setSpacing(10)
+        self.messages.addStretch(1)
+        self.setWidget(container)
+
+    def add_message(self, author, text):
+        # Plain QLabel text: model and user content are never interpreted as HTML.
+        bubble = ChatMessage(author, text)
+        self.messages.insertWidget(self.messages.count() - 1, bubble)
+        QTimer.singleShot(0, self.scroll_to_bottom)
+
+    def scroll_to_bottom(self):
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
 
 class VoiceWorker(QObject):
@@ -228,9 +283,7 @@ class JarvisWindow(QMainWindow):
         layout.addWidget(self.tabs, 1)
         chat = QWidget()
         chat_layout = QVBoxLayout(chat)
-        self.history = QPlainTextEdit()
-        self.history.setReadOnly(True)
-        self.history.setPlaceholderText('Tu conversación con JARVIS aparecerá aquí.')
+        self.history = ChatHistory()
         chat_layout.addWidget(self.history, 1)
         composer = QHBoxLayout()
         self.input = QLineEdit()
@@ -264,7 +317,7 @@ class JarvisWindow(QMainWindow):
         self.tabs.addTab(voice_tab, 'Voz')
 
     def append_chat(self, author, text):
-        self.history.appendPlainText(f'{author}: {text}\n')
+        self.history.add_message(author, text)
 
     def submit_chat(self):
         text = self.input.text().strip()
@@ -389,6 +442,18 @@ QLabel#model { color: #8296ab; font-size: 11px; }
 QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
 QLineEdit, QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
 QTextBrowser { border: none; line-height: 1.6; }
+QScrollArea#chatHistory { background: #0c1522; border: 1px solid #1e3548; border-radius: 14px; }
+QWidget#chatContainer { background: transparent; }
+QFrame#bubble_user { background-color: rgba(20, 57, 75, 210); border: 1px solid #28627a; border-left: 3px solid #5dd9ef; border-radius: 11px; }
+QFrame#bubble_jarvis { background-color: rgba(22, 30, 52, 225); border: 1px solid #344269; border-left: 3px solid #8696ff; border-radius: 11px; }
+QFrame#bubble_system { background-color: rgba(61, 42, 25, 220); border: 1px solid #765738; border-left: 3px solid #e6aa5c; border-radius: 11px; }
+QLabel#sender_user { color: #80ddea; font-size: 10px; font-weight: 800; }
+QLabel#sender_jarvis { color: #a8b2ff; font-size: 10px; font-weight: 800; }
+QLabel#sender_system { color: #f0bd7c; font-size: 10px; font-weight: 800; }
+QLabel#messageText { color: #edf4fa; font-size: 13px; background: transparent; }
+QScrollBar:vertical { background: transparent; width: 7px; margin: 4px; }
+QScrollBar::handle:vertical { background: #34566b; min-height: 25px; border-radius: 3px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QPushButton { border: 1px solid #31475b; border-radius: 9px; padding: 10px 16px; background: #1c2b3b; }
 QPushButton:hover { background: #294154; }
 QPushButton#send, QPushButton#approveButton { background: #76d7e4; color: #07151d; border: none; font-weight: 700; }
