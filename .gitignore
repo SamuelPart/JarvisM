@@ -7,3 +7,5 @@ __pycache__/
 .jarvis-state.json
 
 .jarvis-core.gif
+
+.jarvis-ui.json

@@ -256,3 +256,16 @@ def test_voice_session_reports_provider_result():
     session = VoiceSession(SimpleNamespace(ask=lambda request: 'hola'), voice, listen, connection=statuses.append)
     session.run()
     assert statuses == ['Respondió']
+
+
+def test_visual_preferences_round_trip_and_validation(tmp_path):
+    from ui_settings import DEFAULTS, load, save
+    path = tmp_path / 'settings.json'
+    assert load(path) == DEFAULTS
+    expected = {'color': 'violeta', 'size': 'grande', 'animation': 'reducida'}
+    assert save(path, expected) == expected
+    assert load(path) == expected
+    path.write_text('{"color":"invalido","size":"pequeño","animation":null}', encoding='utf-8')
+    assert load(path) == {'color': 'azul', 'size': 'pequeño', 'animation': 'normal'}
+    path.write_text('{bad', encoding='utf-8')
+    assert load(path) == DEFAULTS

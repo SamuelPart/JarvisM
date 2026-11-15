@@ -102,3 +102,7 @@ Muestra el modelo configurado, el resultado de la última consulta al proveedor 
 ### Modo compacto flotante
 
 Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y un botón de micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Los permisos siguen requiriendo confirmación.
+
+### Ajustes visuales
+
+En la ventana completa pulse «Ajustes» para elegir el color de la esfera, su tamaño y animación normal, reducida o desactivada. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.

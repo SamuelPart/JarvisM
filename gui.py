@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
-                             QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                             QComboBox, QFormLayout, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
                              QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
@@ -23,6 +23,9 @@ from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
 from status_data import sample_usage
+from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
+
+UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
 
 
 class VoiceSignals(QObject):
@@ -31,9 +34,11 @@ class VoiceSignals(QObject):
 
 class CoreAnimation(QWidget):
     """Draw a free-standing core; waves move only during audio playback."""
-    def __init__(self):
+    def __init__(self, preferences):
         super().__init__()
-        self.setFixedSize(300, 260)
+        self.preferences = preferences.copy()
+        scale = SCALES[self.preferences['size']]
+        self.setFixedSize(round(300 * scale), round(260 * scale))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.mode = 'idle'
         self.phase = 0.0
@@ -43,20 +48,28 @@ class CoreAnimation(QWidget):
 
     def set_mode(self, mode):
         self.mode = mode
-        if mode in ('thinking', 'speaking'):
+        if mode in ('thinking', 'speaking') and self.preferences['animation'] != 'desactivada':
             self.timer.start()
         else:
             self.timer.stop()
         self.update()
 
+    def configure(self, preferences):
+        self.preferences = preferences.copy()
+        scale = SCALES[self.preferences['size']]
+        self.setFixedSize(round(300 * scale), round(260 * scale))
+        self.set_mode(self.mode)
+
     def advance(self):
-        self.phase += 0.055
+        self.phase += 0.022 if self.preferences['animation'] == 'reducida' else 0.055
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.translate(self.width() / 2, self.height() / 2)
+        scale = SCALES[self.preferences['size']]
+        painter.scale(scale, scale)
         radius = 109.0
 
         # A dark, transparent glow rather than a rectangular background.
@@ -90,17 +103,18 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.mode == 'speaking':
+                if self.mode == 'speaking' and self.preferences['animation'] != 'desactivada':
                     pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
                 px, py = radius * x * pulse, -radius * screen_y * pulse
                 alpha = int(105 + 110 * (z + 1) / 2)
                 dot = 0.65 + 0.35 * (z + 1) / 2
                 points.append((z, px, py, dot, alpha))
 
+        dim_color, bright_color = ((255, 140, 32), (255, 195, 100)) if self.mode == 'approval' else PALETTES[self.preferences['color']]
         for _, x, y, dot, alpha in sorted(points):
-            painter.setBrush(QColor(*( (255, 140, 32) if self.mode == 'approval' else (70, 81, 255) ), max(20, alpha // 5)))
+            painter.setBrush(QColor(*dim_color, max(20, alpha // 5)))
             painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
-            painter.setBrush(QColor(*( (255, 195, 100) if self.mode == 'approval' else (128, 136, 255) ), alpha))
+            painter.setBrush(QColor(*bright_color, alpha))
             painter.drawEllipse(QPointF(x, y), dot, dot)
         painter.end()
 
@@ -279,10 +293,44 @@ class ApprovalDialog(QDialog):
         layout.addWidget(buttons)
 
 
+class VisualSettingsDialog(QDialog):
+    def __init__(self, preferences, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Ajustes visuales')
+        self.setMinimumWidth(380)
+        layout = QVBoxLayout(self)
+        title = QLabel('Personaliza el núcleo')
+        title.setObjectName('dialogTitle')
+        layout.addWidget(title)
+        info = QLabel('El color ámbar se reserva para solicitudes de autorización.')
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        form = QFormLayout()
+        self.fields = {}
+        for key, label in (('color', 'Color'), ('size', 'Tamaño'), ('animation', 'Animación')):
+            combo = QComboBox()
+            for value in OPTIONS[key]:
+                combo.addItem(value.capitalize(), value)
+            combo.setCurrentIndex(combo.findData(preferences[key]))
+            form.addRow(label, combo)
+            self.fields[key] = combo
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar')
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Cancelar')
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def values(self):
+        return {key: combo.currentData() for key, combo in self.fields.items()}
+
+
 class JarvisWindow(QMainWindow):
     def __init__(self, brain, voice):
         super().__init__()
         self.brain, self.voice = brain, voice
+        self.preferences = load_ui(UI_SETTINGS_PATH)
         self.thread = None
         self.worker = None
         self.compact = False
@@ -307,6 +355,9 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
+        self.settings_button = QPushButton('Ajustes')
+        self.settings_button.clicked.connect(self.open_visual_settings)
+        top.addWidget(self.settings_button)
         self.compact_toggle = QPushButton('Modo compacto')
         self.compact_toggle.clicked.connect(self.toggle_compact)
         top.addWidget(self.compact_toggle)
@@ -321,7 +372,7 @@ class JarvisWindow(QMainWindow):
         self.subtitle.setObjectName('muted')
         layout.addWidget(self.subtitle)
 
-        self.core = CoreAnimation()
+        self.core = CoreAnimation(self.preferences)
         layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
         self.voice_signals = VoiceSignals(self)
         self.core_state = CoreState()
@@ -441,6 +492,17 @@ class JarvisWindow(QMainWindow):
         else:
             self.set_task_state('idle')
 
+    def open_visual_settings(self):
+        dialog = VisualSettingsDialog(self.preferences, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self.preferences = save_ui(UI_SETTINGS_PATH, dialog.values())
+        except OSError:
+            QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
+            return
+        self.core.configure(self.preferences)
+
     def toggle_pin(self, checked):
         # Compact mode remains floating; expanded mode respects the checkbox.
         geometry = self.geometry()
@@ -455,6 +517,7 @@ class JarvisWindow(QMainWindow):
             self.showNormal()
             self.compact = True
             self.metrics.hide()
+            self.settings_button.hide()
             self.heading.hide()
             self.subtitle.hide()
             self.tabs.hide()
@@ -470,6 +533,7 @@ class JarvisWindow(QMainWindow):
             self.compact = False
             self.compact_mic.hide()
             self.metrics.show()
+            self.settings_button.show()
             self.heading.show()
             self.subtitle.show()
             self.tabs.show()
@@ -573,6 +637,7 @@ QPushButton { border: 1px solid #31475b; border-radius: 9px; padding: 10px 16px;
 QPushButton:hover { background: #294154; }
 QPushButton#send, QPushButton#approveButton { background: #76d7e4; color: #07151d; border: none; font-weight: 700; }
 QPushButton#send:disabled { background: #344957; color: #8296aa; }
+QComboBox { background: #172838; color: #e4edf7; border: 1px solid #355266; border-radius: 7px; padding: 7px; }
 QCheckBox { color: #a8b9c9; }
 QDialog { background: #0b111b; }
 QLabel#dialogTitle { font-size: 19px; font-weight: 700; }
