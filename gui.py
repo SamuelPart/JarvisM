@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import sqlite3
 import sys
 import threading
 
@@ -167,6 +168,13 @@ class ChatHistory(QScrollArea):
         self.messages.insertWidget(self.messages.count() - 1, bubble)
         QTimer.singleShot(0, self.scroll_to_bottom)
 
+    def clear_messages(self):
+        while self.messages.count() > 1:
+            item = self.messages.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
     def scroll_to_bottom(self):
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())
@@ -281,6 +289,58 @@ class VisualSettingsDialog(QDialog):
         return {key: combo.currentData() for key, combo in self.fields.items()}
 
 
+class MemoryDialog(QDialog):
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+        self.setWindowTitle('Memoria de JARVIS')
+        self.resize(540, 410)
+        layout = QVBoxLayout(self)
+        title = QLabel('Memoria y preferencias')
+        title.setObjectName('dialogTitle')
+        layout.addWidget(title)
+        info = QLabel('Se guardan las conversaciones completadas en este equipo. Las últimas intervenciones y estas preferencias se envían al proveedor de IA. No guardes contraseñas ni claves aquí.')
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        layout.addWidget(QLabel('Preferencias que quieres que JARVIS recuerde:'))
+        self.profile = QPlainTextEdit()
+        self.profile.setPlaceholderText('Por ejemplo: Prefiero respuestas breves en español.')
+        self.profile.setPlainText(window.brain.memory.get_preferences())
+        layout.addWidget(self.profile)
+        delete = QPushButton('Borrar conversaciones y preferencias')
+        delete.clicked.connect(self.clear_memory)
+        layout.addWidget(delete)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar preferencias')
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Cerrar')
+        buttons.accepted.connect(self.save_preferences)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def save_preferences(self):
+        try:
+            self.window.brain.memory.set_preferences(self.profile.toPlainText())
+        except (ValueError, sqlite3.Error, OSError) as exc:
+            QMessageBox.warning(self, 'Memoria', 'No se pudieron guardar las preferencias. Máximo: 2000 caracteres.')
+            return
+        self.accept()
+
+    def clear_memory(self):
+        result = QMessageBox.question(self, 'Borrar memoria',
+            '¿Borrar todas las conversaciones y preferencias guardadas en este equipo? Los ajustes visuales y las claves no se borrarán.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if result != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.window.brain.clear_memory()
+        except (sqlite3.Error, OSError):
+            QMessageBox.warning(self, 'Memoria', 'No se pudo borrar la memoria local.')
+            return
+        self.profile.clear()
+        self.window.history.clear_messages()
+        QMessageBox.information(self, 'Memoria', 'Conversaciones y preferencias borradas de la memoria local.')
+
+
 class JarvisWindow(QMainWindow):
     def __init__(self, brain, voice):
         super().__init__()
@@ -310,6 +370,9 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
+        self.memory_button = QPushButton('Memoria')
+        self.memory_button.clicked.connect(self.open_memory)
+        top.addWidget(self.memory_button)
         self.settings_button = QPushButton('Ajustes')
         self.settings_button.clicked.connect(self.open_visual_settings)
         top.addWidget(self.settings_button)
@@ -358,6 +421,8 @@ class JarvisWindow(QMainWindow):
         self.chat_panel = QWidget()
         chat_layout = QVBoxLayout(self.chat_panel)
         self.history = ChatHistory()
+        for message in self.brain.memory.recent():
+            self.history.add_message('Tú' if message['role'] == 'user' else 'JARVIS', message['content'])
         chat_layout.addWidget(self.history, 1)
         composer = QHBoxLayout()
         self.input = QLineEdit()
@@ -446,6 +511,15 @@ class JarvisWindow(QMainWindow):
         else:
             self.set_task_state('idle')
 
+    def open_memory(self):
+        if self.thread is not None:
+            QMessageBox.information(self, 'Memoria', 'Detén el micrófono o espera a que termine la solicitud antes de modificar la memoria.')
+            return
+        try:
+            MemoryDialog(self).exec()
+        except (sqlite3.Error, OSError):
+            QMessageBox.warning(self, 'Memoria', 'No se pudo abrir la memoria local.')
+
     def open_visual_settings(self):
         dialog = VisualSettingsDialog(self.preferences, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -471,6 +545,7 @@ class JarvisWindow(QMainWindow):
             self.showNormal()
             self.compact = True
             self.settings_button.hide()
+            self.memory_button.hide()
             self.heading.hide()
             self.subtitle.hide()
             self.chat_toggle.setChecked(False)
@@ -485,6 +560,7 @@ class JarvisWindow(QMainWindow):
         else:
             self.compact = False
             self.settings_button.show()
+            self.memory_button.show()
             self.heading.show()
             self.subtitle.show()
             self.chat_toggle.setChecked(True)

@@ -9,3 +9,5 @@ __pycache__/
 .jarvis-core.gif
 
 .jarvis-ui.json
+
+.jarvis-memory.sqlite3*

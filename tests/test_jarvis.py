@@ -259,3 +259,59 @@ def test_visual_preferences_round_trip_and_validation(tmp_path):
     assert load(path) == {'color': 'azul', 'size': 'pequeño', 'animation': 'normal'}
     path.write_text('{bad', encoding='utf-8')
     assert load(path) == DEFAULTS
+
+
+def test_local_memory_persists_and_clears(tmp_path):
+    from memory import JarvisMemory
+    path = tmp_path / 'memory.sqlite3'
+    memory = JarvisMemory(path)
+    memory.add_turn('Mi nombre es Sam', 'Hola Sam')
+    memory.set_preferences('Respuestas breves')
+    reopened = JarvisMemory(path)
+    assert reopened.recent() == [{'role': 'user', 'content': 'Mi nombre es Sam'}, {'role': 'assistant', 'content': 'Hola Sam'}]
+    assert reopened.get_preferences() == 'Respuestas breves'
+    reopened.clear()
+    assert JarvisMemory(path).recent() == []
+    assert JarvisMemory(path).get_preferences() == ''
+
+
+def test_memory_is_shared_across_providers_and_no_duplicate_turn(tmp_path):
+    from memory import JarvisMemory
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    memory = JarvisMemory(tmp_path / 'local.sqlite3')
+    memory.add_turn('Recuerda que me gusta el café', 'Lo recordaré')
+    memory.set_preferences('Prefiero español')
+    seen = []
+    def post(url, headers, json, timeout):
+        import copy
+        seen.append(copy.deepcopy(json['messages']))
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'Café'}}]})
+    agent = PersistentBrain(NvidiaBrain('fake-key', object(), lambda *_: False, post=post), memory)
+    assert agent.ask('¿Qué me gusta?') == 'Café'
+    assert 'Prefiero español' in seen[0][0]['content']
+    assert seen[0][1]['content'] == 'Recuerda que me gusta el café'
+    assert seen[0][-1]['content'] == '¿Qué me gusta?'
+    assert len(memory.recent()) == 4
+    agent.clear_memory()
+    agent.refresh_context()
+    assert len(agent.brain.history) == 1
+    assert 'Prefiero español' not in agent.brain.history[0]['content']
+
+
+def test_gemini_memory_context(tmp_path):
+    from memory import JarvisMemory
+    from persistent_brain import PersistentBrain
+    memory = JarvisMemory(tmp_path / 'local.sqlite3')
+    memory.add_turn('Me llamo Ana', 'Hola Ana')
+    memory.set_preferences('Me gusta el ajedrez')
+    class Models:
+        def generate_content(self, **kwargs):
+            assert kwargs['contents'][0].role == 'user'
+            assert kwargs['contents'][1].role == 'model'
+            assert 'ajedrez' in kwargs['config'].system_instruction
+            return SimpleNamespace(candidates=[SimpleNamespace(content=types.Content(role='model', parts=[types.Part.from_text(text='Ana')]))])
+    brain = Brain('', object(), lambda *_: False, client=SimpleNamespace(models=Models()))
+    agent = PersistentBrain(brain, memory)
+    assert agent.ask('¿Cómo me llamo?') == 'Ana'
+    assert len(memory.recent()) == 4
