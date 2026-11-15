@@ -68,8 +68,14 @@ def analyze(data, question, session_factory=requests.Session):
         if not isinstance(result, str) or not result.strip():
             raise VisionError('NVIDIA no devolvió una descripción de la imagen.')
         return result.strip()
+    except requests.exceptions.SSLError as exc:
+        raise VisionError('Falló la conexión segura con NVIDIA (TLS). Comprueba certificados y reloj del equipo.') from exc
+    except requests.exceptions.Timeout as exc:
+        raise VisionError('La conexión con NVIDIA agotó el tiempo de espera. Comprueba tu red e inténtalo de nuevo.') from exc
+    except requests.exceptions.ConnectionError as exc:
+        raise VisionError('No se pudo establecer conexión con NVIDIA. Comprueba DNS, Internet o restricciones de red; la clave aún no se ha validado.') from exc
     except requests.RequestException as exc:
-        raise VisionError('No se pudo conectar con NVIDIA. Comprueba la conexión.') from exc
+        raise VisionError('La solicitud de visión a NVIDIA falló por un error de red.') from exc
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise VisionError('NVIDIA devolvió una respuesta inválida.') from exc
     finally:

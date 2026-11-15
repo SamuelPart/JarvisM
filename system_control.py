@@ -5,6 +5,7 @@ permissions of the current user. Never run this program as administrator.
 """
 from __future__ import annotations
 import os
+import io
 import platform
 import re
 import shutil
@@ -18,7 +19,7 @@ from datetime import datetime
 from agenda import Agenda, timestamp_from_iso
 from web_search import search
 from music_player import MusicPlayer
-from nvidia_vision import read_image, analyze
+from nvidia_vision import read_image, analyze, validate_image, VisionError
 
 
 class SystemController:
@@ -128,6 +129,21 @@ class SystemController:
         image = read_image(path)
         return {'description': analyze(image, question),
                 'note': 'La imagen y la pregunta se enviaron a NVIDIA. La descripción puede enviarse al proveedor del chat.'}
+
+    def inspect_screen(self, question: str = 'Describe lo que aparece en pantalla en español.') -> dict:
+        """Capture visible screen only after consent; send the capture to NVIDIA."""
+        try:
+            import pyautogui
+            screenshot = pyautogui.screenshot()
+            output = io.BytesIO()
+            screenshot.save(output, format='PNG')
+            image = validate_image(output.getvalue())
+        except VisionError:
+            raise
+        except Exception as exc:
+            raise VisionError('No se pudo capturar la pantalla. Comprueba que haya una sesión gráfica compatible.') from exc
+        return {'description': analyze(image, question),
+                'note': 'La captura de pantalla y la pregunta se enviaron a NVIDIA. La descripción puede enviarse al proveedor del chat.'}
 
     def play_music(self, query: str) -> dict:
         return self.music.play(query)

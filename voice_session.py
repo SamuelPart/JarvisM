@@ -39,7 +39,9 @@ class VoiceSession:
             if len(details) > 800:
                 self.voice.speak_wait('La solicitud es demasiado larga para confirmarla por voz. La acción fue rechazada.')
                 return False
-            privacy = (' La imagen se enviará a NVIDIA y la descripción puede enviarse al proveedor del chat.' if name == 'inspect_image' else '')
+            privacy = (' Se capturará la pantalla y se enviará a NVIDIA. La descripción puede enviarse al proveedor del chat.'
+                       if name == 'inspect_screen' else ' La imagen se enviará a NVIDIA y la descripción puede enviarse al proveedor del chat.'
+                       if name == 'inspect_image' else '')
             message = (f'Señor, solicito permiso para usar la herramienta {name}, '
                        f'con estos argumentos: {details}.' + privacy +
                        ' Diga autorizo para aprobar esta acción, o cualquier otra cosa para rechazarla.')

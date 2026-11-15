@@ -572,3 +572,37 @@ def test_image_tool_never_preapproved_and_denial_skips_io(tmp_path, monkeypatch)
     brain = Brain('', controller, lambda name, args: approvals.append(name) or False, client=SimpleNamespace(models=Models()))
     assert brain.ask('analiza la imagen') == 'Rechazado'
     assert approvals == ['inspect_image']
+
+
+def test_screen_inspection_after_approval_uses_in_memory_capture(monkeypatch):
+    import sys
+    import system_control
+    image = b'\x89PNG\r\n\x1a\n' + b'screen'
+    class Screenshot:
+        def save(self, output, format):
+            assert format == 'PNG'
+            output.write(image)
+    monkeypatch.setitem(sys.modules, 'pyautogui', SimpleNamespace(screenshot=lambda: Screenshot()))
+    sent = []
+    monkeypatch.setattr(system_control, 'analyze', lambda data, prompt: sent.append((data, prompt)) or 'Pantalla')
+    result = SystemController().inspect_screen('¿Qué aparece?')
+    assert result['description'] == 'Pantalla' and sent == [(image, '¿Qué aparece?')]
+
+
+def test_screen_tool_never_preapproved(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_network_permission(True)
+    assert not permissions.preapproved('inspect_screen')
+
+
+def test_vision_network_errors_are_safe(monkeypatch):
+    import requests
+    from nvidia_vision import analyze, VisionError
+    monkeypatch.setenv('NVIDIA_VISION_API_KEY', 'test-key')
+    class Session:
+        def post(self, *args, **kwargs): raise requests.exceptions.SSLError('secret should not appear')
+        def close(self): pass
+    with pytest.raises(VisionError) as exc:
+        analyze(b'\x89PNG\r\n\x1a\n' + b'test', 'Describe', Session)
+    assert 'TLS' in str(exc.value) and 'secret' not in str(exc.value)
