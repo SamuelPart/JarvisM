@@ -6,8 +6,9 @@ import sys
 import threading
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QSize, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QFont, QMovie
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QPlainTextEdit, QTextBrowser, QVBoxLayout,
@@ -17,6 +18,78 @@ from brain import Brain
 from main import ROOT, STATE
 from system_control import SystemController
 from voice import Voice
+
+
+GIF_URL = 'https://i.pinimg.com/originals/82/8e/f1/828ef1f45c33f05b8329dd93fffb89d5.gif'
+GIF_PATH = ROOT / '.jarvis-core.gif'
+MAX_GIF_BYTES = 8 * 1024 * 1024
+
+
+class CoreAnimation(QFrame):
+    """Download the requested animation once, then use its local cached copy."""
+    def __init__(self):
+        super().__init__()
+        self.setObjectName('corePanel')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(3)
+        self.display = QLabel('◉')
+        self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.display.setFixedSize(230, 200)
+        self.display.setObjectName('coreFallback')
+        layout.addWidget(self.display, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.caption = QLabel('NÚCLEO  /  J.A.R.V.I.S.')
+        self.caption.setObjectName('coreCaption')
+        self.caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.caption)
+        self.movie = None
+        self.network = QNetworkAccessManager(self)
+        self.reply = None
+        if not self.load_gif():
+            self.download_gif()
+
+    def load_gif(self):
+        if not GIF_PATH.is_file() or GIF_PATH.stat().st_size > MAX_GIF_BYTES:
+            return False
+        movie = QMovie(str(GIF_PATH))
+        if not movie.isValid():
+            return False
+        movie.setScaledSize(QSize(200, 200))
+        self.movie = movie
+        self.display.setMovie(movie)
+        movie.start()
+        return True
+
+    def download_gif(self):
+        self.caption.setText('CARGANDO ANIMACIÓN…')
+        request = QNetworkRequest(QUrl(GIF_URL))
+        request.setTransferTimeout(15000)
+        self.reply = self.network.get(request)
+        self.reply.downloadProgress.connect(self.on_progress)
+        self.reply.finished.connect(self.on_downloaded)
+
+    def on_progress(self, received, total):
+        if received > MAX_GIF_BYTES or total > MAX_GIF_BYTES:
+            self.reply.abort()
+
+    def on_downloaded(self):
+        reply = self.reply
+        try:
+            if reply.error() != QNetworkReply.NetworkError.NoError:
+                raise OSError('No se pudo descargar el GIF')
+            data = bytes(reply.readAll())
+            if len(data) > MAX_GIF_BYTES or not data.startswith((b'GIF87a', b'GIF89a')):
+                raise ValueError('GIF inválido o demasiado grande')
+            GIF_PATH.write_bytes(data)
+            if not self.load_gif():
+                GIF_PATH.unlink(missing_ok=True)
+                raise ValueError('GIF no compatible')
+            self.caption.setText('NÚCLEO  /  J.A.R.V.I.S.')
+        except (OSError, ValueError):
+            self.caption.setText('ANIMACIÓN NO DISPONIBLE · VER README')
+        finally:
+            reply.deleteLater()
+            self.reply = None
 
 
 class AgentWorker(QObject):
@@ -86,7 +159,7 @@ class JarvisWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self.setWindowTitle('JARVIS')
-        self.resize(860, 690)
+        self.resize(860, 800)
         self.setMinimumSize(560, 520)
         self.setStyleSheet(STYLE)
         root = QWidget()
@@ -125,6 +198,8 @@ class JarvisWindow(QMainWindow):
         model_label.setObjectName('model')
         bar.addWidget(model_label)
         panel_layout.addLayout(bar)
+        self.core = CoreAnimation()
+        panel_layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
         self.history = QTextBrowser()
         self.history.setOpenExternalLinks(False)
         self.history.setPlaceholderText('La conversación aparecerá aquí…')
@@ -226,6 +301,9 @@ QLabel#muted, QLabel#footer { color: #8496aa; }
 QLabel#footer { font-size: 11px; }
 QLabel#statusBadge { color: #74d8c4; font-size: 11px; font-weight: 700; }
 QLabel#model { color: #8296ab; font-size: 11px; }
+QFrame#corePanel { background: #091521; border: 1px solid #1e4459; border-radius: 18px; }
+QLabel#coreFallback { color: #67d8eb; font-size: 100px; }
+QLabel#coreCaption { color: #75aab8; font-size: 10px; letter-spacing: 2px; }
 QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
 QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
 QTextBrowser { border: none; line-height: 1.6; }

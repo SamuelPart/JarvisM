@@ -62,3 +62,7 @@ El texto pronunciado se envía a Microsoft: no use el modo neuronal con informac
 ## Interfaz de escritorio
 
 Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux o `venv\Scripts\python.exe gui.py` en Windows. La ventana permite chatear, escuchar respuestas, mantenerla siempre visible y aprobar o rechazar cada herramienta. La clave y la voz se configuran en el mismo `.env` que usa la consola; el texto hablado puede enviarse a Microsoft si está activado Edge TTS. La entrada de micrófono y el actualizador todavía están disponibles solo en consola (`python main.py`); la conversación de la ventana no persiste tras cerrarla. Se necesita una sesión gráfica. Para actualizar desde consola, salga de la interfaz primero.
+
+### Animación del núcleo
+
+La interfaz descarga una vez el GIF solicitado desde Pinterest y lo guarda localmente como `.jarvis-core.gif` (ignorado por Git); las siguientes ejecuciones usan la copia local. Esta descarga revela su dirección IP al servidor de Pinterest. Si no hay conexión, el servidor bloquea la descarga o la animación no se puede leer, se muestra un símbolo de respaldo. Para instalarla manualmente, descargue el GIF de `https://i.pinimg.com/originals/82/8e/f1/828ef1f45c33f05b8329dd93fffb89d5.gif` y guárdelo como `.jarvis-core.gif` en la carpeta del proyecto; reinicie la interfaz. El GIF debe ser válido y pesar como máximo 8 MB. Revise los derechos de uso antes de redistribuirlo.
