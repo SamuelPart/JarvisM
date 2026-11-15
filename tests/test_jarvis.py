@@ -426,7 +426,7 @@ def test_scoped_permission_cannot_allow_terminal(tmp_path, monkeypatch):
     assert not permissions.preapproved('play_music')
 
 
-def test_music_player_start_and_stop(monkeypatch):
+def test_music_player_start_and_stop(monkeypatch, tmp_path):
     import sys
     import music_player
     class Downloader:
@@ -437,13 +437,15 @@ def test_music_player_start_and_stop(monkeypatch):
             assert query == 'ytsearch1:tema' and not download
             return {'entries': [{'title': 'Tema', 'url': 'https://r1.googlevideo.com/videoplayback?id=1'}]}
     class Process:
-        def __init__(self, args, **kwargs): self.args, self.running = args, True
+        def __init__(self, args, **kwargs): self.args, self.running, self.pid = args, True, 424242
         def poll(self): return None if self.running else 0
         def terminate(self): self.running = False
         def wait(self, timeout): return 0
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
     monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/mpv')
     monkeypatch.setattr(music_player.subprocess, 'Popen', Process)
+    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
+    monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: SimpleNamespace(create_time=lambda: 123.0))
     player = music_player.MusicPlayer()
     assert player.play('tema')['started']
     assert player.process.args[0] == '/usr/bin/mpv'
@@ -823,3 +825,35 @@ def test_elevenlabs_invalid_voice_and_network_error_do_not_leak_key(monkeypatch)
     monkeypatch.setattr(requests, 'Session', Session)
     with pytest.raises(VoiceError) as error: Voice()._elevenlabs('Hola')
     assert 'secret-test-key' not in str(error.value)
+
+
+def test_music_can_stop_verified_process_after_restart(tmp_path, monkeypatch):
+    import json
+    import music_player
+    state = tmp_path / 'music.json'
+    monkeypatch.setattr(music_player, 'STATE', state)
+    marker = '--title=JARVIS-' + 'a' * 32
+    state.write_text(json.dumps({'pid': 123, 'created': 100.0, 'marker': marker}))
+    terminated = []
+    class Process:
+        def create_time(self): return 100.0
+        def cmdline(self): return ['mpv', marker]
+        def terminate(self): terminated.append(True)
+        def wait(self, timeout): pass
+    monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: Process())
+    assert music_player.MusicPlayer().stop()['stopped']
+    assert terminated == [True] and not state.exists()
+
+
+def test_music_does_not_stop_reused_or_foreign_process(tmp_path, monkeypatch):
+    import json
+    import music_player
+    state = tmp_path / 'music.json'
+    monkeypatch.setattr(music_player, 'STATE', state)
+    state.write_text(json.dumps({'pid': 123, 'created': 100.0, 'marker': '--title=JARVIS-' + 'a' * 32}))
+    class Process:
+        def create_time(self): return 101.0
+        def terminate(self): pytest.fail('No debe detener un proceso ajeno')
+    monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: Process())
+    assert not music_player.MusicPlayer().stop()['stopped']
+    assert not state.exists()

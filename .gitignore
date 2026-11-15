@@ -20,3 +20,5 @@ __pycache__/
 gmail-credentials.json
 
 .jarvis-calendar-token.json
+
+.jarvis-music.json

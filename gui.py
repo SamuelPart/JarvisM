@@ -846,7 +846,8 @@ def main():
         except OSError:
             QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de Gmail; se pedirá en cada acción.')
     try:
-        brain = create_brain(SystemController(), lambda *_: False)
+        controller = SystemController()
+        brain = create_brain(controller, lambda *_: False)
     except (ValueError, RuntimeError) as exc:
         QMessageBox.critical(None, 'No se pudo iniciar', str(exc))
         return 1
@@ -856,7 +857,10 @@ def main():
         QMessageBox.critical(None, 'JARVIS', 'No se pudo abrir la agenda o la memoria local.')
         return 1
     window.show()
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        controller.stop_music()
 
 
 if __name__ == '__main__':
