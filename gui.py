@@ -26,7 +26,7 @@ from microphone import listen
 from core_state import CoreState
 from agenda import Agenda
 from approval import is_approved
-from permissions import read_state, set_network_permission, set_gmail_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -267,6 +267,10 @@ class VisualSettingsDialog(QDialog):
         self.gmail_permission.setChecked(read_state().get('gmail_actions_accepted') is True)
         self.gmail_permission.setToolTip('Incluye leer, enviar y marcar mensajes importantes o spam. Puede haber errores y correos maliciosos. Las imágenes siguen requiriendo autorización.')
         layout.addWidget(self.gmail_permission)
+        self.agenda_permission = QCheckBox('Consultar agenda y calendario sin preguntar cada vez')
+        self.agenda_permission.setChecked(read_state().get('agenda_read_accepted') is True)
+        self.agenda_permission.setToolTip('Incluye hora, recordatorios y eventos de Google Calendar. Los datos pueden enviarse al proveedor de IA; crear recordatorios requiere permiso aparte.')
+        layout.addWidget(self.agenda_permission)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Cancelar')
@@ -661,6 +665,7 @@ class JarvisWindow(QMainWindow):
             self.preferences = save_ui(UI_SETTINGS_PATH, dialog.values())
             set_network_permission(dialog.network_permission.isChecked())
             set_gmail_permission(dialog.gmail_permission.isChecked())
+            set_agenda_permission(dialog.agenda_permission.isChecked())
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
             return
@@ -845,6 +850,14 @@ def main():
             set_gmail_permission(answer == QMessageBox.StandardButton.Yes)
         except OSError:
             QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de Gmail; se pedirá en cada acción.')
+    if not read_state().get('agenda_read_asked'):
+        answer = QMessageBox.question(None, 'Permiso permanente de agenda',
+            '¿Permites consultar la hora, tus recordatorios locales y eventos de Google Calendar sin preguntar cada vez? Los datos pueden enviarse al proveedor de IA. Puedes desactivarlo en Ajustes. Crear o modificar recordatorios seguirá requiriendo autorización.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        try:
+            set_agenda_permission(answer == QMessageBox.StandardButton.Yes)
+        except OSError:
+            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de agenda; se pedirá en cada consulta.')
     try:
         controller = SystemController()
         brain = create_brain(controller, lambda *_: False)

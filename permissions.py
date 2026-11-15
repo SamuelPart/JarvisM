@@ -7,6 +7,7 @@ from pathlib import Path
 STATE = Path(__file__).resolve().parent / '.jarvis-state.json'
 PREAPPROVED_TOOLS = frozenset({'web_search', 'music_search', 'play_music', 'stop_music'})
 GMAIL_TOOLS = frozenset({'search_gmail', 'read_gmail', 'send_gmail', 'reply_gmail', 'classify_gmail'})
+AGENDA_TOOLS = frozenset({'current_time', 'list_reminders', 'list_calendar_events'})
 
 
 def read_state():
@@ -40,7 +41,12 @@ def set_gmail_permission(granted):
     _set_permission('gmail_actions', granted)
 
 
+def set_agenda_permission(granted):
+    _set_permission('agenda_read', granted)
+
+
 def preapproved(name):
     state = read_state()
     return ((name in PREAPPROVED_TOOLS and state.get('network_actions_accepted') is True) or
-            (name in GMAIL_TOOLS and state.get('gmail_actions_accepted') is True))
+            (name in GMAIL_TOOLS and state.get('gmail_actions_accepted') is True) or
+            (name in AGENDA_TOOLS and state.get('agenda_read_accepted') is True))

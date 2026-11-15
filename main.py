@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
 from errors import describe_error
-from permissions import read_state, set_network_permission, set_gmail_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission
 from text_links import speech_text
 
 ROOT = Path(__file__).resolve().parent
@@ -87,6 +87,12 @@ def main():
             set_gmail_permission(granted)
         except OSError:
             print('No se pudo guardar el permiso de Gmail; se pedirá cada vez.')
+    if not read_state().get('agenda_read_asked'):
+        granted = confirm('¿Autoriza consultar la hora, recordatorios locales y Google Calendar sin preguntar cada vez? Sus datos pueden enviarse al proveedor de IA. Crear recordatorios requiere permiso aparte.')
+        try:
+            set_agenda_permission(granted)
+        except OSError:
+            print('No se pudo guardar el permiso de agenda; se pedirá en cada consulta.')
     # The explicit environment opt-in acknowledges that updates execute remote code.
     if os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
     from provider import create_brain

@@ -937,3 +937,19 @@ def test_browser_worker_can_recreate_page_when_context_closed(monkeypatch):
     monkeypatch.setattr(music, '_ensure_browser', lambda: None)
     assert music.open('dfojvebIwJc')['playing']
     assert events == ['new_context', 'new_page', 'goto']
+
+
+def test_agenda_persistent_permission_scoped_and_revocable(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    assert not permissions.preapproved('list_reminders')
+    permissions.set_agenda_permission(True)
+    for name in ('current_time', 'list_reminders', 'list_calendar_events'):
+        assert permissions.preapproved(name)
+    for name in ('create_reminder', 'terminal', 'files', 'inspect_screen', 'inspect_gmail_image', 'send_gmail'):
+        assert not permissions.preapproved(name)
+    permissions.set_gmail_permission(True)
+    assert permissions.preapproved('send_gmail')
+    permissions.set_agenda_permission(False)
+    assert not permissions.preapproved('list_reminders')
+    assert permissions.preapproved('send_gmail')
