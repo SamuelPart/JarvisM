@@ -400,3 +400,74 @@ def test_music_search_opens_results_without_claiming_playback(monkeypatch):
     assert opened == ['https://www.youtube.com/results?search_query=amor+y+sol']
     assert result['opened'] and 'usuario debe elegir' in result['note']
     with pytest.raises(ValueError): SystemController().music_search('tema', 'servicio_desconocido')
+
+
+def test_links_are_clickable_safely_and_silent():
+    from text_links import markup, without_links
+    text = 'Mira <script>alert(1)</script> https://example.com/a?x=1&y=2.'
+    rendered = markup(text)
+    assert '<script>' not in rendered and '&lt;script&gt;' in rendered
+    assert '<a href="https://example.com/a?x=1&amp;y=2"' in rendered
+    assert 'https://' not in without_links(text)
+    assert '<a href=' not in markup('https://user:secret@example.com')
+
+
+def test_scoped_permission_cannot_allow_terminal(tmp_path, monkeypatch):
+    import permissions
+    state = tmp_path / 'state.json'
+    state.write_text('{"initial_accepted": true}')
+    monkeypatch.setattr(permissions, 'STATE', state)
+    assert not permissions.preapproved('web_search')
+    permissions.set_network_permission(True)
+    assert permissions.preapproved('web_search') and permissions.preapproved('play_music')
+    assert not permissions.preapproved('terminal') and not permissions.preapproved('files')
+    assert permissions.read_state()['initial_accepted'] is True
+    permissions.set_network_permission(False)
+    assert not permissions.preapproved('play_music')
+
+
+def test_music_player_start_and_stop(monkeypatch):
+    import sys
+    import music_player
+    class Downloader:
+        def __init__(self, options): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, query, download):
+            assert query == 'ytsearch1:tema' and not download
+            return {'entries': [{'title': 'Tema', 'url': 'https://r1.googlevideo.com/videoplayback?id=1'}]}
+    class Process:
+        def __init__(self, args, **kwargs): self.args, self.running = args, True
+        def poll(self): return None if self.running else 0
+        def terminate(self): self.running = False
+        def wait(self, timeout): return 0
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/mpv')
+    monkeypatch.setattr(music_player.subprocess, 'Popen', Process)
+    player = music_player.MusicPlayer()
+    assert player.play('tema')['started']
+    assert player.process.args[0] == '/usr/bin/mpv'
+    assert player.stop()['stopped']
+    assert not player.stop()['stopped']
+
+
+def test_network_preapproval_applies_to_agent_but_not_terminal(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_network_permission(True)
+    seen = []
+    def call_part(name, args):
+        return types.Part(function_call=types.FunctionCall(name=name, args=args))
+    class Models:
+        step = 0
+        def generate_content(self, **kwargs):
+            self.step += 1
+            parts = ([call_part('web_search', {'query': 'noticias'})] if self.step == 1 else
+                     [call_part('terminal', {'command': 'echo hello'})] if self.step == 2 else
+                     [types.Part.from_text(text='Listo')])
+            return SimpleNamespace(candidates=[SimpleNamespace(content=types.Content(role='model', parts=parts))])
+    controller = SimpleNamespace(web_search=lambda query: {'results': []}, terminal=lambda command: pytest.fail('terminal no autorizado'))
+    agent = Brain('', controller, lambda name, args: seen.append(name) or False,
+                  client=SimpleNamespace(models=Models()))
+    assert agent.ask('Busca') == 'Listo'
+    assert seen == ['terminal']

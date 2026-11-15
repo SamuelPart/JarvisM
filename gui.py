@@ -9,8 +9,8 @@ import threading
 from datetime import datetime
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -25,6 +25,8 @@ from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
 from agenda import Agenda
+from permissions import read_state, set_network_permission
+from text_links import markup, without_links
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
@@ -135,10 +137,12 @@ class ChatMessage(QFrame):
         layout.addWidget(label)
         body = QLabel()
         body.setObjectName('messageText')
-        body.setTextFormat(Qt.TextFormat.PlainText)
-        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        body.setOpenExternalLinks(False)
+        body.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
         body.setWordWrap(True)
-        body.setText(text)
+        body.setText(markup(text))
         layout.addWidget(body)
         self.opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity)
@@ -165,7 +169,7 @@ class ChatHistory(QScrollArea):
         self.setWidget(container)
 
     def add_message(self, author, text):
-        # Plain QLabel text: model and user content are never interpreted as HTML.
+        # Only escaped text and explicitly recognized HTTP(S) links are rendered.
         bubble = ChatMessage(author, text)
         self.messages.insertWidget(self.messages.count() - 1, bubble)
         QTimer.singleShot(0, self.scroll_to_bottom)
@@ -280,6 +284,10 @@ class VisualSettingsDialog(QDialog):
             form.addRow(label, combo)
             self.fields[key] = combo
         layout.addLayout(form)
+        self.network_permission = QCheckBox('Permitir búsquedas y música sin preguntar cada vez')
+        self.network_permission.setChecked(read_state().get('network_actions_accepted') is True)
+        self.network_permission.setToolTip('Las búsquedas y la música usan servicios externos; las acciones críticas siguen pidiendo permiso.')
+        layout.addWidget(self.network_permission)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Cancelar')
@@ -572,7 +580,7 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('idle')
         self.append_chat('JARVIS', text)
         if self.chat_audio.isChecked():
-            self.voice.speak(text)
+            self.voice.speak(without_links(text))
 
     @pyqtSlot(str)
     def chat_error(self, error):
@@ -640,6 +648,7 @@ class JarvisWindow(QMainWindow):
             return
         try:
             self.preferences = save_ui(UI_SETTINGS_PATH, dialog.values())
+            set_network_permission(dialog.network_permission.isChecked())
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
             return
@@ -806,6 +815,14 @@ def main():
         except OSError:
             QMessageBox.critical(None, 'JARVIS', 'No se pudo guardar la confirmación inicial.')
             return 1
+    if not read_state().get('network_actions_asked'):
+        answer = QMessageBox.question(None, 'Permiso para búsquedas y música',
+            '¿Permites que JARVIS busque en Internet y reproduzca música sin preguntar cada vez? Las consultas se enviarán a servicios externos. Los comandos, archivos y demás acciones seguirán requiriendo autorización.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        try:
+            set_network_permission(answer == QMessageBox.StandardButton.Yes)
+        except OSError:
+            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar la preferencia. Se pedirá permiso para cada acción.')
     try:
         brain = create_brain(SystemController(), lambda *_: False)
     except (ValueError, RuntimeError) as exc:

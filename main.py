@@ -7,6 +7,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
 from errors import describe_error
+from permissions import read_state, set_network_permission
+from text_links import without_links
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / '.jarvis-state.json'
@@ -21,7 +23,7 @@ def speak(text):
 
 def announce(text):
     print(text, flush=True)
-    speak(text)
+    speak(without_links(text))
 
 
 def confirm(prompt):
@@ -73,6 +75,12 @@ def main():
     announce('Activando protocolos de seguridad...')
     if not initial_security():
         print('Inicio cancelado.'); return 1
+    if not read_state().get('network_actions_asked'):
+        granted = confirm('¿Autoriza búsquedas web y música sin preguntar cada vez? Se envían consultas a servicios externos; comandos y archivos siguen requiriendo permiso.')
+        try:
+            set_network_permission(granted)
+        except OSError:
+            print('No se pudo guardar el permiso; se pedirá autorización cada vez.')
     # The explicit environment opt-in acknowledges that updates execute remote code.
     if os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
     from provider import create_brain

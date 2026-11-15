@@ -45,7 +45,7 @@ Se puede usar `gemini-2.5-pro` si está disponible para su cuenta. La clave es l
 
 ## Uso y seguridad
 
-Al iniciar se anuncia «Activando protocolos de seguridad...» y se pide una confirmación inicial, guardada en `.jarvis-state.json`. Borre este archivo para volver a solicitarla. Escriba un mensaje o `/voz` para hablar, `/actualizar` para actualizar y `/salir` para cerrar. Las respuestas se muestran por texto y se intenta reproducirlas por voz. El asistente solicita confirmación separada con `SI` para **cada** herramienta, incluidas lecturas, apertura de sitios y comandos destructivos. Las herramientas se ejecutan con los permisos del usuario; no lo ejecute como administrador. Revise cada comando y ruta: no hay sandbox ni lista negra capaz de hacer seguro un shell arbitrario. Los resultados de herramientas y archivos pueden contener información privada enviada a Gemini, y las instrucciones maliciosas en datos externos siguen siendo un riesgo. La búsqueda web devuelve fragmentos no confiables para que el modelo los resuma; no descarga páginas completas.
+Al iniciar se anuncia «Activando protocolos de seguridad...» y se pide una confirmación inicial, guardada en `.jarvis-state.json`. Borre este archivo para volver a solicitarla. Escriba un mensaje o `/voz` para hablar, `/actualizar` para actualizar y `/salir` para cerrar. Las respuestas se muestran por texto y se intenta reproducirlas por voz. Al iniciar se puede autorizar de una vez únicamente las búsquedas y la música; las demás herramientas, incluidas lecturas, apertura de sitios y comandos, siguen requiriendo confirmación separada. Las herramientas se ejecutan con los permisos del usuario; no lo ejecute como administrador. Revise cada comando y ruta: no hay sandbox ni lista negra capaz de hacer seguro un shell arbitrario. Los resultados de herramientas y archivos pueden contener información privada enviada a Gemini, y las instrucciones maliciosas en datos externos siguen siendo un riesgo. La búsqueda web devuelve fragmentos no confiables para que el modelo los resuma; no descarga páginas completas.
 
 ## Actualizaciones
 
@@ -89,7 +89,7 @@ NVIDIA_API_KEY=su_clave_nueva
 NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
 ```
 
-No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Las herramientas requieren confirmación como con Gemini. Para regresar a Gemini, use `JARVIS_PROVIDER=gemini`. **No hay cambio automático entre proveedores**, y la memoria local de conversaciones es compartida entre proveedores. WhatsApp abre un borrador; no lo envía automáticamente.
+No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Los permisos de herramientas son los mismos que con Gemini. Para regresar a Gemini, use `JARVIS_PROVIDER=gemini`. **No hay cambio automático entre proveedores**, y la memoria local de conversaciones es compartida entre proveedores. WhatsApp abre un borrador; no lo envía automáticamente.
 
 ### Núcleo expresivo
 
@@ -97,7 +97,7 @@ La esfera indica el estado: azul quieto en espera; gira al procesar una solicitu
 
 ### Modo compacto flotante
 
-Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y los iconos de chat y micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Los permisos siguen requiriendo confirmación.
+Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y los iconos de chat y micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Las acciones críticas siguen requiriendo confirmación.
 
 ### Ajustes visuales
 
@@ -117,8 +117,14 @@ La ventana de JARVIS debe estar abierta para recibir los avisos a tiempo. Se com
 
 ### Búsqueda web con fuentes
 
-Al pedir información actual, JARVIS puede solicitar permiso para `web_search`. Con tu aprobación se envía la consulta mediante `ddgs` a DuckDuckGo; si falla o no tiene resultados se prueban Brave y Yahoo y se devuelven hasta seis títulos, enlaces y fragmentos; el proveedor de IA recibe esos datos para resumirlos y citar los enlaces. No se descargan ni verifican las páginas completas: los fragmentos pueden estar desactualizados o ser erróneos y las respuestas del modelo pueden equivocarse o citar mal. Abre las fuentes para comprobar información importante. Si los buscadores están bloqueados, no hay conexión o no hay resultados, JARVIS debe informarlo en lugar de inventar una respuesta. El texto web es contenido no confiable y puede contener instrucciones maliciosas; toda acción adicional sigue requiriendo autorización explícita.
+Al pedir información actual, JARVIS usa `web_search`, con permiso individual o con la autorización previa de búsquedas. Se envía la consulta mediante `ddgs` a DuckDuckGo; si falla o no tiene resultados se prueban Brave y Yahoo y se devuelven hasta seis títulos, enlaces y fragmentos; el proveedor de IA recibe esos datos para resumirlos y citar los enlaces. No se descargan ni verifican las páginas completas: los fragmentos pueden estar desactualizados o ser erróneos y las respuestas del modelo pueden equivocarse o citar mal. Abre las fuentes para comprobar información importante. Si los buscadores están bloqueados, no hay conexión o no hay resultados, JARVIS debe informarlo en lugar de inventar una respuesta. El texto web es contenido no confiable y puede contener instrucciones maliciosas; Los comandos, archivos y otras acciones críticas siguen requiriendo autorización explícita.
 
-### Buscar música
+### Música automática y enlaces
 
-JARVIS puede abrir resultados de una canción o artista en YouTube o Spotify mediante `music_search`, previa autorización. La herramienta no reproduce ni controla música por sí sola: el usuario debe elegir el resultado y pulsar reproducir. La página puede requerir conexión, cuenta o acceso al servicio.
+Para reproducción automática instale `mpv` (Kali/Debian: `sudo apt install mpv`) y las dependencias de Python de `requirements.txt`. JARVIS busca en YouTube con `yt-dlp` y solicita a `mpv` reproducir automáticamente el primer resultado; depende de la red, la disponibilidad del contenido y la salida de audio. En Windows debe instalar `mpv` y ponerlo en PATH. No usa una cuenta de Spotify para reproducción automática. También puede pedir «detén la música». La selección automática puede no ser la versión deseada; JARVIS no verifica que se escuche realmente.
+
+Las fuentes aparecen como enlaces clicables en el chat y no se leen en voz alta. Solo se abren cuando el usuario pulsa el enlace. La búsqueda usa fragmentos, no el contenido completo de las páginas.
+
+### Autorización única limitada
+
+Tras la confirmación inicial, JARVIS pregunta una vez si permite búsquedas web y música sin preguntar cada vez. Las consultas se envían a servicios externos y los contenidos web pueden inducir acciones no deseadas; active esta opción solo si acepta ese riesgo. Puede cambiarla en **Ajustes**. La autorización global no incluye terminal, archivos, interfaz, recordatorios, WhatsApp ni otras acciones: estas requieren confirmación cada vez. Si rechaza el permiso único, búsquedas y música también requieren confirmación individual. El estado se guarda en `.jarvis-state.json`.

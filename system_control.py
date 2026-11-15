@@ -17,6 +17,7 @@ import psutil
 from datetime import datetime
 from agenda import Agenda, timestamp_from_iso
 from web_search import search
+from music_player import MusicPlayer
 
 
 class SystemController:
@@ -24,6 +25,7 @@ class SystemController:
         self.system = platform.system()
         if self.system not in ('Windows', 'Linux'):
             raise RuntimeError('Solo Windows y Linux son compatibles.')
+        self.music = MusicPlayer()
 
     def current_time(self) -> dict:
         return {'local_time': datetime.now().astimezone().isoformat(timespec='seconds')}
@@ -117,6 +119,12 @@ class SystemController:
         opened = webbrowser.open(url)
         return {'opened': opened, 'sent': False,
                 'note': 'Se solicitó abrir un borrador. El usuario debe revisar el destinatario y pulsar Enviar.'}
+
+    def play_music(self, query: str) -> dict:
+        return self.music.play(query)
+
+    def stop_music(self) -> dict:
+        return self.music.stop()
 
     def music_search(self, query: str, service: str = 'youtube') -> dict:
         """Open music search results; playback requires a user selection."""

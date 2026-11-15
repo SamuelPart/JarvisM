@@ -3,6 +3,7 @@ import json
 import re
 import threading
 from errors import describe_error
+from text_links import without_links
 
 
 def is_approval(text):
@@ -90,5 +91,5 @@ class VoiceSession:
                 self.connection('Error al consultar')
                 answer = 'Señor, ' + describe_error(exc)
             if not self.stop_event.is_set():
-                self.speak(answer)
+                self.speak(without_links(answer))
         self.status('Micrófono apagado')
