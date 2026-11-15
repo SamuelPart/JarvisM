@@ -435,12 +435,14 @@ def test_music_player_start_and_stop(monkeypatch, tmp_path):
         def __exit__(self, *args): pass
         def extract_info(self, query, download):
             assert query == 'ytsearch1:tema' and not download
-            return {'entries': [{'title': 'Tema', 'url': 'https://r1.googlevideo.com/videoplayback?id=1'}]}
+            return {'entries': [{'title': 'Tema', 'id': 'dfojvebIwJc'}]}
     class Process:
-        def __init__(self, args, **kwargs): self.args, self.running, self.pid = args, True, 424242
+        def __init__(self, args, **kwargs): self.args, self.kwargs, self.running, self.pid = args, kwargs, True, 424242
         def poll(self): return None if self.running else 0
         def terminate(self): self.running = False
-        def wait(self, timeout): return 0
+        def wait(self, timeout):
+            if self.running: raise music_player.subprocess.TimeoutExpired('mpv', timeout)
+            return 0
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
     monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/mpv')
     monkeypatch.setattr(music_player.subprocess, 'Popen', Process)
@@ -449,6 +451,9 @@ def test_music_player_start_and_stop(monkeypatch, tmp_path):
     player = music_player.MusicPlayer()
     assert player.play('tema')['started']
     assert player.process.args[0] == '/usr/bin/mpv'
+    assert player.process.args[-1] == 'https://www.youtube.com/watch?v=dfojvebIwJc'
+    assert '--ytdl=no' not in player.process.args and '--no-config' in player.process.args
+    assert player.process.kwargs['env']['PATH'].split(music_player.os.pathsep)[0] == str(music_player.Path(sys.executable).absolute().parent)
     assert player.stop()['stopped']
     assert not player.stop()['stopped']
 

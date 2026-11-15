@@ -3,12 +3,12 @@ import json
 import os
 import re
 import tempfile
+import sys
 import uuid
 from pathlib import Path
 import psutil
 import shutil
 import subprocess
-from urllib.parse import urlsplit
 
 
 STATE = Path(__file__).resolve().parent / '.jarvis-music.json'
@@ -27,18 +27,17 @@ class MusicPlayer:
             return {'started': False, 'error': 'Falta mpv. En Kali instala mpv con sudo apt install mpv.'}
         try:
             import yt_dlp
-            options = {'quiet': True, 'no_warnings': True, 'format': 'bestaudio/best',
+            options = {'quiet': True, 'no_warnings': True, 'extract_flat': True,
                        'socket_timeout': 15, 'retries': 1, 'noplaylist': True}
             with yt_dlp.YoutubeDL(options) as ydl:
                 search = ydl.extract_info('ytsearch1:' + query, download=False)
             entry = next((x for x in (search.get('entries') or []) if x), None)
             if not entry:
                 return {'started': False, 'error': 'No se encontraron canciones.'}
-            url = entry.get('url') or ''
-            parsed = urlsplit(url)
-            host = (parsed.hostname or '').lower()
-            if parsed.scheme != 'https' or not host.endswith('.googlevideo.com') or parsed.username or parsed.password:
-                return {'started': False, 'error': 'No se pudo obtener un audio compatible de YouTube.'}
+            video_id = entry.get('id') or ''
+            if not isinstance(video_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
+                return {'started': False, 'error': 'No se pudo identificar un video compatible de YouTube.'}
+            url = 'https://www.youtube.com/watch?v=' + video_id
             title = str(entry.get('title') or query)[:300]
         except Exception:
             return {'started': False, 'error': 'No se pudo obtener la canción de YouTube. Revisa la conexión o intenta otra búsqueda.'}
@@ -50,24 +49,36 @@ class MusicPlayer:
             # A separate session lets playback survive a normal JARVIS/terminal exit.
             detach = ({'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS}
                       if os.name == 'nt' else {'start_new_session': True})
-            self.process = subprocess.Popen([mpv, '--no-video', '--ytdl=no', '--no-terminal', marker, url],
+            env = os.environ.copy()
+            env['PATH'] = str(Path(sys.executable).absolute().parent) + os.pathsep + env.get('PATH', '')
+            self.process = subprocess.Popen([mpv, '--no-video', '--no-config', '--no-terminal', marker, url],
                                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                            **detach)
+                                            env=env, **detach)
         except OSError:
             return {'started': False, 'error': 'No se pudo iniciar mpv.'}
         try:
             self._save_process(self.process.pid, marker)
         except (OSError, psutil.Error):
-            self.process.terminate()
             try:
-                self.process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=3)
+                if self.process.poll() is None:
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        self.process.kill()
+                        self.process.wait(timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
             self.process = None
-            return {'started': False, 'error': 'No se pudo registrar el reproductor; se detuvo por seguridad.'}
-        return {'started': True, 'title': title,
-                'note': 'Se inició el reproductor; si no oyes audio revisa el dispositivo de salida. La disponibilidad depende de YouTube.'}
+            return {'started': False, 'error': 'No se pudo registrar el reproductor o se cerró al iniciar.'}
+        try:
+            self.process.wait(timeout=1.5)
+        except subprocess.TimeoutExpired:
+            return {'started': True, 'title': title,
+                    'note': 'El reproductor sigue abierto, pero aún podría fallar al cargar; no se ha comprobado que se oiga el audio.'}
+        self._clear_matching(self.process.pid)
+        self.process = None
+        return {'started': False, 'error': 'El reproductor se cerró al iniciar; revisa mpv, yt-dlp y la disponibilidad del video.'}
 
     def _save_process(self, pid, marker):
         info = {'pid': pid, 'created': psutil.Process(pid).create_time(), 'marker': marker}

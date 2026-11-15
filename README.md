@@ -121,7 +121,7 @@ Al pedir información actual, JARVIS usa `web_search`, con permiso individual o 
 
 ### Música automática y enlaces
 
-Para reproducción automática instale `mpv` (Kali/Debian: `sudo apt install mpv`) y las dependencias de Python de `requirements.txt`. JARVIS busca en YouTube con `yt-dlp` y solicita a `mpv` reproducir automáticamente el primer resultado; depende de la red, la disponibilidad del contenido y la salida de audio. En Windows debe instalar `mpv` y ponerlo en PATH. No usa una cuenta de Spotify para reproducción automática. También puede pedir «detén la música». La selección automática puede no ser la versión deseada; JARVIS no verifica que se escuche realmente.
+Para reproducción automática instale `mpv` (Kali/Debian: `sudo apt install mpv`) y las dependencias de Python de `requirements.txt`. JARVIS busca en YouTube con `yt-dlp` y entrega la página del primer resultado a `mpv`, que usa `yt-dlp` del entorno de Python para resolver el audio; depende de la red, la disponibilidad del contenido y la salida de audio. En Windows debe instalar `mpv` y ponerlo en PATH. No usa una cuenta de Spotify para reproducción automática. También puede pedir «detén la música». La selección automática puede no ser la versión deseada; JARVIS no verifica que se escuche realmente.
 
 Las fuentes aparecen como enlaces clicables en el chat y no se leen en voz alta. Solo se abren cuando el usuario pulsa el enlace. La búsqueda usa fragmentos, no el contenido completo de las páginas.
 
