@@ -26,7 +26,8 @@ from microphone import listen
 from core_state import CoreState
 from agenda import Agenda
 from approval import is_approved
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission
+import startup_briefing
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -35,6 +36,7 @@ UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
 
 class VoiceSignals(QObject):
     activity = pyqtSignal(bool)
+    briefing_ready = pyqtSignal(str)
 
 
 class CoreAnimation(QWidget):
@@ -271,6 +273,10 @@ class VisualSettingsDialog(QDialog):
         self.agenda_permission.setChecked(read_state().get('agenda_read_accepted') is True)
         self.agenda_permission.setToolTip('Incluye hora, recordatorios y eventos de Google Calendar. Los datos pueden enviarse al proveedor de IA; crear recordatorios requiere permiso aparte.')
         layout.addWidget(self.agenda_permission)
+        self.briefing_permission = QCheckBox('Resumen automático al iniciar')
+        self.briefing_permission.setChecked(read_state().get('startup_briefing_accepted') is True)
+        self.briefing_permission.setToolTip('Consulta recordatorios, calendario configurado, estado del equipo y cantidad de errores recientes en los registros. La voz puede enviarse a un servicio externo; los detalles de registros solicitados pueden enviarse al proveedor de IA.')
+        layout.addWidget(self.briefing_permission)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Cancelar')
@@ -465,6 +471,7 @@ class JarvisWindow(QMainWindow):
         self.voice_signals = VoiceSignals(self)
         self.core_state = CoreState()
         self.voice_signals.activity.connect(self.on_voice_activity)
+        self.voice_signals.briefing_ready.connect(self.on_briefing_ready)
         self.voice.on_activity = self.voice_signals.activity.emit
 
         self.status = QLabel('Micrófono apagado')
@@ -515,7 +522,8 @@ class JarvisWindow(QMainWindow):
         self.agenda_timer.setInterval(5000)
         self.agenda_timer.timeout.connect(self.check_reminders)
         self.agenda_timer.start()
-        QTimer.singleShot(0, self.check_reminders)
+        if not read_state().get('startup_briefing_accepted'):
+            QTimer.singleShot(0, self.check_reminders)
 
     @pyqtSlot(bool)
     def toggle_chat(self, enabled):
@@ -577,7 +585,8 @@ class JarvisWindow(QMainWindow):
                    if name == 'read_gmail' else ' Se enviará el correo completo al destinatario indicado.'
                    if name in ('send_gmail', 'reply_gmail') else ' Se modificará la clasificación de este correo en Gmail.'
                    if name == 'classify_gmail' else ' Se consultará tu agenda y los datos pueden enviarse al proveedor del chat.'
-                   if name in ('list_calendar_events', 'list_reminders') else '')
+                   if name in ('list_calendar_events', 'list_reminders') else '\nLos registros solicitados pueden contener datos sensibles y enviarse al proveedor del chat.'
+                   if name == 'review_startup_logs' else '')
         details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
         self.append_chat('Sistema', 'Permiso solicitado para: ' + name + '\n' + details + privacy +
                          '\nEscribe AUTORIZO para aprobar o NO para rechazar.')
@@ -657,6 +666,36 @@ class JarvisWindow(QMainWindow):
         except (sqlite3.Error, OSError):
             QMessageBox.warning(self, 'Memoria', 'No se pudo abrir la memoria local.')
 
+    def start_briefing(self):
+        if not read_state().get('startup_briefing_accepted'):
+            return
+        greeting = startup_briefing.greeting(datetime.now().astimezone()) + ', señor. ¿Cómo está hoy?'
+        self.append_chat('JARVIS', greeting)
+        if self.chat_audio.isChecked() and self.thread is None:
+            self.voice.speak(speech_text(greeting))
+        signals = self.voice_signals
+        def run():
+            try:
+                result = startup_briefing.build(include_greeting=False)
+            except Exception:
+                result = 'No pude completar la revisión inicial.'
+            try:
+                signals.briefing_ready.emit(result)
+            except RuntimeError:
+                pass  # The window may have closed while the review was running.
+        threading.Thread(target=run, name='JARVIS revisión inicial', daemon=True).start()
+
+    @pyqtSlot(str)
+    def on_briefing_ready(self, text):
+        if not read_state().get('startup_briefing_accepted'):
+            return
+        self.append_chat('JARVIS', text)
+        # Never speak over microphone capture or an active chat/approval request.
+        if self.chat_audio.isChecked() and self.thread is None:
+            self.voice.speak(speech_text(text))
+        elif self.thread is not None:
+            self.status.setText('Revisión inicial disponible en el chat')
+
     def open_visual_settings(self):
         dialog = VisualSettingsDialog(self.preferences, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -666,6 +705,7 @@ class JarvisWindow(QMainWindow):
             set_network_permission(dialog.network_permission.isChecked())
             set_gmail_permission(dialog.gmail_permission.isChecked())
             set_agenda_permission(dialog.agenda_permission.isChecked())
+            set_briefing_permission(dialog.briefing_permission.isChecked())
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
             return
@@ -858,6 +898,14 @@ def main():
             set_agenda_permission(answer == QMessageBox.StandardButton.Yes)
         except OSError:
             QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de agenda; se pedirá en cada consulta.')
+    if not read_state().get('startup_briefing_asked'):
+        answer = QMessageBox.question(None, 'Resumen automático al iniciar',
+            '¿Permites que JARVIS revise al iniciar tus recordatorios locales, eventos del Google Calendar conectado, batería, memoria, disco y cantidad de errores recientes del registro del sistema? Guardará una referencia local y podrá leer el resumen en voz alta; el texto hablado puede enviarse al servicio de voz configurado. Si solicitas detalles de los registros, estos pueden contener datos privados y enviarse al proveedor de IA. No vigila el equipo mientras está cerrado. Puedes desactivarlo en Ajustes.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        try:
+            set_briefing_permission(answer == QMessageBox.StandardButton.Yes)
+        except OSError:
+            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar la preferencia; el resumen no se activará.')
     try:
         controller = SystemController()
         brain = create_brain(controller, lambda *_: False)
@@ -870,6 +918,7 @@ def main():
         QMessageBox.critical(None, 'JARVIS', 'No se pudo abrir la agenda o la memoria local.')
         return 1
     window.show()
+    QTimer.singleShot(0, window.start_briefing)
     return app.exec()
 
 

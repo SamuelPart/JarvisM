@@ -953,3 +953,94 @@ def test_agenda_persistent_permission_scoped_and_revocable(tmp_path, monkeypatch
     permissions.set_agenda_permission(False)
     assert not permissions.preapproved('list_reminders')
     assert permissions.preapproved('send_gmail')
+
+
+def test_startup_briefing_permission_persists_and_is_scoped(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    assert not permissions.read_state().get('startup_briefing_accepted', False)
+    permissions.set_briefing_permission(True)
+    assert permissions.read_state()['startup_briefing_asked']
+    assert permissions.read_state()['startup_briefing_accepted']
+    assert not permissions.preapproved('terminal')
+    assert not permissions.preapproved('create_reminder')
+    permissions.set_briefing_permission(False)
+    assert not permissions.read_state()['startup_briefing_accepted']
+    assert permissions.read_state()['startup_briefing_asked']
+
+
+def test_startup_briefing_first_review_and_later_changes(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    import startup_briefing as brief
+    now = datetime(2026, 11, 15, 10, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(brief, 'STATE', tmp_path / 'baseline.json')
+    monkeypatch.setattr(brief.calendar_access, 'TOKEN', tmp_path / 'missing-token')
+    monkeypatch.setattr(brief, 'Agenda', lambda: SimpleNamespace(list=lambda: [
+        {'title': 'Llamar a mamá', 'due': now.timestamp() - 60, 'notified': False},
+        {'title': 'Después', 'due': now.timestamp() + 2 * 86400, 'notified': False}]))
+    monkeypatch.setattr(brief.psutil, 'virtual_memory', lambda: SimpleNamespace(percent=40))
+    disk = SimpleNamespace(free=40 * 1024**3, percent=40)
+    monkeypatch.setattr(brief.psutil, 'disk_usage', lambda _: disk)
+    monkeypatch.setattr(brief.psutil, 'sensors_battery', lambda: SimpleNamespace(percent=75))
+    monkeypatch.setattr(brief, 'journal_errors', lambda since, until: 3)
+    first = brief.build(now)
+    assert 'Buenos días' in first and '¿Cómo está hoy?' in first
+    assert 'Llamar a mamá' in first and 'Después' not in first
+    assert 'primera revisión' in first and 'batería al 75' in first
+    assert 'registros de error' not in first
+    disk.free = 30 * 1024**3
+    second = brief.build(now.replace(hour=14))
+    assert 'Buenas tardes' in second and '10 gigabytes' in second
+    assert '3 registros de error' in second and 'no necesariamente' in second
+    assert json.loads((tmp_path / 'baseline.json').read_text())['disk_free'] == disk.free
+
+
+def test_startup_briefing_handles_calendar_and_unavailable_journal(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    import startup_briefing as brief
+    now = datetime(2026, 11, 15, 20, tzinfo=timezone.utc)
+    monkeypatch.setattr(brief, 'STATE', tmp_path / 'baseline.json')
+    token = tmp_path / 'calendar-token'
+    token.touch()
+    monkeypatch.setattr(brief.calendar_access, 'TOKEN', token)
+    monkeypatch.setattr(brief.calendar_access, 'list_events', lambda start, end: {'events': [{'title': 'Reunión'}]})
+    monkeypatch.setattr(brief, 'Agenda', lambda: SimpleNamespace(list=lambda: []))
+    monkeypatch.setattr(brief.psutil, 'virtual_memory', lambda: SimpleNamespace(percent=20))
+    monkeypatch.setattr(brief.psutil, 'disk_usage', lambda _: SimpleNamespace(free=50 * 1024**3, percent=10))
+    monkeypatch.setattr(brief.psutil, 'sensors_battery', lambda: None)
+    monkeypatch.setattr(brief.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(brief, 'journal_errors', lambda *_: None)
+    (tmp_path / 'baseline.json').write_text(json.dumps({'checked_at': now.replace(hour=18).isoformat()}))
+    result = brief.build(now)
+    assert 'Buenas noches' in result and 'Reunión' in result
+    assert 'No pude revisar los registros' in result and 'batería' not in result
+
+
+def test_startup_details_are_bounded_to_prior_review_and_omit_metadata(tmp_path, monkeypatch):
+    import startup_briefing as brief
+    monkeypatch.setattr(brief, 'STATE', tmp_path / 'baseline.json')
+    (tmp_path / 'baseline.json').write_text(json.dumps({'checked_at': '2026-11-15T10:00:00+00:00',
+                                                        'previous_checked_at': '2026-11-14T10:00:00+00:00'}))
+    monkeypatch.setattr(brief.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(brief.shutil, 'which', lambda name: '/usr/bin/journalctl')
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout=json.dumps({'SYSLOG_IDENTIFIER': 'kernel', 'MESSAGE': 'x' * 500, 'EXTRA': 'private'}) + '\n')
+    monkeypatch.setattr(brief.subprocess, 'run', run)
+    result = brief.log_details()
+    assert result['available'] and result['entries'][0]['source'] == 'kernel'
+    assert len(result['entries'][0]['message']) == 300 and 'EXTRA' not in result['entries'][0]
+    assert '--output-fields=PRIORITY,SYSLOG_IDENTIFIER,MESSAGE' in calls[0][0]
+    assert calls[0][0][calls[0][0].index('-n') + 1] == '10'
+
+
+def test_startup_log_details_require_scope(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    assert not permissions.preapproved('review_startup_logs')
+    permissions.set_briefing_permission(True)
+    assert permissions.preapproved('review_startup_logs')
+    assert not permissions.preapproved('terminal')
+    permissions.set_briefing_permission(False)
+    assert not permissions.preapproved('review_startup_logs')

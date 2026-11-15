@@ -22,6 +22,7 @@ from music_player import MusicPlayer
 from nvidia_vision import read_image, analyze, validate_image, VisionError
 import gmail_access
 import calendar_access
+import startup_briefing
 
 
 class SystemController:
@@ -33,6 +34,9 @@ class SystemController:
 
     def current_time(self) -> dict:
         return {'local_time': datetime.now().astimezone().isoformat(timespec='seconds')}
+
+    def review_startup_logs(self) -> dict:
+        return startup_briefing.log_details()
 
     def list_reminders(self) -> dict:
         reminders = Agenda().list()

@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
 from errors import describe_error
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission
 from text_links import speech_text
 
 ROOT = Path(__file__).resolve().parent
@@ -93,6 +94,12 @@ def main():
             set_agenda_permission(granted)
         except OSError:
             print('No se pudo guardar el permiso de agenda; se pedirá en cada consulta.')
+    if not read_state().get('startup_briefing_asked'):
+        granted = confirm('¿Autoriza el resumen automático al iniciar? Consulta recordatorios locales, Google Calendar configurado, batería, memoria, disco y cantidad de errores de los registros; guarda una referencia local y la voz puede enviarse al servicio configurado; los detalles de registros solicitados pueden contener datos privados y enviarse al proveedor de IA.')
+        try:
+            set_briefing_permission(granted)
+        except OSError:
+            print('No se pudo guardar la preferencia; el resumen no se activará.')
     # The explicit environment opt-in acknowledges that updates execute remote code.
     if os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
     from provider import create_brain
@@ -102,6 +109,19 @@ def main():
         brain = create_brain(controller, approve)
     except (ValueError, RuntimeError) as exc:
         print('No se pudo iniciar:', exc); return 1
+    if read_state().get('startup_briefing_accepted'):
+        import startup_briefing
+        from datetime import datetime
+        announce(startup_briefing.greeting(datetime.now().astimezone()) + ', señor. ¿Cómo está hoy?')
+        def run_briefing():
+            try:
+                result = startup_briefing.build(include_greeting=False)
+            except Exception:
+                result = 'No pude completar la revisión inicial.'
+            if read_state().get('startup_briefing_accepted'):
+                # Console remains usable; avoid playing into a microphone session.
+                print('JARVIS — revisión inicial:', result, flush=True)
+        threading.Thread(target=run_briefing, name='JARVIS revisión inicial', daemon=True).start()
     print('Escriba su mensaje, /voz, /actualizar o /salir.')
     while True:
         try:

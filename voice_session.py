@@ -47,7 +47,8 @@ class VoiceSession:
                    if name == 'read_gmail' else ' Se enviará el correo completo al destinatario indicado.'
                    if name in ('send_gmail', 'reply_gmail') else ' Se modificará la clasificación de este correo en Gmail.'
                    if name == 'classify_gmail' else ' Se consultará tu agenda y los datos pueden enviarse al proveedor del chat.'
-                   if name in ('list_calendar_events', 'list_reminders') else '')
+                   if name in ('list_calendar_events', 'list_reminders') else ' Los registros pueden contener datos sensibles y enviarse al proveedor del chat.'
+                   if name == 'review_startup_logs' else '')
             message = (f'Señor, solicito permiso para usar la herramienta {name}, '
                        f'con estos argumentos: {details}.' + privacy +
                        ' Diga autorizo para aprobar esta acción, o cualquier otra cosa para rechazarla.')

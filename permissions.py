@@ -45,8 +45,13 @@ def set_agenda_permission(granted):
     _set_permission('agenda_read', granted)
 
 
+def set_briefing_permission(granted):
+    _set_permission('startup_briefing', granted)
+
+
 def preapproved(name):
     state = read_state()
     return ((name in PREAPPROVED_TOOLS and state.get('network_actions_accepted') is True) or
             (name in GMAIL_TOOLS and state.get('gmail_actions_accepted') is True) or
-            (name in AGENDA_TOOLS and state.get('agenda_read_accepted') is True))
+            (name in AGENDA_TOOLS and state.get('agenda_read_accepted') is True) or
+            (name == 'review_startup_logs' and state.get('startup_briefing_accepted') is True))
