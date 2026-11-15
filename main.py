@@ -97,29 +97,26 @@ def main():
     except (ValueError, RuntimeError) as exc:
         print('No se pudo iniciar:', exc); return 1
     print('Escriba su mensaje, /voz, /actualizar o /salir.')
-    try:
-        while True:
-            try:
-                text = input('\nUsted: ').strip()
-                if text.lower() in ('/salir', 'salir'): break
-                if text.lower() in ('/actualizar', 'jarvis, busca actualizaciones', 'jarvis busca actualizaciones'):
-                    if confirm('La actualización ejecutará código y dependencias del remoto configurado. ¿Continuar?'):
-                        check_updates()
-                    continue
-                if text.lower() == '/voz':
-                    try:
-                        text = listen(); print('Usted dijo:', text)
-                    except Exception as exc:
-                        print('No se pudo reconocer la voz:', exc); continue
-                if not text: continue
-                try: announce(brain.ask(text))
+    while True:
+        try:
+            text = input('\nUsted: ').strip()
+            if text.lower() in ('/salir', 'salir'): break
+            if text.lower() in ('/actualizar', 'jarvis, busca actualizaciones', 'jarvis busca actualizaciones'):
+                if confirm('La actualización ejecutará código y dependencias del remoto configurado. ¿Continuar?'):
+                    check_updates()
+                continue
+            if text.lower() == '/voz':
+                try:
+                    text = listen(); print('Usted dijo:', text)
                 except Exception as exc:
-                    # Avoid exposing API keys or provider response details in the console.
-                    print(describe_error(exc))
-            except (KeyboardInterrupt, EOFError):
-                print('\nHasta pronto.'); break
-    finally:
-        controller.stop_music()
+                    print('No se pudo reconocer la voz:', exc); continue
+            if not text: continue
+            try: announce(brain.ask(text))
+            except Exception as exc:
+                # Avoid exposing API keys or provider response details in the console.
+                print(describe_error(exc))
+        except (KeyboardInterrupt, EOFError):
+            print('\nHasta pronto.'); break
     return 0
 
 

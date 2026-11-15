@@ -857,10 +857,7 @@ def main():
         QMessageBox.critical(None, 'JARVIS', 'No se pudo abrir la agenda o la memoria local.')
         return 1
     window.show()
-    try:
-        return app.exec()
-    finally:
-        controller.stop_music()
+    return app.exec()
 
 
 if __name__ == '__main__':

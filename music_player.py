@@ -47,8 +47,12 @@ class MusicPlayer:
             return {'started': False, 'error': prior['error']}
         marker = '--title=JARVIS-' + uuid.uuid4().hex
         try:
+            # A separate session lets playback survive a normal JARVIS/terminal exit.
+            detach = ({'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS}
+                      if os.name == 'nt' else {'start_new_session': True})
             self.process = subprocess.Popen([mpv, '--no-video', '--ytdl=no', '--no-terminal', marker, url],
-                                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                            **detach)
         except OSError:
             return {'started': False, 'error': 'No se pudo iniciar mpv.'}
         try:
