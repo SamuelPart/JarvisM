@@ -886,18 +886,6 @@ def test_managed_browser_does_not_confirm_redirect(monkeypatch):
 
 
 
-def test_sphere_surface_is_deterministic_and_moves_in_all_states():
-    import math
-    from sphere_model import sphere_points, projected_particles
-    points = sphere_points()
-    assert len(points) == 4200 and points == sphere_points()
-    assert all(abs(sum(v*v for v in p) - 1) < 1e-9 for p in points)
-    first = projected_particles(points, 0.0)
-    later = projected_particles(points, 1.0)
-    assert first != later and all(all(math.isfinite(v) for v in p) for p in first)
-    assert projected_particles(points, 0.5, speaking=True) != projected_particles(points, 0.5)
-
-
 def test_disabled_animation_setting_migrates_to_reduced():
     from ui_settings import normalize
     assert normalize({'animation': 'desactivada'})['animation'] == 'reducida'

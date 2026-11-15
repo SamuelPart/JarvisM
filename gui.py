@@ -9,8 +9,8 @@ import threading
 from datetime import datetime
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QLineF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QPen, QRadialGradient
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -24,7 +24,6 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
-from sphere_model import sphere_points, projected_particles
 from agenda import Agenda
 from approval import is_approved
 from permissions import read_state, set_network_permission, set_gmail_permission
@@ -39,7 +38,7 @@ class VoiceSignals(QObject):
 
 
 class CoreAnimation(QWidget):
-    """A procedural bristled sphere that moves in every state."""
+    """Classic dotted JARVIS core, animated continuously."""
     def __init__(self, preferences):
         super().__init__()
         self.preferences = preferences.copy()
@@ -48,7 +47,6 @@ class CoreAnimation(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.mode = 'idle'
         self.phase = 0.0
-        self.points = sphere_points()
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
@@ -62,13 +60,11 @@ class CoreAnimation(QWidget):
         self.preferences = preferences.copy()
         scale = SCALES[self.preferences['size']]
         self.setFixedSize(round(300 * scale), round(260 * scale))
-        self.update()
+        self.set_mode(self.mode)
 
     def advance(self):
-        speed = 0.078 if self.mode == 'speaking' else 0.040 if self.mode == 'thinking' else 0.028
-        if self.preferences['animation'] == 'reducida':
-            speed *= 0.45
-        self.phase += speed
+        speed = 0.075 if self.mode == 'speaking' else 0.045 if self.mode == 'thinking' else 0.025
+        self.phase += speed * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
         self.update()
 
     def paintEvent(self, event):
@@ -77,25 +73,54 @@ class CoreAnimation(QWidget):
         painter.translate(self.width() / 2, self.height() / 2)
         scale = SCALES[self.preferences['size']]
         painter.scale(scale, scale)
-        colors = {'thinking': (159, 115, 225), 'speaking': (95, 218, 239),
-                  'approval': (255, 170, 67)}
-        color = colors.get(self.mode, PALETTES[self.preferences['color']][1])
-        # Dim shaded center and radial needles; no image, video, GIF, or box.
-        glow = QRadialGradient(QPointF(-24, -32), 130)
-        glow.setColorAt(0, QColor(*color, 23))
-        glow.setColorAt(0.72, QColor(*color, 11))
-        glow.setColorAt(1, QColor(*color, 0))
+        radius = 109.0
+
+        # A dark, transparent glow rather than a rectangular background.
+        glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
+        if self.mode == 'approval':
+            glow.setColorAt(0, QColor(130, 65, 4, 22))
+            glow.setColorAt(0.76, QColor(230, 130, 18, 38))
+            glow.setColorAt(1, QColor(90, 45, 5, 0))
+        else:
+            glow.setColorAt(0, QColor(20, 16, 100, 18))
+            glow.setColorAt(0.76, QColor(28, 28, 174, 28))
+            glow.setColorAt(1, QColor(12, 10, 85, 0))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(glow)
-        painter.drawEllipse(QPointF(0, 0), 112, 112)
-        pen = QPen()
-        pen.setWidthF(0.75)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        reduced = self.preferences['animation'] == 'reducida'
-        for _, x, y, tip_x, tip_y, shade in projected_particles(self.points, self.phase, self.mode == 'speaking', reduced):
-            pen.setColor(QColor(*color, int(35 + 150 * shade)))
-            painter.setPen(pen)
-            painter.drawLine(QLineF(x, y, tip_x, tip_y))
+        painter.drawEllipse(QPointF(0, 0), radius * 1.12, radius * 1.12)
+
+        # Latitude rings projected in 3D: points on both hemispheres make the
+        # hologram look like the reference, including its dotted polar circles.
+        tilt = 0.22
+        points = []
+        for latitude in range(1, 41):
+            theta = math.pi * latitude / 41
+            sin_theta, cos_theta = math.sin(theta), math.cos(theta)
+            count = max(12, round(72 * sin_theta))
+            for longitude in range(count):
+                angle = 2 * math.pi * longitude / count + self.phase * 0.65
+                x = sin_theta * math.cos(angle)
+                y = cos_theta
+                depth = sin_theta * math.sin(angle)
+                # Tilt exposes the rings around the upper and lower poles.
+                screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
+                z = depth * math.cos(tilt) + y * math.sin(tilt)
+                pulse = 1.0
+                if self.mode == 'speaking':
+                    pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
+                px, py = radius * x * pulse, -radius * screen_y * pulse
+                alpha = int(105 + 110 * (z + 1) / 2)
+                dot = 0.65 + 0.35 * (z + 1) / 2
+                points.append((z, px, py, dot, alpha))
+
+        state_palettes = {'approval': ((255, 140, 32), (255, 195, 100)),
+                          'thinking': PALETTES['violeta'], 'speaking': PALETTES['cian']}
+        dim_color, bright_color = state_palettes.get(self.mode, PALETTES[self.preferences['color']])
+        for _, x, y, dot, alpha in sorted(points):
+            painter.setBrush(QColor(*dim_color, max(20, alpha // 5)))
+            painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
+            painter.setBrush(QColor(*bright_color, alpha))
+            painter.drawEllipse(QPointF(x, y), dot, dot)
         painter.end()
 
 

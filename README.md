@@ -65,7 +65,7 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central es una esfera orgánica de partículas dibujada por Qt, inspirada en la referencia y creada por código, sin GIF. Se mueve continuamente y con mayor intensidad cuando JARVIS habla. La animación de voz es decorativa y no mide el audio real.
+El núcleo central es la esfera clásica azul de puntos dibujada por Qt, creada por código, sin GIF. Se mueve continuamente y con mayor intensidad cuando JARVIS habla. La animación de voz es decorativa y no mide el audio real.
 
 La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
@@ -93,7 +93,7 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 
 ### Núcleo expresivo
 
-La esfera indica el estado mediante color y movimiento: paleta elegida en espera, violeta al procesar, cian al hablar y ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
+La esfera clásica indica el estado mediante color y movimiento: paleta elegida en espera, violeta al procesar, cian al hablar y ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
 
 ### Modo compacto flotante
 
