@@ -31,21 +31,25 @@ class VoiceSession:
     def approve(self, name, args):
         if self.stop_event.is_set():
             return False
-        details = json.dumps(args, ensure_ascii=False, sort_keys=True)
-        if len(details) > 800:
-            self.speak('La solicitud es demasiado larga para confirmarla por voz. La acción fue rechazada.')
-            return False
-        message = (f'Señor, solicito permiso para usar la herramienta {name}, '
-                   f'con estos argumentos: {details}. '
-                   'Diga autorizo para aprobar esta acción, o cualquier otra cosa para rechazarla.')
-        if not self.speak(message) or self.stop_event.is_set():
-            return False
         self.status('Esperando autorización por voz')
         try:
-            answer = self.listen()
-        except Exception:
-            return False
-        return not self.stop_event.is_set() and is_approval(answer)
+            details = json.dumps(args, ensure_ascii=False, sort_keys=True)
+            if len(details) > 800:
+                self.voice.speak_wait('La solicitud es demasiado larga para confirmarla por voz. La acción fue rechazada.')
+                return False
+            message = (f'Señor, solicito permiso para usar la herramienta {name}, '
+                       f'con estos argumentos: {details}. '
+                       'Diga autorizo para aprobar esta acción, o cualquier otra cosa para rechazarla.')
+            if not self.voice.speak_wait(message) or self.stop_event.is_set():
+                return False
+            try:
+                answer = self.listen()
+            except Exception:
+                return False
+            return not self.stop_event.is_set() and is_approval(answer)
+        finally:
+            if not self.stop_event.is_set():
+                self.status('Pensando')
 
     def run(self):
         self.brain.approve = self.approve

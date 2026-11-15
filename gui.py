@@ -20,6 +20,7 @@ from system_control import SystemController
 from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
+from core_state import CoreState
 
 
 class VoiceSignals(QObject):
@@ -32,16 +33,15 @@ class CoreAnimation(QWidget):
         super().__init__()
         self.setFixedSize(300, 260)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.active = False
+        self.mode = 'idle'
         self.phase = 0.0
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
 
-    @pyqtSlot(bool)
-    def set_speaking(self, active):
-        self.active = active
-        if active:
+    def set_mode(self, mode):
+        self.mode = mode
+        if mode in ('thinking', 'speaking'):
             self.timer.start()
         else:
             self.timer.stop()
@@ -59,9 +59,14 @@ class CoreAnimation(QWidget):
 
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
-        glow.setColorAt(0, QColor(20, 16, 100, 18))
-        glow.setColorAt(0.76, QColor(28, 28, 174, 28))
-        glow.setColorAt(1, QColor(12, 10, 85, 0))
+        if self.mode == 'approval':
+            glow.setColorAt(0, QColor(130, 65, 4, 22))
+            glow.setColorAt(0.76, QColor(230, 130, 18, 38))
+            glow.setColorAt(1, QColor(90, 45, 5, 0))
+        else:
+            glow.setColorAt(0, QColor(20, 16, 100, 18))
+            glow.setColorAt(0.76, QColor(28, 28, 174, 28))
+            glow.setColorAt(1, QColor(12, 10, 85, 0))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(glow)
         painter.drawEllipse(QPointF(0, 0), radius * 1.12, radius * 1.12)
@@ -83,17 +88,17 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.active:
-                    pulse += 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
+                if self.mode == 'speaking':
+                    pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
                 px, py = radius * x * pulse, -radius * screen_y * pulse
                 alpha = int(105 + 110 * (z + 1) / 2)
                 dot = 0.65 + 0.35 * (z + 1) / 2
                 points.append((z, px, py, dot, alpha))
 
         for _, x, y, dot, alpha in sorted(points):
-            painter.setBrush(QColor(70, 81, 255, max(20, alpha // 5)))
+            painter.setBrush(QColor(*( (255, 140, 32) if self.mode == 'approval' else (70, 81, 255) ), max(20, alpha // 5)))
             painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
-            painter.setBrush(QColor(128, 136, 255, alpha))
+            painter.setBrush(QColor(*( (255, 195, 100) if self.mode == 'approval' else (128, 136, 255) ), alpha))
             painter.drawEllipse(QPointF(x, y), dot, dot)
         painter.end()
 
@@ -210,7 +215,8 @@ class JarvisWindow(QMainWindow):
         self.core = CoreAnimation()
         layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
         self.voice_signals = VoiceSignals(self)
-        self.voice_signals.activity.connect(self.core.set_speaking)
+        self.core_state = CoreState()
+        self.voice_signals.activity.connect(self.on_voice_activity)
         self.voice.on_activity = self.voice_signals.activity.emit
 
         self.status = QLabel('Micrófono apagado')
@@ -266,6 +272,7 @@ class JarvisWindow(QMainWindow):
             return
         self.input.clear()
         self.append_chat('Tú', text)
+        self.set_task_state('thinking')
         self.status.setText('JARVIS está pensando…')
         self.send.setEnabled(False)
         self.tabs.tabBar().setEnabled(False)
@@ -283,20 +290,41 @@ class JarvisWindow(QMainWindow):
 
     @pyqtSlot(str, object)
     def request_chat_approval(self, name, args):
+        self.set_task_state('approval')
         self.status.setText('Esperando tu autorización…')
         approved = ApprovalDialog(name, args, self).exec() == QDialog.DialogCode.Accepted
         self.worker.resolve_approval(approved)
+        self.set_task_state('thinking')
         self.status.setText('JARVIS está trabajando…')
 
     @pyqtSlot(str)
     def chat_result(self, text):
+        self.set_task_state('idle')
         self.append_chat('JARVIS', text)
         if self.chat_audio.isChecked():
             self.voice.speak(text)
 
     @pyqtSlot(str)
     def chat_error(self, error):
+        self.set_task_state('idle')
         self.append_chat('Sistema', error)
+
+    def set_task_state(self, state):
+        self.core.set_mode(self.core_state.set_task(state))
+
+    @pyqtSlot(bool)
+    def on_voice_activity(self, active):
+        self.core.set_mode(self.core_state.set_speaking(active))
+
+    @pyqtSlot(str)
+    def on_voice_status(self, status):
+        self.status.setText(status)
+        if status.startswith('Esperando autorización'):
+            self.set_task_state('approval')
+        elif status == 'Pensando':
+            self.set_task_state('thinking')
+        else:
+            self.set_task_state('idle')
 
     def toggle_pin(self, checked):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked)
@@ -312,7 +340,7 @@ class JarvisWindow(QMainWindow):
         self.worker = VoiceWorker(self.brain, self.voice)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
-        self.worker.status.connect(self.status.setText)
+        self.worker.status.connect(self.on_voice_status)
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.cleanup)
@@ -325,6 +353,7 @@ class JarvisWindow(QMainWindow):
         self.thread.deleteLater()
         self.thread = None
         self.worker = None
+        self.set_task_state('idle')
         if not self.status.text().startswith('Error'):
             self.status.setText('Micrófono apagado')
         self.mic.setText('Activar micrófono')

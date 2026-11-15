@@ -90,3 +90,7 @@ NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
 ```
 
 No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Las herramientas requieren confirmación como con Gemini. Para regresar a Gemini, use `JARVIS_PROVIDER=gemini`. **No hay cambio automático entre proveedores**, ni historial compartido entre reinicios. WhatsApp abre un borrador; no lo envía automáticamente.
+
+### Núcleo expresivo
+
+La esfera indica el estado: azul quieto en espera; gira al procesar una solicitud; pulsa durante la reproducción de voz; y pasa a ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.

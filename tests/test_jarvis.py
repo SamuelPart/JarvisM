@@ -204,3 +204,30 @@ def test_nvidia_errors_safe():
         brain.ask('hola')
     assert '429' in describe_error(exc.value)
     assert 'test-only-key' not in describe_error(exc.value)
+
+
+def test_core_state_priority_and_transitions():
+    from core_state import CoreState
+    state = CoreState()
+    assert state.current == 'idle'
+    assert state.set_task('thinking') == 'thinking'
+    assert state.set_speaking(True) == 'speaking'
+    assert state.set_task('approval') == 'approval'
+    assert state.set_speaking(False) == 'approval'
+    assert state.set_speaking(True) == 'approval'
+    assert state.set_task('thinking') == 'speaking'
+    assert state.set_speaking(False) == 'thinking'
+    assert state.set_task('idle') == 'idle'
+    with pytest.raises(ValueError): state.set_task('unknown')
+
+
+def test_voice_consent_indicates_approval_while_speaking():
+    from voice_session import VoiceSession
+    statuses = []
+    class Voice:
+        def speak_wait(self, text):
+            assert statuses[-1] == 'Esperando autorización por voz'
+            return True
+    session = VoiceSession(None, Voice(), lambda: 'autorizo', statuses.append)
+    assert session.approve('system_stats', {})
+    assert statuses == ['Esperando autorización por voz', 'Pensando']
