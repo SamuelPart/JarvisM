@@ -479,3 +479,33 @@ def test_speech_text_removes_markdown_stars_and_urls():
     result = speech_text(text)
     assert result == 'Hola, Señor. Ejemplo. Fuente'
     assert '*' not in result and 'https://' not in result
+
+
+def test_local_vision_only_loopback_and_no_proxy():
+    import base64
+    from local_vision import analyze, LOCAL_URL
+    image = b'\x89PNG\r\n\x1a\n' + b'contenido'
+    class Session:
+        def __init__(self): self.trust_env = True; self.closed = False
+        def post(self, url, **kwargs):
+            assert url == LOCAL_URL == 'http://127.0.0.1:11434/api/generate'
+            assert self.trust_env is False and kwargs['allow_redirects'] is False
+            assert base64.b64decode(kwargs['json']['images'][0]) == image
+            assert kwargs['json']['model'] == 'llava:latest'
+            return SimpleNamespace(status_code=200, json=lambda: {'response': 'Una imagen.'})
+        def close(self): self.closed = True
+    session = Session()
+    assert analyze(image, 'Describe', session_factory=lambda: session) == 'Una imagen.'
+    assert session.closed
+
+
+def test_local_vision_validation_and_model_missing(tmp_path):
+    from local_vision import VisionError, analyze, read_image
+    bad = tmp_path / 'fake.png'
+    bad.write_bytes(b'not an image')
+    with pytest.raises(VisionError): read_image(bad)
+    class Session:
+        def post(self, *args, **kwargs): return SimpleNamespace(status_code=404)
+        def close(self): pass
+    with pytest.raises(VisionError, match='ollama pull llava'):
+        analyze(b'\xff\xd8\xff' + b'test', 'Describe', session_factory=Session)

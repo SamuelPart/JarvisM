@@ -9,10 +9,10 @@ import threading
 from datetime import datetime
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QBuffer, QIODevice, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
-                             QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                             QComboBox, QDateTimeEdit, QFileDialog, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
                              QScrollArea, QVBoxLayout, QWidget)
 
@@ -27,6 +27,7 @@ from core_state import CoreState
 from agenda import Agenda
 from permissions import read_state, set_network_permission
 from text_links import markup, speech_text
+from local_vision import analyze as analyze_local_image, read_image, validate_image, VisionError
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
@@ -424,6 +425,155 @@ class AgendaDialog(QDialog):
             QMessageBox.warning(self, 'Agenda', 'No se pudo eliminar el recordatorio.')
 
 
+class LocalVisionWorker(QObject):
+    result = pyqtSignal(str)
+    error = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self, image, question):
+        super().__init__()
+        self.image, self.question = image, question
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            self.result.emit(analyze_local_image(self.image, self.question))
+        except VisionError as exc:
+            self.error.emit(str(exc))
+        except Exception:
+            self.error.emit('No se pudo completar el análisis local.')
+        finally:
+            self.image = b''
+            self.finished.emit()
+
+
+class LocalVisionDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Visión local')
+        self.resize(600, 450)
+        self.thread = None
+        self.worker = None
+        self.image = None
+        layout = QVBoxLayout(self)
+        title = QLabel('Analizar una imagen en este equipo')
+        title.setObjectName('dialogTitle')
+        layout.addWidget(title)
+        info = QLabel('La imagen y la pregunta se procesan con Ollama local. No se envían a NVIDIA ni a Gemini. Requiere el modelo local llava.')
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        actions = QHBoxLayout()
+        self.file_button = QPushButton('Elegir imagen')
+        self.file_button.clicked.connect(self.choose_file)
+        self.screen_button = QPushButton('Capturar pantalla')
+        self.screen_button.clicked.connect(self.capture_screen)
+        actions.addWidget(self.file_button)
+        actions.addWidget(self.screen_button)
+        layout.addLayout(actions)
+        self.selected = QLabel('No hay ninguna imagen seleccionada')
+        self.selected.setWordWrap(True)
+        layout.addWidget(self.selected)
+        self.question = QLineEdit()
+        self.question.setPlaceholderText('¿Qué quieres saber sobre la imagen?')
+        self.question.setText('Describe esta imagen en español.')
+        layout.addWidget(self.question)
+        self.submit = QPushButton('Analizar localmente')
+        self.submit.clicked.connect(self.start_analysis)
+        layout.addWidget(self.submit)
+        self.output = QPlainTextEdit()
+        self.output.setReadOnly(True)
+        self.output.setPlaceholderText('El resultado local aparecerá aquí. No se enviará al modelo remoto ni a la voz en la nube.')
+        layout.addWidget(self.output, 1)
+
+    def choose_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Elegir imagen local', '', 'Imágenes (*.png *.jpg *.jpeg *.webp)')
+        if not path:
+            return
+        try:
+            self.image = read_image(path)
+        except VisionError as exc:
+            QMessageBox.warning(self, 'Visión local', str(exc))
+            return
+        self.selected.setText('Imagen seleccionada: ' + path)
+
+    def capture_screen(self):
+        consent = QMessageBox.question(self, 'Capturar pantalla',
+            '¿Permites capturar la pantalla actual para analizarla solo en este equipo? La captura puede incluir información privada.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if consent != QMessageBox.StandardButton.Yes:
+            return
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            QMessageBox.warning(self, 'Visión local', 'No hay una pantalla disponible para capturar.')
+            return
+        pixmap = screen.grabWindow(0)
+        if pixmap.isNull():
+            QMessageBox.warning(self, 'Visión local', 'No se pudo capturar la pantalla. El sistema gráfico podría bloquear la captura.')
+            return
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        saved = pixmap.save(buffer, 'PNG')
+        data = bytes(buffer.data())
+        buffer.close()
+        try:
+            if not saved:
+                raise VisionError('No se pudo preparar la captura.')
+            self.image = validate_image(data)
+        except VisionError as exc:
+            QMessageBox.warning(self, 'Visión local', str(exc))
+            return
+        self.selected.setText('Captura de la pantalla principal seleccionada')
+
+    def start_analysis(self):
+        if self.thread is not None:
+            return
+        if self.image is None:
+            QMessageBox.information(self, 'Visión local', 'Primero elige una imagen o captura la pantalla.')
+            return
+        question = self.question.text().strip()
+        if not question or len(question) > 2000:
+            QMessageBox.warning(self, 'Visión local', 'Escribe una pregunta de hasta 2000 caracteres.')
+            return
+        self.output.setPlainText('Analizando localmente… Esto puede tardar varios minutos.')
+        self.submit.setEnabled(False)
+        self.file_button.setEnabled(False)
+        self.screen_button.setEnabled(False)
+        self.thread = QThread(self)
+        self.worker = LocalVisionWorker(self.image, question)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.result.connect(self.output.setPlainText)
+        self.worker.error.connect(self.output.setPlainText)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.cleanup)
+        self.thread.start()
+
+    @pyqtSlot()
+    def cleanup(self):
+        self.thread.deleteLater()
+        self.thread = None
+        self.worker = None
+        self.submit.setEnabled(True)
+        self.file_button.setEnabled(True)
+        self.screen_button.setEnabled(True)
+
+    def reject(self):
+        if self.thread is not None:
+            QMessageBox.information(self, 'Visión local', 'Espera a que termine el análisis antes de cerrar.')
+            return
+        self.image = None
+        super().reject()
+
+    def closeEvent(self, event):
+        if self.thread is not None:
+            QMessageBox.information(self, 'Visión local', 'Espera a que termine el análisis antes de cerrar.')
+            event.ignore()
+        else:
+            self.image = None
+            event.accept()
+
+
 class JarvisWindow(QMainWindow):
     def __init__(self, brain, voice):
         super().__init__()
@@ -455,6 +605,9 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
+        self.vision_button = QPushButton('Visión local')
+        self.vision_button.clicked.connect(self.open_local_vision)
+        top.addWidget(self.vision_button)
         self.agenda_button = QPushButton('Agenda')
         self.agenda_button.clicked.connect(self.open_agenda)
         top.addWidget(self.agenda_button)
@@ -604,6 +757,12 @@ class JarvisWindow(QMainWindow):
         else:
             self.set_task_state('idle')
 
+    def open_local_vision(self):
+        if self.thread is not None:
+            QMessageBox.information(self, 'Visión local', 'Detén el micrófono o espera a que termine la solicitud antes de analizar una imagen.')
+            return
+        LocalVisionDialog(self).exec()
+
     def open_agenda(self):
         try:
             AgendaDialog(self.agenda, self).exec()
@@ -670,6 +829,7 @@ class JarvisWindow(QMainWindow):
             self.settings_button.hide()
             self.memory_button.hide()
             self.agenda_button.hide()
+            self.vision_button.hide()
             self.heading.hide()
             self.subtitle.hide()
             self.chat_toggle.setChecked(False)
@@ -686,6 +846,7 @@ class JarvisWindow(QMainWindow):
             self.settings_button.show()
             self.memory_button.show()
             self.agenda_button.show()
+            self.vision_button.show()
             self.heading.show()
             self.subtitle.show()
             self.chat_toggle.setChecked(True)
