@@ -174,3 +174,33 @@ def test_error_message_no_secrets():
     exc = genai_errors.ClientError(429, {'error': {'message': 'secret-api-key'}})
     text = describe_error(exc)
     assert '429' in text and 'secret-api-key' not in text
+
+
+def test_nvidia_tool_approval_and_response():
+    from nvidia_brain import NvidiaBrain
+    responses = [
+        {'choices': [{'message': {'content': None, 'tool_calls': [{'id': '1', 'type': 'function', 'function': {'name': 'system_stats', 'arguments': '{}'}}]}}]},
+        {'choices': [{'message': {'content': 'Acción rechazada.'}}]},
+    ]
+    calls = []
+    def post(url, headers, json, timeout):
+        import copy
+        calls.append(copy.deepcopy(json))
+        return SimpleNamespace(status_code=200, json=lambda: responses.pop(0))
+    controller = SimpleNamespace(system_stats=lambda: pytest.fail('Acción denegada'))
+    brain = NvidiaBrain('test-only-key', controller, lambda *args: False, post=post)
+    assert brain.ask('consulta el sistema') == 'Acción rechazada.'
+    assert calls[1]['messages'][-1]['role'] == 'tool'
+    assert 'rechazó' in calls[1]['messages'][-1]['content']
+    assert all(t['function']['parameters']['type'] == 'object' for t in brain.tools)
+
+
+def test_nvidia_errors_safe():
+    from nvidia_brain import NvidiaBrain
+    from errors import describe_error
+    def post(*args, **kwargs): return SimpleNamespace(status_code=429)
+    brain = NvidiaBrain('test-only-key', object(), lambda *args: False, post=post)
+    with pytest.raises(Exception) as exc:
+        brain.ask('hola')
+    assert '429' in describe_error(exc.value)
+    assert 'test-only-key' not in describe_error(exc.value)

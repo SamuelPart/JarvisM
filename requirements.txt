@@ -8,3 +8,4 @@ pyttsx3>=2.90,<3
 edge-tts>=7,<8
 pygame-ce>=2.5,<3
 PyQt6>=6.7,<7
+requests>=2.31,<3

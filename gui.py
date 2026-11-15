@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
                              QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget)
 
-from brain import Brain
+from provider import create_brain
 from errors import describe_error
 from main import ROOT, STATE
 from system_control import SystemController
@@ -395,8 +395,7 @@ def main():
             QMessageBox.critical(None, 'JARVIS', 'No se pudo guardar la confirmación inicial.')
             return 1
     try:
-        brain = Brain(os.getenv('GEMINI_API_KEY'), SystemController(), lambda *_: False,
-                      name=os.getenv('JARVIS_NAME', 'Señor'), model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
+        brain = create_brain(SystemController(), lambda *_: False)
     except (ValueError, RuntimeError) as exc:
         QMessageBox.critical(None, 'No se pudo iniciar', str(exc))
         return 1

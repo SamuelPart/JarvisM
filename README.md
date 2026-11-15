@@ -78,3 +78,15 @@ La interfaz tiene pestañas **Chat** y **Voz**. En Chat, escriba y pulse Enviar;
 Pida a JARVIS que prepare el mensaje e indique el número con código de país. La herramienta pide autorización mostrando número y texto y abre un borrador mediante `wa.me` en el navegador. Requiere WhatsApp Web o la aplicación vinculada. **No envía el mensaje por sí sola**: revise destinatario y contenido y pulse Enviar. JARVIS no tiene acceso a sus contactos y no debe inventar números. La apertura del navegador tampoco confirma que el mensaje haya sido entregado.
 
 Si aparece un error Gemini, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.
+
+## Proveedor NVIDIA NIM
+
+Puede seleccionar NVIDIA en vez de Gemini, tanto en chat como en voz. Cree una clave nueva en NVIDIA y añada en su `.env` local:
+
+```dotenv
+JARVIS_PROVIDER=nvidia
+NVIDIA_API_KEY=su_clave_nueva
+NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
+```
+
+No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Las herramientas requieren confirmación como con Gemini. Para regresar a Gemini, use `JARVIS_PROVIDER=gemini`. **No hay cambio automático entre proveedores**, ni historial compartido entre reinicios. WhatsApp abre un borrador; no lo envía automáticamente.

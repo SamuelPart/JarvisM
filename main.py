@@ -75,11 +75,10 @@ def main():
         print('Inicio cancelado.'); return 1
     # The explicit environment opt-in acknowledges that updates execute remote code.
     if os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
-    from brain import Brain
+    from provider import create_brain
     from system_control import SystemController
     try:
-        brain = Brain(os.getenv('GEMINI_API_KEY'), SystemController(), approve,
-                      name=os.getenv('JARVIS_NAME', 'Señor'), model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
+        brain = create_brain(SystemController(), approve)
     except (ValueError, RuntimeError) as exc:
         print('No se pudo iniciar:', exc); return 1
     print('Escriba su mensaje, /voz, /actualizar o /salir.')
