@@ -12,8 +12,11 @@ def parse_music_request(text):
     if not match:
         return None
     query = match.group(1).strip()
-    # Preserve arbitrary phrases as conversation unless clearly a music request.
-    if not re.search(r'\b(?:m[uú]sica|canci[oó]n|tema|audio|youtube)\b', query, re.I) and not re.match(r'^(?:ponme|reproduce|reproducir|quiero\s+escuchar)\b', text, re.I):
+    # "Pon <title>" is commonly a music request, but do not hijack common
+    # system, alarm, communication or application commands.
+    if re.match(r'^(?:(?:el|la|los|las|un|una|mi|mis)\s+)?(?:brillo|volumen|alarma|temporizador|cron[oó]metro|recordatorio|reloj|hora|fecha|modo|pantalla|micr[oó]fono|c[aá]mara|wifi|bluetooth|silencio|correo|mensaje|whatsapp|aplicaci[oó]n|programa|ventana|idioma|fondo)\b', query, re.I):
+        return None
+    if not re.search(r'\b(?:m[uú]sica|canci[oó]n|tema|audio|youtube)\b', query, re.I) and not re.match(r'^(?:pon(?:me)?|reproduce|reproducir|quiero\s+escuchar)\b', text, re.I):
         return None
     query = re.sub(r'^(?:(?:la|el|una|un)\s+)?(?:canci[oó]n|tema|m[uú]sica|audio)\s+(?:(?:de|del|llamada|que se llama)\s+)?', '', query, flags=re.I)
     query = re.sub(r'\s+(?:en|de)\s+youtube$', '', query, flags=re.I).strip(' "\'.,!¡?¿')

@@ -940,6 +940,10 @@ def test_direct_music_commands_are_conservative():
     assert parse_music_request('Reproduce música de Justin Bieber') == ('play_music', {'query': 'Justin Bieber'})
     assert parse_music_request('Pausa la música') == ('stop_music', {})
     assert parse_music_request('Pon el brillo a 50') is None
+    assert parse_music_request('pon el sexto sentido nada mas') == ('play_music', {'query': 'el sexto sentido nada mas'})
+    assert parse_music_request('pon el sexto sentido') == ('play_music', {'query': 'el sexto sentido'})
+    assert parse_music_request('pon una alarma a las ocho') is None
+    assert parse_music_request('pon el volumen al 50') is None
     assert parse_music_request('No pongas música') is None
     assert parse_music_request('¿Qué es la música?') is None
 
@@ -1091,3 +1095,33 @@ def test_desktop_exec_escapes_field_codes_and_quotes():
     assert desktop_launcher._exec_arg('/a b/100%/$"x') == '"/a b/100%%/\\$\\"x"'
     with pytest.raises(ValueError):
         desktop_launcher._exec_arg('/bad\npath')
+
+
+def test_pon_title_routes_directly_to_chrome(monkeypatch, tmp_path):
+    import sys
+    import music_player
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    class Downloader:
+        def __init__(self, options): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, query, download):
+            assert query == 'ytsearch1:el sexto sentido'
+            return {'entries': [{'id': 'dfojvebIwJc'}]}
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/google-chrome')
+    calls = []
+    monkeypatch.setattr(music_player.subprocess, 'Popen', lambda args, **kwargs: calls.append(args))
+    controller = SimpleNamespace(play_music=music_player.MusicPlayer().play)
+    brain = NvidiaBrain('fake', controller, lambda *_: pytest.fail('No requiere pregunta'),
+                        post=lambda **_: pytest.fail('No se necesita el modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    response = agent.ask('pon el sexto sentido')
+    assert calls == [['/usr/bin/google-chrome', '--new-tab', 'https://www.youtube.com/watch?v=dfojvebIwJc']]
+    assert 'no puedo confirmar' in response
