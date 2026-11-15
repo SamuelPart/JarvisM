@@ -16,17 +16,31 @@ class Voice:
         self.on_activity = None
 
     def speak(self, text):
+        self._enqueue(text, None)
+
+    def speak_wait(self, text):
+        """Wait for playback and return False if no audio engine succeeded."""
+        done = threading.Event()
+        result = {'ok': False}
+        if not self._enqueue(text, (done, result)):
+            return False
+        done.wait()
+        return result['ok']
+
+    def _enqueue(self, text, completion):
         if not text.strip() or os.getenv('JARVIS_VOICE_MODE', 'edge').lower() == 'off':
-            return
+            return False
         with self.lock:
             if self.thread is None or not self.thread.is_alive():
                 self.thread = threading.Thread(target=self._worker, daemon=True)
                 self.thread.start()
-            self.queue.put(text)
+            self.queue.put((text, completion))
+        return True
 
     def _worker(self):
         while True:
-            text = self.queue.get()
+            text, completion = self.queue.get()
+            ok = False
             try:
                 if os.getenv('JARVIS_VOICE_MODE', 'edge').lower() == 'local':
                     self._local(text)
@@ -36,9 +50,14 @@ class Voice:
                     except Exception:
                         print('(Voz neuronal no disponible; intentando voz local.)', flush=True)
                         self._local(text)
+                ok = True
             except Exception:
                 print('(Aviso: voz no disponible; la respuesta permanece en pantalla.)', flush=True)
             finally:
+                if completion is not None:
+                    done, result = completion
+                    result['ok'] = ok
+                    done.set()
                 self.queue.task_done()
 
     def _activity(self, active):

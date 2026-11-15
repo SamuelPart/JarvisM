@@ -105,3 +105,30 @@ def test_voice_activity_stops_even_on_local_error(monkeypatch):
     with pytest.raises(RuntimeError):
         voice._local('hola')
     assert events == [True, False]
+
+
+def test_spoken_authorization_fails_closed():
+    from voice_session import VoiceSession, is_approval
+    assert is_approval('¡Autorizo!')
+    for text in ('no autorizo', 'sí autorizo', '', 'autorizar'):
+        assert not is_approval(text)
+    class Voice:
+        def __init__(self, success): self.success = success; self.spoken = []
+        def speak_wait(self, text): self.spoken.append(text); return self.success
+    answers = iter(['autorizo', 'no autorizo'])
+    voice = Voice(True)
+    session = VoiceSession(None, voice, lambda: next(answers))
+    assert session.approve('terminal', {'command': 'echo hola'})
+    assert 'echo hola' in voice.spoken[0]
+    assert not session.approve('terminal', {'command': 'echo hola'})
+    assert not VoiceSession(None, Voice(False), lambda: 'autorizo').approve('terminal', {'command': 'echo hola'})
+    session.stop()
+    assert not session.approve('terminal', {'command': 'echo hola'})
+
+
+def test_voice_session_does_not_execute_after_stop():
+    from voice_session import VoiceSession
+    brain = SimpleNamespace(ask=lambda text: pytest.fail('request after stop'))
+    voice = SimpleNamespace(speak_wait=lambda text: True)
+    session = VoiceSession(brain, voice, lambda: (session.stop(), 'haz algo')[1])
+    session.run()
