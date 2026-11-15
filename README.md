@@ -121,7 +121,7 @@ Al pedir información actual, JARVIS usa `web_search`, con permiso individual o 
 
 ### Música automática y enlaces
 
-Para música, JARVIS busca el primer resultado de YouTube con `yt-dlp` y solicita abrirlo en el navegador predeterminado. Dependiendo del navegador o YouTube, podría ser necesario pulsar reproducir; JARVIS no verifica que se escuche. Cerrar JARVIS no cierra la pestaña. Para detener la música del navegador, pause el video o cierre la pestaña: `stop_music` no controla el navegador. No usa Spotify para reproducción automática y el primer resultado puede no ser la versión deseada.
+Para música, JARVIS busca el primer resultado de YouTube con `yt-dlp` y solicita abrirlo en el navegador predeterminado. Dependiendo del navegador o YouTube, podría ser necesario pulsar reproducir; JARVIS no verifica que se escuche. Cerrar JARVIS no cierra la pestaña. En Linux, `stop_music` intenta pausar el navegador mediante `playerctl` y MPRIS, si hay una única sesión de navegador reproduciendo. Instálelo con `sudo apt install playerctl`; el navegador debe publicar controles multimedia. Puede ser otra pestaña y no funciona necesariamente con todos los navegadores o configuraciones. Si no se puede confirmar la pausa o hay varias sesiones activas, pause el video manualmente. No usa Spotify para reproducción automática y el primer resultado puede no ser la versión deseada.
 
 Las fuentes aparecen como enlaces clicables en el chat y no se leen en voz alta. Solo se abren cuando el usuario pulsa el enlace. La búsqueda usa fragmentos, no el contenido completo de las páginas.
 
@@ -168,4 +168,4 @@ Puede consultar recordatorios de la agenda local tras autorización. Para consul
 
 La integración de ElevenLabs se retiró. Si una instalación anterior conserva `JARVIS_VOICE_MODE=elevenlabs`, JARVIS usará Edge TTS; cambie la línea a `JARVIS_VOICE_MODE=edge` y retire las líneas `ELEVENLABS_` de `.env` si ya no las necesita. El texto de voz se envía a Microsoft.
 
-Si hay un reproductor mpv registrado por la versión anterior, JARVIS puede intentar detenerlo verificando su identidad. Esto no controla ni cierra las pestañas del navegador. El registro heredado `.jarvis-music.json` no se sube a Git.
+Si hay un reproductor mpv registrado por la versión anterior, JARVIS puede intentar detenerlo verificando su identidad. La pausa del navegador usa `playerctl` por separado y no cierra pestañas. El registro heredado `.jarvis-music.json` no se sube a Git.

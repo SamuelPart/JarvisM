@@ -806,7 +806,7 @@ def test_music_can_stop_verified_process_after_restart(tmp_path, monkeypatch):
         def terminate(self): terminated.append(True)
         def wait(self, timeout): pass
     monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: Process())
-    assert music_player.MusicPlayer().stop()['stopped']
+    assert music_player.MusicPlayer()._stop_legacy()['stopped']
     assert terminated == [True] and not state.exists()
 
 
@@ -820,7 +820,7 @@ def test_music_does_not_stop_reused_or_foreign_process(tmp_path, monkeypatch):
         def create_time(self): return 101.0
         def terminate(self): pytest.fail('No debe detener un proceso ajeno')
     monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: Process())
-    assert not music_player.MusicPlayer().stop()['stopped']
+    assert not music_player.MusicPlayer()._stop_legacy()['stopped']
     assert not state.exists()
 
 
@@ -834,3 +834,46 @@ def test_old_elevenlabs_mode_uses_edge(monkeypatch):
     monkeypatch.setattr(voice, '_local', lambda text: pytest.fail('No debería usar voz local'))
     assert voice.speak_wait('Hola')
     assert calls == ['Hola']
+
+
+def test_browser_music_pause_checks_unique_playing_and_confirms(monkeypatch):
+    import music_player
+    monkeypatch.setattr(music_player.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/playerctl')
+    calls, status = [], ['Playing', 'Paused']
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[-1] == '--list-all': return SimpleNamespace(returncode=0, stdout='chromium.instance1\n')
+        if args[-1] == 'status': return SimpleNamespace(returncode=0, stdout=status.pop(0))
+        if args[-1] == 'pause': return SimpleNamespace(returncode=0, stdout='')
+        pytest.fail('Comando inesperado')
+    monkeypatch.setattr(music_player.subprocess, 'run', run)
+    assert music_player.MusicPlayer().stop()['paused']
+    assert calls[2] == ['/usr/bin/playerctl', '--player=chromium.instance1', 'pause']
+    assert not any('play-pause' in args for args in calls)
+
+
+def test_browser_pause_refuses_multiple_playing(monkeypatch):
+    import music_player
+    monkeypatch.setattr(music_player.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/playerctl')
+    def run(args, **kwargs):
+        if args[-1] == '--list-all': return SimpleNamespace(returncode=0, stdout='chromium.a\nfirefox.b\n')
+        if args[-1] == 'status': return SimpleNamespace(returncode=0, stdout='Playing')
+        pytest.fail('No debe pausar si hay varias sesiones activas')
+    monkeypatch.setattr(music_player.subprocess, 'run', run)
+    result = music_player.MusicPlayer().stop()
+    assert not result['paused'] and 'varios' in result['error']
+
+
+def test_browser_pause_does_not_report_unconfirmed_success(monkeypatch):
+    import music_player
+    monkeypatch.setattr(music_player.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/playerctl')
+    def run(args, **kwargs):
+        if args[-1] == '--list-all': return SimpleNamespace(returncode=0, stdout='chrome.a\n')
+        if args[-1] == 'pause': return SimpleNamespace(returncode=0, stdout='')
+        return SimpleNamespace(returncode=0, stdout='Playing')
+    monkeypatch.setattr(music_player.subprocess, 'run', run)
+    result = music_player.MusicPlayer().stop()
+    assert not result['paused'] and 'confirmar' in result['error']
