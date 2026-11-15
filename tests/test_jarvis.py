@@ -231,3 +231,28 @@ def test_voice_consent_indicates_approval_while_speaking():
     session = VoiceSession(None, Voice(), lambda: 'autorizo', statuses.append)
     assert session.approve('system_stats', {})
     assert statuses == ['Esperando autorización por voz', 'Pensando']
+
+
+def test_status_resource_sampling(monkeypatch):
+    import status_data
+    monkeypatch.setattr(status_data.psutil, 'cpu_percent', lambda interval: 23.2)
+    monkeypatch.setattr(status_data.psutil, 'virtual_memory', lambda: SimpleNamespace(percent=46.7))
+    assert status_data.sample_usage() == {'cpu': '23 %', 'memory': '47 %'}
+    def fail(interval): raise OSError('No disponible')
+    monkeypatch.setattr(status_data.psutil, 'cpu_percent', fail)
+    assert status_data.sample_usage() == {'cpu': 'No disponible', 'memory': 'No disponible'}
+
+
+def test_voice_session_reports_provider_result():
+    from voice_session import VoiceSession
+    statuses = []
+    voice = SimpleNamespace(speak_wait=lambda text: True)
+    utterances = iter(['Jarvis hola'])
+    def listen():
+        try: return next(utterances)
+        except StopIteration:
+            session.stop()
+            return ''
+    session = VoiceSession(SimpleNamespace(ask=lambda request: 'hola'), voice, listen, connection=statuses.append)
+    session.run()
+    assert statuses == ['Respondió']

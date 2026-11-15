@@ -17,8 +17,9 @@ def wake_request(text):
 
 
 class VoiceSession:
-    def __init__(self, brain, voice, listen, status=lambda _: None):
+    def __init__(self, brain, voice, listen, status=lambda _: None, connection=lambda _: None):
         self.brain, self.voice, self.listen, self.status = brain, voice, listen, status
+        self.connection = connection
         self.stop_event = threading.Event()
 
     def stop(self):
@@ -84,7 +85,9 @@ class VoiceSession:
             self.status('Pensando')
             try:
                 answer = self.brain.ask(request)
+                self.connection('Respondió')
             except Exception as exc:
+                self.connection('Error al consultar')
                 answer = 'Señor, ' + describe_error(exc)
             if not self.stop_event.is_set():
                 self.speak(answer)

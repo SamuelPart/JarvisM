@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
-                             QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
+                             QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
                              QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
@@ -22,6 +22,7 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
+from status_data import sample_usage
 
 
 class VoiceSignals(QObject):
@@ -158,13 +159,57 @@ class ChatHistory(QScrollArea):
         bar.setValue(bar.maximum())
 
 
+class StatusPanel(QFrame):
+    """Last provider result and locally sampled resource usage; no network probe."""
+    def __init__(self, model):
+        super().__init__()
+        self.setObjectName('statusPanel')
+        grid = QGridLayout(self)
+        grid.setContentsMargins(14, 9, 14, 9)
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(4)
+        self.model = self.add_item(grid, 0, 0, 'MODELO', model)
+        self.connection = self.add_item(grid, 0, 1, 'ÚLTIMA CONSULTA IA', 'Sin comprobar')
+        self.microphone = self.add_item(grid, 1, 0, 'MICRÓFONO', 'Apagado')
+        self.usage = self.add_item(grid, 1, 1, 'RECURSOS', 'CPU —  ·  RAM —')
+        self.model.setToolTip(model)
+        self.connection.setToolTip('Resultado de la última solicitud al proveedor, no un monitor de Internet en tiempo real.')
+        self.microphone.setToolTip('La sesión de voz activada pausa la escucha mientras JARVIS habla o procesa.')
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh_usage)
+        self.timer.start(2000)
+        self.refresh_usage()
+
+    @staticmethod
+    def add_item(grid, row, column, label, value):
+        container = QWidget()
+        container.setObjectName('statusItem')
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        caption = QLabel(label)
+        caption.setObjectName('metricCaption')
+        text = QLabel(value)
+        text.setObjectName('metricValue')
+        text.setWordWrap(True)
+        layout.addWidget(caption)
+        layout.addWidget(text, 1)
+        grid.addWidget(container, row, column)
+        return text
+
+    def refresh_usage(self):
+        data = sample_usage()
+        self.usage.setText(f"CPU {data['cpu']}  ·  RAM {data['memory']}")
+
+
 class VoiceWorker(QObject):
     status = pyqtSignal(str)
+    connection = pyqtSignal(str)
     finished = pyqtSignal()
 
     def __init__(self, brain, voice):
         super().__init__()
-        self.session = VoiceSession(brain, voice, listen, self.status.emit)
+        self.session = VoiceSession(brain, voice, listen, self.status.emit, self.connection.emit)
 
     @pyqtSlot()
     def run(self):
@@ -259,6 +304,8 @@ class JarvisWindow(QMainWindow):
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
         layout.addLayout(top)
+        self.metrics = StatusPanel(self.brain.model)
+        layout.addWidget(self.metrics)
 
         heading = QLabel('Tu asistente, listo para ayudarte.')
         heading.setObjectName('heading')
@@ -353,6 +400,7 @@ class JarvisWindow(QMainWindow):
     @pyqtSlot(str)
     def chat_result(self, text):
         self.set_task_state('idle')
+        self.metrics.connection.setText('Respondió')
         self.append_chat('JARVIS', text)
         if self.chat_audio.isChecked():
             self.voice.speak(text)
@@ -360,6 +408,7 @@ class JarvisWindow(QMainWindow):
     @pyqtSlot(str)
     def chat_error(self, error):
         self.set_task_state('idle')
+        self.metrics.connection.setText('Error al consultar')
         self.append_chat('Sistema', error)
 
     def set_task_state(self, state):
@@ -386,6 +435,7 @@ class JarvisWindow(QMainWindow):
     def toggle_microphone(self):
         if self.thread is not None:
             self.worker.session.stop()
+            self.metrics.microphone.setText('Deteniendo')
             self.status.setText('Deteniendo micrófono…')
             self.mic.setEnabled(False)
             return
@@ -394,9 +444,11 @@ class JarvisWindow(QMainWindow):
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self.on_voice_status)
+        self.worker.connection.connect(self.metrics.connection.setText)
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.cleanup)
+        self.metrics.microphone.setText('Activado')
         self.mic.setText('Apagar micrófono')
         self.tabs.tabBar().setEnabled(False)
         self.thread.start()
@@ -409,6 +461,7 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('idle')
         if not self.status.text().startswith('Error'):
             self.status.setText('Micrófono apagado')
+        self.metrics.microphone.setText('Apagado')
         self.mic.setText('Activar micrófono')
         self.mic.setEnabled(True)
         self.send.setEnabled(True)
@@ -439,6 +492,10 @@ QLabel#muted, QLabel#footer { color: #8496aa; }
 QLabel#footer { font-size: 11px; }
 QLabel#statusBadge { color: #74d8c4; font-size: 11px; font-weight: 700; }
 QLabel#model { color: #8296ab; font-size: 11px; }
+QFrame#statusPanel { background: #101c29; border: 1px solid #21384b; border-radius: 10px; }
+QWidget#statusItem { background: transparent; }
+QLabel#metricCaption { color: #748ea5; font-size: 9px; font-weight: 700; }
+QLabel#metricValue { color: #b7dce8; font-size: 10px; }
 QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
 QLineEdit, QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
 QTextBrowser { border: none; line-height: 1.6; }

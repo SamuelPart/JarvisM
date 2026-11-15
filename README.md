@@ -94,3 +94,7 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 ### Núcleo expresivo
 
 La esfera indica el estado: azul quieto en espera; gira al procesar una solicitud; pulsa durante la reproducción de voz; y pasa a ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
+
+### Panel de estado
+
+Muestra el modelo configurado, el resultado de la última consulta al proveedor (sin comprobar hasta la primera), el estado de la sesión de micrófono y uso local de CPU y RAM actualizado cada dos segundos. La sesión de micrófono puede estar activada pero pausada mientras JARVIS habla o procesa. El resultado de la última consulta no garantiza conectividad actual ni indica por sí solo la causa de un error.
