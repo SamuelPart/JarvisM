@@ -439,7 +439,7 @@ def test_music_player_opens_verified_result(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
     monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.browser_music, 'command', lambda action, **kwargs: calls.append((action, kwargs)) or {'opened': True, 'playing': True})
+    monkeypatch.setattr(music_player.chrome_music, 'command', lambda action, **kwargs: calls.append((action, kwargs)) or {'opened': True, 'playing': True})
     result = music_player.MusicPlayer().play('tema')
     assert result['playing'] and calls == [('open', {'video_id': 'dfojvebIwJc', 'start': True})]
     assert result['url'] == 'https://www.youtube.com/watch?v=dfojvebIwJc'
@@ -455,7 +455,7 @@ def test_music_control_preserves_failure(monkeypatch, tmp_path):
         def extract_info(self, *args, **kwargs): return {'entries': [{'id': 'dfojvebIwJc', 'title': 'Tema'}]}
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
     monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.browser_music, 'command', lambda *args, **kwargs: {'opened': False, 'error': 'No se pudo abrir'})
+    monkeypatch.setattr(music_player.chrome_music, 'command', lambda *args, **kwargs: {'opened': False, 'error': 'No se pudo abrir'})
     assert not music_player.MusicPlayer().play('tema')['opened']
 
 
@@ -837,52 +837,17 @@ def test_old_elevenlabs_mode_uses_edge(monkeypatch):
 def test_managed_browser_pause_does_not_touch_other_browser(monkeypatch):
     import music_player
     commands = []
-    monkeypatch.setattr(music_player.browser_music, 'command', lambda action: commands.append(action) or {'paused': True})
+    monkeypatch.setattr(music_player.chrome_music, 'command', lambda action: commands.append(action) or {'paused': True})
     assert music_player.MusicPlayer().stop()['paused']
     assert commands == ['pause']
 
 
-def test_managed_browser_does_not_report_unconfirmed_pause(monkeypatch):
-    import browser_music_worker
-    music = browser_music_worker.BrowserMusic()
-    music.browser = SimpleNamespace(is_connected=lambda: True)
-    music.page = SimpleNamespace(is_closed=lambda: False, evaluate=lambda script: False)
-    assert not music.pause()['paused']
 
 
-def test_managed_browser_rejects_invalid_video_id():
-    from browser_music_worker import BrowserMusic
-    result = BrowserMusic().open('../malicious')
-    assert not result['opened']
 
 
-def test_managed_browser_checks_video_advances_and_ads(monkeypatch):
-    from browser_music_worker import BrowserMusic
-    class Page:
-        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
-        def is_closed(self): return False
-        def goto(self, *args, **kwargs): pass
-        def wait_for_selector(self, *args, **kwargs): pass
-        def evaluate(self, *args): pass
-        def wait_for_function(self, *args, **kwargs): pass
-        def locator(self, selector): return SimpleNamespace(count=lambda: 1)
-    music = BrowserMusic()
-    music.page = Page()
-    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
-    result = music.open('dfojvebIwJc')
-    assert result['opened'] and not result['playing'] and 'anuncio' in result['note']
 
 
-def test_managed_browser_does_not_confirm_redirect(monkeypatch):
-    from browser_music_worker import BrowserMusic
-    class Page:
-        url = 'https://consent.youtube.com/'
-        def is_closed(self): return False
-        def goto(self, *args, **kwargs): pass
-    music = BrowserMusic()
-    music.page = Page()
-    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
-    assert not music.open('dfojvebIwJc')['opened']
 
 
 
@@ -891,56 +856,10 @@ def test_disabled_animation_setting_migrates_to_reduced():
     assert normalize({'animation': 'desactivada'})['animation'] == 'reducida'
 
 
-def test_browser_worker_retries_once_after_window_closed(monkeypatch):
-    from browser_music_worker import BrowserMusic
-    music = BrowserMusic()
-    calls = []
-    resets = []
-    def action(video_id):
-        calls.append(video_id)
-        if len(calls) == 1:
-            raise RuntimeError('Target page, context or browser has been closed')
-        return {'opened': True, 'playing': True}
-    monkeypatch.setattr(music, '_open_once', action)
-    monkeypatch.setattr(music, '_reset', lambda: resets.append(True))
-    assert music.open('dfojvebIwJc')['playing']
-    assert len(calls) == 2 and resets == [True]
 
 
-def test_browser_errors_are_safe_and_distinguish_missing_chromium():
-    from browser_music_worker import safe_browser_error
-    message = safe_browser_error(Exception("Executable doesn't exist: secret-path"))
-    assert 'playwright install chromium' in message and 'secret-path' not in message
-    assert 'DNS' in safe_browser_error(Exception('net::ERR_NAME_NOT_RESOLVED secret'))
-    assert 'secret' not in safe_browser_error(Exception('secret unknown error'))
 
 
-def test_browser_worker_can_recreate_page_when_context_closed(monkeypatch):
-    from browser_music_worker import BrowserMusic
-    music = BrowserMusic()
-    events = []
-    class Page:
-        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
-        def is_closed(self): return False
-        def goto(self, *args, **kwargs): events.append('goto')
-        def wait_for_selector(self, *args, **kwargs): pass
-        def __init__(self): self.checks = 0
-        def evaluate(self, *args):
-            self.checks += 1
-            return self.checks
-        def wait_for_function(self, *args, **kwargs): pass
-        def wait_for_timeout(self, *args): pass
-        def locator(self, selector): return SimpleNamespace(count=lambda: 0)
-    class Context:
-        def new_page(self): events.append('new_page'); return Page()
-    class Browser:
-        contexts = []
-        def new_context(self): events.append('new_context'); return Context()
-    music.browser = Browser()
-    music.page = SimpleNamespace(is_closed=lambda: True)
-    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
-    assert music.open('dfojvebIwJc')['playing']
-    assert events == ['new_context', 'new_page', 'goto']
 
 
 def test_agenda_persistent_permission_scoped_and_revocable(tmp_path, monkeypatch):
@@ -1123,57 +1042,80 @@ def test_model_music_tool_failure_overrides_fabricated_success(tmp_path, monkeyp
     assert 'YouTube devolvió un error' in result and 'sonando' not in result
 
 
-def test_youtube_visible_error_is_never_reported_as_playing(monkeypatch):
-    from browser_music_worker import BrowserMusic
-    class Page:
-        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
-        def is_closed(self): return False
-        def goto(self, *args, **kwargs): pass
-        def wait_for_selector(self, *args, **kwargs): raise TimeoutError('video unavailable')
-        def locator(self, selector):
-            return SimpleNamespace(count=lambda: 1, first=SimpleNamespace(is_visible=lambda: True))
-    music = BrowserMusic()
-    music.page = Page()
-    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
-    result = music.open('dfojvebIwJc')
-    assert result['opened'] and not result['playing'] and 'error de reproducción' in result['note']
 
 
-def test_youtube_frozen_video_not_reported_as_playing(monkeypatch):
-    from browser_music_worker import BrowserMusic
-    class Page:
-        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
-        def is_closed(self): return False
-        def goto(self, *args, **kwargs): pass
-        def wait_for_selector(self, *args, **kwargs): pass
-        def wait_for_function(self, *args, **kwargs): pass
-        def wait_for_timeout(self, *args): pass
-        def evaluate(self, *args): return 0.7
-        def locator(self, selector): return SimpleNamespace(count=lambda: 0)
-    music = BrowserMusic()
-    music.page = Page()
-    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
-    result = music.open('dfojvebIwJc')
-    assert result['opened'] and not result['playing']
 
 
-def test_managed_browser_prefers_installed_chrome_with_separate_context(monkeypatch):
+
+
+def test_chrome_client_rejects_invalid_id_and_reports_disconnected(monkeypatch, tmp_path):
+    import chrome_music
+    monkeypatch.setattr(chrome_music, 'socket_path', lambda: tmp_path / 'missing.sock')
+    assert 'inválida' in chrome_music.command('open', '../malicious')['error']
+    assert 'no está conectado' in chrome_music.command('pause')['error']
+
+
+def test_native_protocol_roundtrip_and_limits():
+    import io
+    import struct
+    import chrome_music_native as native
+    stream = io.BytesIO()
+    native.write_message(stream, {'id': 'abc', 'playing': False})
+    stream.seek(0)
+    assert native.read_message(stream) == {'id': 'abc', 'playing': False}
+    with pytest.raises(ValueError):
+        native.read_message(io.BytesIO(struct.pack('=I', 65537)))
+    with pytest.raises(ValueError):
+        native.read_message(io.BytesIO(struct.pack('=I', 10) + b'{}'))
+
+
+def test_chrome_installation_restricts_origin(monkeypatch, tmp_path):
+    import json
+    import install_chrome_music as installer
+    monkeypatch.setattr(installer.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(installer.platform, 'system', lambda: 'Linux')
+    installer.install()
+    manifest = json.loads((tmp_path / '.config/google-chrome/NativeMessagingHosts/com.jarvis.music.json').read_text())
+    extension_id = (installer.ROOT / 'chrome_extension/extension_id.txt').read_text().strip()
+    assert manifest['allowed_origins'] == ['chrome-extension://' + extension_id + '/']
+    assert manifest['path'] == str(installer.ROOT / 'chrome_music_native.py')
+
+
+def test_native_bridge_opens_and_pauses_over_socket(tmp_path):
+    import os
+    import select
+    import socket
+    import struct
+    import subprocess
     import sys
-    import browser_music_worker as worker
-    launches = []
-    class Browser:
-        def new_context(self):
-            return SimpleNamespace(new_page=lambda: 'isolated-page')
-    class Chromium:
-        def launch(self, **kwargs): launches.append(kwargs); return Browser()
-    class Engine:
-        chromium = Chromium()
-        def stop(self): pass
-    monkeypatch.setattr(worker.shutil, 'which', lambda name: '/usr/bin/google-chrome' if name == 'google-chrome-stable' else None)
-    module = SimpleNamespace(sync_playwright=lambda: SimpleNamespace(start=lambda: Engine()))
-    monkeypatch.setitem(sys.modules, 'playwright', SimpleNamespace(sync_api=module))
-    monkeypatch.setitem(sys.modules, 'playwright.sync_api', module)
-    music = worker.BrowserMusic()
-    music._ensure_browser()
-    assert launches[0]['executable_path'] == '/usr/bin/google-chrome'
-    assert music.page == 'isolated-page'
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    extension_id = (root / 'chrome_extension/extension_id.txt').read_text().strip()
+    env = dict(os.environ, TMPDIR=str(tmp_path))
+    proc = subprocess.Popen([sys.executable, str(root / 'chrome_music_native.py'),
+                             'chrome-extension://' + extension_id + '/'],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    path = tmp_path / ('jarvis-chrome-' + str(os.getuid())) / 'music.sock'
+    try:
+        import time
+        deadline = time.monotonic() + 5
+        while not path.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert path.exists()
+        for action, response in [('open', {'opened': True, 'playing': True}), ('pause', {'paused': True})]:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(3)
+                client.connect(str(path))
+                client.sendall(json.dumps({'action': action, 'video_id': 'dfojvebIwJc'}).encode() + b'\n')
+                assert select.select([proc.stdout], [], [], 3)[0]
+                header = proc.stdout.read(4)
+                message = json.loads(proc.stdout.read(struct.unpack('=I', header)[0]))
+                assert message['action'] == action
+                body = json.dumps({'id': message['id'], 'result': response}).encode()
+                proc.stdin.write(struct.pack('=I', len(body)) + body)
+                proc.stdin.flush()
+                assert json.loads(client.recv(4096)) == response
+    finally:
+        proc.stdin.close()
+        proc.wait(timeout=5)

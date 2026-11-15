@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "JARVIS Música",
+  "version": "1.0.0",
+  "description": "Abre y pausa en Chrome únicamente la pestaña de YouTube solicitada a JARVIS.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqL2txOcev4gxEnN0lSPKY81FWHONx8wZbyyxxCFUJbLx7X2PBBg/+W+zuWs24Po6yduvQwhW8y38eL/2Mz+vxXbok5D9wR88sWNZk/eQ+LEvpHRgE5TdCQ6DDr3wUEltGe/rNl1onJQy5P95G4bR3V0vpT5Qo85yrE+in2mI8uHlOnb0qAlJAYFGBDDxwJBaiYQOKh25RkSMEL+xrJZvTu9S7/ojHFyU5EqYgVZ2dQdN38mDyhOGvh20npfz77NiSQNXVlwpAdfxpy9uI3aHLBkToPAwzzpH3wloAD2PHMfASK/a0qVqAYKQjvrJTesjnRoinHyMWrat+tWNYRBUzwIDAQAB",
+  "permissions": [
+    "nativeMessaging",
+    "scripting",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://youtube.com/*",
+    "https://m.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

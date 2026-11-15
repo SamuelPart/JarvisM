@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 import psutil
 import subprocess
-import browser_music
+import chrome_music
 
 
 STATE = Path(__file__).resolve().parent / '.jarvis-music.json'
@@ -38,7 +38,7 @@ class MusicPlayer:
         prior = self._stop_legacy()
         if prior.get('error'):
             return {'started': False, 'error': prior['error']}
-        result = browser_music.command('open', video_id=video_id, start=True)
+        result = chrome_music.command('open', video_id=video_id, start=True)
         result['title'] = title
         result['url'] = url
         return result
@@ -51,12 +51,12 @@ class MusicPlayer:
             pass
 
     def stop(self):
-        result = browser_music.command('pause')
+        result = chrome_music.command('pause')
         if result.get('available') is False:
             legacy = self._stop_legacy()
             if legacy.get('stopped') or legacy.get('error'):
                 return legacy
-            return {'paused': False, 'note': 'No hay una ventana musical controlada activa.'}
+            return {'paused': False, 'note': 'No hay una pestaña musical de JARVIS activa en Chrome.'}
         return result
 
     def _stop_legacy(self):
