@@ -924,8 +924,12 @@ def test_browser_worker_can_recreate_page_when_context_closed(monkeypatch):
         def is_closed(self): return False
         def goto(self, *args, **kwargs): events.append('goto')
         def wait_for_selector(self, *args, **kwargs): pass
-        def evaluate(self, *args): pass
+        def __init__(self): self.checks = 0
+        def evaluate(self, *args):
+            self.checks += 1
+            return self.checks
         def wait_for_function(self, *args, **kwargs): pass
+        def wait_for_timeout(self, *args): pass
         def locator(self, selector): return SimpleNamespace(count=lambda: 0)
     class Context:
         def new_page(self): events.append('new_page'); return Page()
@@ -1088,3 +1092,88 @@ def test_direct_music_respects_denial_and_confirmed_state(monkeypatch, tmp_path)
     permissions.set_network_permission(True)
     assert agent.ask('Reproduce música de prueba') == 'Hay un anuncio.'
     assert calls == ['prueba']
+
+
+def test_music_model_hallucination_without_tool_is_blocked(tmp_path):
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    post = lambda *args, **kwargs: SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'La canción ha comenzado a sonar.'}}]})
+    agent = PersistentBrain(NvidiaBrain('key', object(), lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
+    result = agent.ask('¿Me puedes abrir la canción de Cristo Rata?')
+    assert 'No llegué a iniciar' in result and 'comenzado' not in result
+
+
+def test_model_music_tool_failure_overrides_fabricated_success(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    calls = []
+    def post(*args, **kwargs):
+        calls.append(True)
+        message = ({'content': '', 'tool_calls': [{'id': 't1', 'function': {'name': 'play_music', 'arguments': '{"query":"tema"}'}}]}
+                   if len(calls) == 1 else {'content': 'La canción ya está sonando.'})
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': message}]})
+    controller = SimpleNamespace(play_music=lambda query: {'opened': False, 'error': 'YouTube devolvió un error.'})
+    agent = PersistentBrain(NvidiaBrain('key', controller, lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
+    result = agent.ask('¿Me puedes abrir la canción de tema?')
+    assert 'YouTube devolvió un error' in result and 'sonando' not in result
+
+
+def test_youtube_visible_error_is_never_reported_as_playing(monkeypatch):
+    from browser_music_worker import BrowserMusic
+    class Page:
+        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
+        def is_closed(self): return False
+        def goto(self, *args, **kwargs): pass
+        def wait_for_selector(self, *args, **kwargs): raise TimeoutError('video unavailable')
+        def locator(self, selector):
+            return SimpleNamespace(count=lambda: 1, first=SimpleNamespace(is_visible=lambda: True))
+    music = BrowserMusic()
+    music.page = Page()
+    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
+    result = music.open('dfojvebIwJc')
+    assert result['opened'] and not result['playing'] and 'error de reproducción' in result['note']
+
+
+def test_youtube_frozen_video_not_reported_as_playing(monkeypatch):
+    from browser_music_worker import BrowserMusic
+    class Page:
+        url = 'https://www.youtube.com/watch?v=dfojvebIwJc'
+        def is_closed(self): return False
+        def goto(self, *args, **kwargs): pass
+        def wait_for_selector(self, *args, **kwargs): pass
+        def wait_for_function(self, *args, **kwargs): pass
+        def wait_for_timeout(self, *args): pass
+        def evaluate(self, *args): return 0.7
+        def locator(self, selector): return SimpleNamespace(count=lambda: 0)
+    music = BrowserMusic()
+    music.page = Page()
+    monkeypatch.setattr(music, '_ensure_browser', lambda: None)
+    result = music.open('dfojvebIwJc')
+    assert result['opened'] and not result['playing']
+
+
+def test_managed_browser_prefers_installed_chrome_with_separate_context(monkeypatch):
+    import sys
+    import browser_music_worker as worker
+    launches = []
+    class Browser:
+        def new_context(self):
+            return SimpleNamespace(new_page=lambda: 'isolated-page')
+    class Chromium:
+        def launch(self, **kwargs): launches.append(kwargs); return Browser()
+    class Engine:
+        chromium = Chromium()
+        def stop(self): pass
+    monkeypatch.setattr(worker.shutil, 'which', lambda name: '/usr/bin/google-chrome' if name == 'google-chrome-stable' else None)
+    module = SimpleNamespace(sync_playwright=lambda: SimpleNamespace(start=lambda: Engine()))
+    monkeypatch.setitem(sys.modules, 'playwright', SimpleNamespace(sync_api=module))
+    monkeypatch.setitem(sys.modules, 'playwright.sync_api', module)
+    music = worker.BrowserMusic()
+    music._ensure_browser()
+    assert launches[0]['executable_path'] == '/usr/bin/google-chrome'
+    assert music.page == 'isolated-page'

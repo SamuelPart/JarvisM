@@ -4,6 +4,7 @@ import json
 import os
 import re
 import socket
+import shutil
 from urllib.parse import parse_qs, urlsplit
 from browser_music import socket_path
 
@@ -47,7 +48,12 @@ class BrowserMusic:
         from playwright.sync_api import sync_playwright
         self.engine = sync_playwright().start()
         try:
-            self.browser = self.engine.chromium.launch(headless=False, args=['--autoplay-policy=no-user-gesture-required'])
+            # A separate, temporary browser context; prefer installed Chrome for media codecs.
+            chrome = shutil.which('google-chrome-stable') or shutil.which('google-chrome')
+            options = {'headless': False, 'args': ['--autoplay-policy=no-user-gesture-required']}
+            if chrome:
+                options['executable_path'] = chrome
+            self.browser = self.engine.chromium.launch(**options)
             context = self.browser.new_context()
             self.page = context.new_page()
         except Exception:
@@ -81,16 +87,35 @@ class BrowserMusic:
                 self.page.wait_for_selector('video', timeout=15000)
                 self.page.evaluate("""() => { const v = document.querySelector('video'); if (v && v.paused) v.play().catch(() => {}); }""")
                 self.page.wait_for_function("""() => { const v = document.querySelector('video'); return v && !v.paused && v.currentTime > 0.5; }""", timeout=12000)
-                is_ad = bool(self.page.locator('.ad-showing').count())
-                if is_ad:
+                if self.page.locator('.ad-showing').count():
                     return {'opened': True, 'playing': False, 'note': 'La página abrió pero se está mostrando un anuncio; no se confirmó la canción.'}
-                return {'opened': True, 'playing': True, 'note': 'El reproductor de la página avanza; no se puede verificar el sonido del dispositivo.'}
+                before = self.page.evaluate("() => { const v = document.querySelector('video'); return v && !v.paused && !v.error ? v.currentTime : null; }")
+                self.page.wait_for_timeout(1800)
+                after = self.page.evaluate("() => { const v = document.querySelector('video'); return v && !v.paused && !v.error ? v.currentTime : null; }")
+                if self._youtube_error():
+                    return {'opened': True, 'playing': False, 'note': 'YouTube muestra un error de reproducción. El video no está sonando.'}
+                parsed = urlsplit(self.page.url)
+                if parsed.hostname not in ('www.youtube.com', 'youtube.com', 'm.youtube.com') or parse_qs(parsed.query).get('v') != [video_id]:
+                    return {'opened': False, 'error': 'YouTube dejó de mostrar el video solicitado.'}
+                if (self.page.locator('.ad-showing').count() or not isinstance(before, (int, float)) or
+                        isinstance(before, bool) or not isinstance(after, (int, float)) or isinstance(after, bool) or after - before < 0.3):
+                    return {'opened': True, 'playing': False, 'note': 'La página abrió, pero no se confirmó que la canción avance.'}
+                return {'opened': True, 'playing': True, 'note': 'El video avanzó durante la comprobación; no se puede verificar el sonido del dispositivo ni asegurar que continúe.'}
             except Exception as exc:
                 if closed_error(exc):
                     raise
+                if self._youtube_error():
+                    return {'opened': True, 'playing': False, 'note': 'YouTube muestra un error de reproducción. El video no está sonando.'}
                 return {'opened': True, 'playing': False, 'note': 'La página abrió, pero no se pudo confirmar la reproducción. Revisa la ventana.'}
         except Exception:
             raise
+
+    def _youtube_error(self):
+        try:
+            item = self.page.locator('.ytp-error-content-wrap')
+            return bool(item.count() and item.first.is_visible())
+        except Exception:
+            return False
 
     def pause(self):
         try:
@@ -124,7 +149,7 @@ class BrowserMusic:
 
 def main():
     path = socket_path()
-    lock_path = path.parent / 'worker-v2.lock'
+    lock_path = path.parent / 'worker-v3.lock'
     lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
     with os.fdopen(lock_fd, 'w') as lock:
         try:

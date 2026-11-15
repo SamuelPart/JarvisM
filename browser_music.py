@@ -23,7 +23,7 @@ def socket_path():
         os.chmod(directory, 0o700)
     except OSError as exc:
         raise RuntimeError('No se pudo preparar el navegador musical.') from exc
-    return directory / 'control-v2.sock'
+    return directory / 'control-v3.sock'
 
 
 def _request(path, payload, timeout):

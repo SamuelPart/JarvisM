@@ -4,7 +4,7 @@ from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved
-from music_commands import parse_music_request, format_result
+from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
 
 
 class PersistentBrain:
@@ -54,7 +54,19 @@ class PersistentBrain:
                 answer = 'No pude completar la solicitud de música, señor.'
         else:
             self.refresh_context()
-            answer = self.brain.ask(text)
+            original = self.brain.controller
+            trace = MusicTrace(original)
+            self.brain.controller = trace
+            try:
+                answer = self.brain.ask(text)
+            finally:
+                self.brain.controller = original
+            if trace.results:
+                name, result = trace.results[-1]
+                answer = format_result(name, result)
+            elif is_music_action_request(text):
+                answer = 'No llegué a iniciar la música, señor. Pídame «pon la canción» y su nombre.'
+
         try:
             self.memory.add_turn(text, answer)
         except (sqlite3.Error, OSError):
