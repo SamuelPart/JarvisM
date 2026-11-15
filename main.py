@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
 from errors import describe_error
-from permissions import read_state, set_network_permission
+from permissions import read_state, set_network_permission, set_gmail_permission
 from text_links import speech_text
 
 ROOT = Path(__file__).resolve().parent
@@ -81,6 +81,12 @@ def main():
             set_network_permission(granted)
         except OSError:
             print('No se pudo guardar el permiso; se pedirá autorización cada vez.')
+    if not read_state().get('gmail_actions_asked'):
+        granted = confirm('¿Autoriza permanentemente buscar y leer Gmail, enviar correos y marcarlos importantes o spam sin preguntar cada vez? El contenido puede enviarse al proveedor del chat; JARVIS puede equivocarse o ser inducido por mensajes maliciosos. Las imágenes requieren permiso separado.')
+        try:
+            set_gmail_permission(granted)
+        except OSError:
+            print('No se pudo guardar el permiso de Gmail; se pedirá cada vez.')
     # The explicit environment opt-in acknowledges that updates execute remote code.
     if os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
     from provider import create_brain

@@ -26,7 +26,7 @@ from microphone import listen
 from core_state import CoreState
 from agenda import Agenda
 from approval import is_approved
-from permissions import read_state, set_network_permission
+from permissions import read_state, set_network_permission, set_gmail_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -263,6 +263,10 @@ class VisualSettingsDialog(QDialog):
         self.network_permission.setChecked(read_state().get('network_actions_accepted') is True)
         self.network_permission.setToolTip('Las búsquedas y la música usan servicios externos; las acciones críticas siguen pidiendo permiso.')
         layout.addWidget(self.network_permission)
+        self.gmail_permission = QCheckBox('Permitir Gmail sin preguntar cada vez')
+        self.gmail_permission.setChecked(read_state().get('gmail_actions_accepted') is True)
+        self.gmail_permission.setToolTip('Incluye leer, enviar y marcar mensajes importantes o spam. Puede haber errores y correos maliciosos. Las imágenes siguen requiriendo autorización.')
+        layout.addWidget(self.gmail_permission)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('Cancelar')
@@ -655,6 +659,7 @@ class JarvisWindow(QMainWindow):
         try:
             self.preferences = save_ui(UI_SETTINGS_PATH, dialog.values())
             set_network_permission(dialog.network_permission.isChecked())
+            set_gmail_permission(dialog.gmail_permission.isChecked())
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
             return
@@ -831,6 +836,14 @@ def main():
             set_network_permission(answer == QMessageBox.StandardButton.Yes)
         except OSError:
             QMessageBox.warning(None, 'Permisos', 'No se pudo guardar la preferencia. Se pedirá permiso para cada acción.')
+    if not read_state().get('gmail_actions_asked'):
+        answer = QMessageBox.question(None, 'Permiso permanente para Gmail',
+            '¿Permites que JARVIS busque y lea correos, envíe mensajes y los marque como importantes o spam sin pedir permiso cada vez? Los mensajes pueden enviarse al proveedor del chat. JARVIS puede equivocarse o ser influido por contenido malicioso, y podría enviar o clasificar correos incorrectamente. Puedes desactivarlo en Ajustes. Las imágenes enviadas a NVIDIA seguirán requiriendo permiso.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        try:
+            set_gmail_permission(answer == QMessageBox.StandardButton.Yes)
+        except OSError:
+            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de Gmail; se pedirá en cada acción.')
     try:
         brain = create_brain(SystemController(), lambda *_: False)
     except (ValueError, RuntimeError) as exc:

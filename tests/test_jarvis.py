@@ -709,3 +709,19 @@ def test_gmail_mutations_never_preapproved(tmp_path, monkeypatch):
     permissions.set_network_permission(True)
     for name in ('send_gmail', 'classify_gmail', 'read_gmail'):
         assert not permissions.preapproved(name)
+
+
+def test_gmail_persistent_permission_is_separate_and_revocable(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_network_permission(True)
+    assert not permissions.preapproved('send_gmail')
+    permissions.set_gmail_permission(True)
+    for name in ('search_gmail', 'read_gmail', 'send_gmail', 'classify_gmail'):
+        assert permissions.preapproved(name)
+    for name in ('inspect_gmail_image', 'inspect_image', 'inspect_screen', 'terminal', 'files'):
+        assert not permissions.preapproved(name)
+    assert permissions.preapproved('web_search')
+    permissions.set_gmail_permission(False)
+    assert not permissions.preapproved('send_gmail')
+    assert permissions.preapproved('web_search')
