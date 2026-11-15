@@ -7,8 +7,8 @@ import sys
 import threading
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QFont, QColor, QPainter, QPainterPath, QPen, QRadialGradient
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QPlainTextEdit, QTextBrowser, QVBoxLayout,
@@ -28,7 +28,7 @@ class CoreAnimation(QWidget):
     """Draw a free-standing core; waves move only during audio playback."""
     def __init__(self):
         super().__init__()
-        self.setFixedSize(260, 225)
+        self.setFixedSize(300, 260)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.active = False
         self.phase = 0.0
@@ -43,43 +43,56 @@ class CoreAnimation(QWidget):
             self.timer.start()
         else:
             self.timer.stop()
-            self.phase = 0.0
         self.update()
 
     def advance(self):
-        self.phase += 0.13
+        self.phase += 0.055
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.translate(self.width() / 2, self.height() / 2)
-        glow = QRadialGradient(QPointF(0, 0), 107)
-        glow.setColorAt(0, QColor(50, 218, 240, 65))
-        glow.setColorAt(0.65, QColor(28, 152, 195, 24))
-        glow.setColorAt(1, QColor(10, 40, 60, 0))
+        radius = 109.0
+
+        # A dark, transparent glow rather than a rectangular background.
+        glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
+        glow.setColorAt(0, QColor(20, 16, 100, 18))
+        glow.setColorAt(0.76, QColor(28, 28, 174, 28))
+        glow.setColorAt(1, QColor(12, 10, 85, 0))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(glow)
-        painter.drawEllipse(QPointF(0, 0), 107, 107)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        # Static in standby; animated radii only while sound is playing.
-        for index, radius in enumerate((43, 58, 73, 88)):
-            path = QPainterPath()
-            for step in range(181):
-                angle = 2 * math.pi * step / 180
-                ripple = (3.5 * math.sin(angle * (5 + index) + self.phase * (1.2 + index * .18))
-                          + 1.5 * math.sin(angle * 11 - self.phase * 1.5)) if self.active else 0
-                r = radius + ripple
-                point = QPointF(r * math.cos(angle), r * math.sin(angle))
-                if step == 0: path.moveTo(point)
-                else: path.lineTo(point)
-            painter.setPen(QPen(QColor(87, 224, 245, 180 - index * 24), 1.5 if index < 2 else 1.0))
-            painter.drawPath(path)
-        painter.setPen(QPen(QColor(163, 248, 255, 235), 2))
-        painter.drawEllipse(QPointF(0, 0), 28, 28)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(111, 233, 250, 210))
-        painter.drawEllipse(QPointF(0, 0), 7, 7)
+        painter.drawEllipse(QPointF(0, 0), radius * 1.12, radius * 1.12)
+
+        # Latitude rings projected in 3D: points on both hemispheres make the
+        # hologram look like the reference, including its dotted polar circles.
+        tilt = 0.22
+        points = []
+        for latitude in range(1, 41):
+            theta = math.pi * latitude / 41
+            sin_theta, cos_theta = math.sin(theta), math.cos(theta)
+            count = max(12, round(72 * sin_theta))
+            for longitude in range(count):
+                angle = 2 * math.pi * longitude / count + self.phase * 0.65
+                x = sin_theta * math.cos(angle)
+                y = cos_theta
+                depth = sin_theta * math.sin(angle)
+                # Tilt exposes the rings around the upper and lower poles.
+                screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
+                z = depth * math.cos(tilt) + y * math.sin(tilt)
+                pulse = 1.0
+                if self.active:
+                    pulse += 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
+                px, py = radius * x * pulse, -radius * screen_y * pulse
+                alpha = int(105 + 110 * (z + 1) / 2)
+                dot = 0.65 + 0.35 * (z + 1) / 2
+                points.append((z, px, py, dot, alpha))
+
+        for _, x, y, dot, alpha in sorted(points):
+            painter.setBrush(QColor(70, 81, 255, max(20, alpha // 5)))
+            painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
+            painter.setBrush(QColor(128, 136, 255, alpha))
+            painter.drawEllipse(QPointF(x, y), dot, dot)
         painter.end()
 
 

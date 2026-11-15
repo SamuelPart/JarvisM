@@ -65,4 +65,4 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central está dibujado mediante Qt, sin GIF ni descarga externa. Las ondas se animan mientras se reproduce una respuesta por voz y se detienen al terminar; son un efecto visual, no una medición de la amplitud real del audio. Si la voz está desactivada o falla, las ondas no se activan.
+El núcleo central es una esfera de puntos dibujada mediante Qt, inspirada en la referencia, sin GIF ni descarga externa. Sus puntos se animan mientras se reproduce una respuesta por voz y se detienen al terminar; son un efecto visual, no una medición de la amplitud real del audio. Si la voz está desactivada o falla, las ondas no se activan.
