@@ -16,6 +16,7 @@ from urllib.parse import quote_plus, urlparse
 import psutil
 from datetime import datetime
 from agenda import Agenda, timestamp_from_iso
+from web_search import search
 
 
 class SystemController:
@@ -118,9 +119,8 @@ class SystemController:
                 'note': 'Se solicitó abrir un borrador. El usuario debe revisar el destinatario y pulsar Enviar.'}
 
     def web_search(self, query: str) -> dict:
-        if not query.strip(): raise ValueError('La consulta está vacía.')
-        url = 'https://www.google.com/search?q=' + quote_plus(query)
-        return {'opened': webbrowser.open(url), 'url': url, 'note': 'Consulta abierta en el navegador; no se han leído resultados.'}
+        """Return untrusted search snippets for the model to summarize with citations."""
+        return search(query)
 
     def system_stats(self) -> dict:
         battery = psutil.sensors_battery()

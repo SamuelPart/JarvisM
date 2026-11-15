@@ -355,3 +355,25 @@ def test_agent_reminder_tool(tmp_path, monkeypatch):
     result = controller.create_reminder('Prueba', future)
     assert Agenda().list()[0]['id'] == result['id']
     assert 'local_time' in controller.current_time()
+
+
+def test_web_search_returns_bounded_untrusted_snippets():
+    from web_search import search
+    class Searcher:
+        def text(self, query, **kwargs):
+            assert kwargs['backend'] == 'duckduckgo'
+            return [{'title': 'Fuente', 'href': 'https://example.com/actual', 'body': 'Información actual'},
+                    {'title': 'Inválido', 'href': 'file:///etc/passwd', 'body': 'no'},
+                    {'title': 'Sin credenciales', 'href': 'https://user:secret@example.com/', 'body': 'no'}]
+    result = search('noticias', Searcher())
+    assert result['results'] == [{'title': 'Fuente', 'url': 'https://example.com/actual', 'snippet': 'Información actual'}]
+    assert 'no contenido completo' in result['note']
+    with pytest.raises(ValueError): search(' ', Searcher())
+
+
+def test_web_search_failure_is_safe():
+    from web_search import search
+    class Broken:
+        def text(self, *args, **kwargs): raise RuntimeError('dato-privado')
+    result = search('consulta', Broken())
+    assert result['results'] == [] and 'dato-privado' not in result['error']
