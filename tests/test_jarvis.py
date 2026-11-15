@@ -1044,3 +1044,47 @@ def test_startup_log_details_require_scope(tmp_path, monkeypatch):
     assert not permissions.preapproved('terminal')
     permissions.set_briefing_permission(False)
     assert not permissions.preapproved('review_startup_logs')
+
+
+def test_direct_music_commands_are_conservative():
+    from music_commands import parse_music_request
+    assert parse_music_request('Jarvis, pon la canción de Cristo Rata, por favor') == ('play_music', {'query': 'Cristo Rata'})
+    assert parse_music_request('Reproduce música de Justin Bieber') == ('play_music', {'query': 'Justin Bieber'})
+    assert parse_music_request('Pausa la música') == ('stop_music', {})
+    assert parse_music_request('Pon el brillo a 50') is None
+    assert parse_music_request('No pongas música') is None
+    assert parse_music_request('¿Qué es la música?') is None
+
+
+def test_direct_music_calls_real_tool_and_never_claims_unconfirmed_playback(monkeypatch, tmp_path):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    calls = []
+    controller = SimpleNamespace(play_music=lambda query: calls.append(query) or {'opened': False, 'error': 'Chromium no está disponible.'})
+    brain = NvidiaBrain('fake', controller, lambda *_: pytest.fail('No requiere pregunta'), post=lambda **_: pytest.fail('No se necesita el modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    response = agent.ask('Pon la canción de Cristo Rata')
+    assert calls == ['Cristo Rata']
+    assert 'Chromium no está disponible' in response
+    assert 'sonando' not in response and 'comenzado' not in response
+
+
+def test_direct_music_respects_denial_and_confirmed_state(monkeypatch, tmp_path):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    calls = []
+    controller = SimpleNamespace(play_music=lambda query: calls.append(query) or {'opened': True, 'playing': False, 'note': 'Hay un anuncio.'})
+    brain = NvidiaBrain('fake', controller, lambda *_: False, post=lambda **_: pytest.fail('No se necesita el modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    assert 'no autorizada' in agent.ask('Reproduce música de prueba')
+    assert calls == []
+    permissions.set_network_permission(True)
+    assert agent.ask('Reproduce música de prueba') == 'Hay un anuncio.'
+    assert calls == ['prueba']

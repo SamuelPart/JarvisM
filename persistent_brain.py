@@ -3,6 +3,8 @@ import sqlite3
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
+from permissions import preapproved
+from music_commands import parse_music_request, format_result
 
 
 class PersistentBrain:
@@ -37,8 +39,22 @@ class PersistentBrain:
             raise TypeError('Proveedor de memoria no compatible')
 
     def ask(self, text):
-        self.refresh_context()
-        answer = self.brain.ask(text)
+        command = parse_music_request(text)
+        if command:
+            name, args = command
+            try:
+                if not preapproved(name) and not self.approve(name, args):
+                    answer = 'Acción no autorizada, señor.'
+                else:
+                    print('JARVIS: ejecutando ' + name + '…', flush=True)
+                    result = getattr(self.brain.controller, name)(**args)
+                    answer = format_result(name, result)
+                    print('JARVIS: resultado de música recibido.', flush=True)
+            except Exception:
+                answer = 'No pude completar la solicitud de música, señor.'
+        else:
+            self.refresh_context()
+            answer = self.brain.ask(text)
         try:
             self.memory.add_turn(text, answer)
         except (sqlite3.Error, OSError):
