@@ -486,6 +486,7 @@ def test_nvidia_vision_request_encodes_selected_image(monkeypatch):
     import base64
     from nvidia_vision import analyze, NVIDIA_URL, DEFAULT_MODEL
     monkeypatch.setenv('NVIDIA_API_KEY', 'test-key')
+    monkeypatch.delenv('NVIDIA_VISION_API_KEY', raising=False)
     monkeypatch.delenv('NVIDIA_VISION_MODEL', raising=False)
     image = b'\x89PNG\r\n\x1a\n' + b'contenido'
     class Session:
@@ -514,3 +515,20 @@ def test_nvidia_vision_validation_and_quota(tmp_path, monkeypatch):
         def close(self): pass
     with pytest.raises(VisionError, match='429'):
         analyze(b'\xff\xd8\xff' + b'test', 'Describe', session_factory=Session)
+
+
+def test_vision_uses_separate_key_and_falls_back(monkeypatch):
+    from nvidia_vision import analyze
+    monkeypatch.setenv('NVIDIA_API_KEY', 'chat-key')
+    monkeypatch.setenv('NVIDIA_VISION_API_KEY', 'vision-key')
+    keys = []
+    class Session:
+        def post(self, url, **kwargs):
+            keys.append(kwargs['headers']['Authorization'])
+            return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'ok'}}]})
+        def close(self): pass
+    image = b'\x89PNG\r\n\x1a\n' + b'test'
+    assert analyze(image, 'Describe', Session) == 'ok'
+    monkeypatch.delenv('NVIDIA_VISION_API_KEY')
+    assert analyze(image, 'Describe', Session) == 'ok'
+    assert keys == ['Bearer vision-key', 'Bearer chat-key']

@@ -44,9 +44,9 @@ def analyze(data, question, session_factory=requests.Session):
     question = question.strip()
     if not question or len(question) > 2000:
         raise VisionError('La pregunta debe tener entre 1 y 2000 caracteres.')
-    key = os.getenv('NVIDIA_API_KEY', '').strip()
+    key = os.getenv('NVIDIA_VISION_API_KEY', '').strip() or os.getenv('NVIDIA_API_KEY', '').strip()
     if not key:
-        raise VisionError('Falta NVIDIA_API_KEY en la configuración local. No compartas tu clave.')
+        raise VisionError('Configura NVIDIA_VISION_API_KEY o NVIDIA_API_KEY en .env. No compartas tu clave.')
     model = os.getenv('NVIDIA_VISION_MODEL', DEFAULT_MODEL)
     data_url = 'data:' + mime + ';base64,' + base64.b64encode(data).decode('ascii')
     payload = {'model': model, 'messages': [{'role': 'user', 'content': [
