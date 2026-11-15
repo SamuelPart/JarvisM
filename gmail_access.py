@@ -126,5 +126,10 @@ if __name__ == '__main__':
     try:
         setup()
         print('Gmail autorizado para lectura. No compartas el archivo de autorización.')
+    except GmailError as exc:
+        print('No se pudo configurar Gmail:', str(exc))
+        raise SystemExit(1)
     except Exception as exc:
-        print('No se pudo configurar Gmail:', type(exc).__name__)
+        print('No se pudo configurar Gmail:', type(exc).__name__,
+              '- Comprueba el archivo OAuth y la autorización en Google. No compartas credenciales.')
+        raise SystemExit(1)
