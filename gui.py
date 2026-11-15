@@ -285,6 +285,9 @@ class JarvisWindow(QMainWindow):
         self.brain, self.voice = brain, voice
         self.thread = None
         self.worker = None
+        self.compact = False
+        self.expanded_geometry = None
+        self.expanded_maximized = False
         self.setWindowTitle('JARVIS')
         self.resize(860, 800)
         self.setMinimumSize(560, 520)
@@ -292,6 +295,7 @@ class JarvisWindow(QMainWindow):
         root = QWidget()
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
+        self.root_layout = layout
         layout.setContentsMargins(30, 24, 30, 24)
         layout.setSpacing(18)
 
@@ -303,16 +307,19 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
+        self.compact_toggle = QPushButton('Modo compacto')
+        self.compact_toggle.clicked.connect(self.toggle_compact)
+        top.addWidget(self.compact_toggle)
         layout.addLayout(top)
         self.metrics = StatusPanel(self.brain.model)
         layout.addWidget(self.metrics)
 
-        heading = QLabel('Tu asistente, listo para ayudarte.')
-        heading.setObjectName('heading')
-        layout.addWidget(heading)
-        subtitle = QLabel('Conversa, consulta y controla tu equipo con tu autorización.')
-        subtitle.setObjectName('muted')
-        layout.addWidget(subtitle)
+        self.heading = QLabel('Tu asistente, listo para ayudarte.')
+        self.heading.setObjectName('heading')
+        layout.addWidget(self.heading)
+        self.subtitle = QLabel('Conversa, consulta y controla tu equipo con tu autorización.')
+        self.subtitle.setObjectName('muted')
+        layout.addWidget(self.subtitle)
 
         self.core = CoreAnimation()
         layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -325,6 +332,11 @@ class JarvisWindow(QMainWindow):
         self.status.setObjectName('statusBadge')
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
+        self.compact_mic = QPushButton('Activar micrófono')
+        self.compact_mic.setObjectName('send')
+        self.compact_mic.clicked.connect(self.toggle_microphone)
+        self.compact_mic.hide()
+        layout.addWidget(self.compact_mic)
 
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
@@ -375,6 +387,7 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('thinking')
         self.status.setText('JARVIS está pensando…')
         self.send.setEnabled(False)
+        self.compact_mic.setEnabled(False)
         self.tabs.tabBar().setEnabled(False)
         self.thread = QThread(self)
         self.worker = ChatWorker(self.brain, text)
@@ -429,15 +442,57 @@ class JarvisWindow(QMainWindow):
             self.set_task_state('idle')
 
     def toggle_pin(self, checked):
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked)
+        # Compact mode remains floating; expanded mode respects the checkbox.
+        geometry = self.geometry()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked or self.compact)
         self.show()
+        self.setGeometry(geometry)
+
+    def toggle_compact(self):
+        if not self.compact:
+            self.expanded_geometry = self.geometry()
+            self.expanded_maximized = self.isMaximized()
+            self.showNormal()
+            self.compact = True
+            self.metrics.hide()
+            self.heading.hide()
+            self.subtitle.hide()
+            self.tabs.hide()
+            self.compact_mic.show()
+            self.compact_toggle.setText('Abrir chat')
+            self.root_layout.setContentsMargins(10, 10, 10, 10)
+            self.root_layout.setSpacing(6)
+            self.setMinimumSize(320, 350)
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+            self.show()
+            self.resize(360, 390)
+        else:
+            self.compact = False
+            self.compact_mic.hide()
+            self.metrics.show()
+            self.heading.show()
+            self.subtitle.show()
+            self.tabs.show()
+            self.compact_toggle.setText('Modo compacto')
+            self.root_layout.setContentsMargins(30, 24, 30, 24)
+            self.root_layout.setSpacing(18)
+            self.setMinimumSize(560, 520)
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.pin.isChecked())
+            self.show()
+            if self.expanded_maximized:
+                self.showMaximized()
+            elif self.expanded_geometry is not None:
+                self.setGeometry(self.expanded_geometry)
 
     def toggle_microphone(self):
         if self.thread is not None:
+            if not isinstance(self.worker, VoiceWorker):
+                return
             self.worker.session.stop()
             self.metrics.microphone.setText('Deteniendo')
             self.status.setText('Deteniendo micrófono…')
             self.mic.setEnabled(False)
+            self.compact_mic.setEnabled(False)
             return
         self.thread = QThread(self)
         self.worker = VoiceWorker(self.brain, self.voice)
@@ -450,6 +505,7 @@ class JarvisWindow(QMainWindow):
         self.thread.finished.connect(self.cleanup)
         self.metrics.microphone.setText('Activado')
         self.mic.setText('Apagar micrófono')
+        self.compact_mic.setText('Apagar micrófono')
         self.tabs.tabBar().setEnabled(False)
         self.thread.start()
 
@@ -463,6 +519,8 @@ class JarvisWindow(QMainWindow):
             self.status.setText('Micrófono apagado')
         self.metrics.microphone.setText('Apagado')
         self.mic.setText('Activar micrófono')
+        self.compact_mic.setText('Activar micrófono')
+        self.compact_mic.setEnabled(True)
         self.mic.setEnabled(True)
         self.send.setEnabled(True)
         self.tabs.tabBar().setEnabled(True)

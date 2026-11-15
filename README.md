@@ -98,3 +98,7 @@ La esfera indica el estado: azul quieto en espera; gira al procesar una solicitu
 ### Panel de estado
 
 Muestra el modelo configurado, el resultado de la última consulta al proveedor (sin comprobar hasta la primera), el estado de la sesión de micrófono y uso local de CPU y RAM actualizado cada dos segundos. La sesión de micrófono puede estar activada pero pausada mientras JARVIS habla o procesa. El resultado de la última consulta no garantiza conectividad actual ni indica por sí solo la causa de un error.
+
+### Modo compacto flotante
+
+Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y un botón de micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Los permisos siguen requiriendo confirmación.
