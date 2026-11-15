@@ -163,7 +163,7 @@ class JarvisWindow(QMainWindow):
         self.mic.setMinimumHeight(60)
         self.mic.clicked.connect(self.toggle_microphone)
         layout.addWidget(self.mic)
-        info = QLabel('Di “autorizo” para aprobar una acción. Usa el botón para apagar el micrófono.')
+        info = QLabel('Di “Jarvis” para empezar y “autorizo” para aprobar una acción.')
         info.setObjectName('footer')
         info.setWordWrap(True)
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -196,7 +196,8 @@ class JarvisWindow(QMainWindow):
         self.thread.deleteLater()
         self.thread = None
         self.worker = None
-        self.status.setText('Micrófono apagado')
+        if not self.status.text().startswith('Error'):
+            self.status.setText('Micrófono apagado')
         self.mic.setText('Activar micrófono')
         self.mic.setEnabled(True)
 

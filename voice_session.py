@@ -9,6 +9,12 @@ def is_approval(text):
     return re.sub(r'[^\w\s]', '', text.casefold()).strip() == 'autorizo'
 
 
+def wake_request(text):
+    """Return text following the wake word; None means the word was absent."""
+    match = re.search(r'(?<!\w)jarvis(?!\w)', text, re.IGNORECASE)
+    return text[match.end():].strip(' \t,.:;!?¡¿-') if match else None
+
+
 class VoiceSession:
     def __init__(self, brain, voice, listen, status=lambda _: None):
         self.brain, self.voice, self.listen, self.status = brain, voice, listen, status
@@ -42,20 +48,30 @@ class VoiceSession:
 
     def run(self):
         self.brain.approve = self.approve
-        if not self.speak('Señor, estoy listo. Puede hablarme. El micrófono está activado.'):
-            self.status('No se pudo reproducir la voz; micrófono detenido')
+        if not self.speak('Señor, micrófono activado. Diga Jarvis para hablar conmigo.'):
+            self.status('Error: voz no disponible; micrófono apagado')
             return
         while not self.stop_event.is_set():
-            self.status('Escuchando')
+            self.status('Esperando que digas Jarvis')
             try:
-                request = self.listen()
+                heard = self.listen()
+                if self.stop_event.is_set():
+                    break
+                request = wake_request(heard)
+                if request is None:
+                    continue
+                if not request:
+                    if not self.speak('Le escucho, señor.') or self.stop_event.is_set():
+                        break
+                    self.status('Escuchando tu orden')
+                    request = self.listen().strip()
             except TimeoutError:
                 continue
-            except Exception:
+            except Exception as exc:
                 if not self.stop_event.is_set():
-                    self.status('Error de micrófono o reconocimiento; micrófono detenido')
                     self.speak('No puedo usar el micrófono o el reconocimiento de voz. He detenido la escucha.')
-                break
+                    self.status(f'Error de micrófono o conexión: {type(exc).__name__}')
+                return
             if self.stop_event.is_set():
                 break
             if not request.strip():

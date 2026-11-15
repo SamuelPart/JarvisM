@@ -132,3 +132,24 @@ def test_voice_session_does_not_execute_after_stop():
     voice = SimpleNamespace(speak_wait=lambda text: True)
     session = VoiceSession(brain, voice, lambda: (session.stop(), 'haz algo')[1])
     session.run()
+
+
+def test_wake_word_conversation():
+    from voice_session import VoiceSession, wake_request
+    assert wake_request('Jarvis, qué hora es') == 'qué hora es'
+    assert wake_request('JARVIS') == ''
+    assert wake_request('hola') is None
+    assert wake_request('superjarvis') is None
+    spoken, requests = [], []
+    inputs = iter(['conversación ajena', 'Jarvis, hola', 'Jarvis', 'qué hora es'])
+    voice = SimpleNamespace(speak_wait=lambda text: spoken.append(text) or True)
+    def listen():
+        try: return next(inputs)
+        except StopIteration:
+            session.stop()
+            return ''
+    brain = SimpleNamespace(ask=lambda text: requests.append(text) or 'respuesta')
+    session = VoiceSession(brain, voice, listen)
+    session.run()
+    assert requests == ['hola', 'qué hora es']
+    assert 'Le escucho, señor.' in spoken
