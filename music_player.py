@@ -1,14 +1,11 @@
-"""Local YouTube audio playback using yt-dlp metadata and mpv."""
+"""Open the first YouTube result in the browser; recover legacy mpv processes."""
 import json
 import os
 import re
-import tempfile
-import sys
-import uuid
 from pathlib import Path
 import psutil
-import shutil
 import subprocess
+import webbrowser
 
 
 STATE = Path(__file__).resolve().parent / '.jarvis-music.json'
@@ -22,9 +19,6 @@ class MusicPlayer:
         query = query.strip()
         if not query or len(query) > 300:
             raise ValueError('Indica una canción o artista (máximo 300 caracteres).')
-        mpv = shutil.which('mpv')
-        if not mpv:
-            return {'started': False, 'error': 'Falta mpv. En Kali instala mpv con sudo apt install mpv.'}
         try:
             import yt_dlp
             options = {'quiet': True, 'no_warnings': True, 'extract_flat': True,
@@ -44,53 +38,14 @@ class MusicPlayer:
         prior = self.stop()
         if prior.get('error'):
             return {'started': False, 'error': prior['error']}
-        marker = '--title=JARVIS-' + uuid.uuid4().hex
         try:
-            # A separate session lets playback survive a normal JARVIS/terminal exit.
-            detach = ({'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS}
-                      if os.name == 'nt' else {'start_new_session': True})
-            env = os.environ.copy()
-            env['PATH'] = str(Path(sys.executable).absolute().parent) + os.pathsep + env.get('PATH', '')
-            self.process = subprocess.Popen([mpv, '--no-video', '--no-config', '--no-terminal', marker, url],
-                                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                            env=env, **detach)
-        except OSError:
-            return {'started': False, 'error': 'No se pudo iniciar mpv.'}
-        try:
-            self._save_process(self.process.pid, marker)
-        except (OSError, psutil.Error):
-            try:
-                if self.process.poll() is None:
-                    self.process.terminate()
-                    try:
-                        self.process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        self.process.kill()
-                        self.process.wait(timeout=3)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-            self.process = None
-            return {'started': False, 'error': 'No se pudo registrar el reproductor o se cerró al iniciar.'}
-        try:
-            self.process.wait(timeout=1.5)
-        except subprocess.TimeoutExpired:
-            return {'started': True, 'title': title,
-                    'note': 'El reproductor sigue abierto, pero aún podría fallar al cargar; no se ha comprobado que se oiga el audio.'}
-        self._clear_matching(self.process.pid)
-        self.process = None
-        return {'started': False, 'error': 'El reproductor se cerró al iniciar; revisa mpv, yt-dlp y la disponibilidad del video.'}
-
-    def _save_process(self, pid, marker):
-        info = {'pid': pid, 'created': psutil.Process(pid).create_time(), 'marker': marker}
-        name = None
-        try:
-            with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=STATE.parent, delete=False) as file:
-                name = file.name
-                json.dump(info, file)
-            os.replace(name, STATE)
-        finally:
-            if name and os.path.exists(name):
-                os.unlink(name)
+            opened = webbrowser.open(url, new=2)
+        except (OSError, webbrowser.Error):
+            opened = False
+        if not opened:
+            return {'opened': False, 'error': 'No se pudo abrir el navegador.', 'url': url}
+        return {'opened': True, 'title': title, 'url': url,
+                'note': 'Se solicitó abrir YouTube en el navegador. No se ha confirmado la reproducción; el navegador puede exigir pulsar reproducir. Para detenerla, pausa o cierra esa pestaña.'}
 
     def _clear_matching(self, pid):
         try:
@@ -118,7 +73,7 @@ class MusicPlayer:
             self._clear_matching(process.pid)
             self.process = None
             if stopped:
-                return {'stopped': True}
+                return {'stopped': True, 'note': 'Se detuvo mpv anterior. Esto no detiene pestañas de YouTube; páusalas o ciérralas manualmente.'}
         try:
             info = json.loads(STATE.read_text(encoding='utf-8'))
             pid, created, marker = info['pid'], info['created'], info['marker']
@@ -127,7 +82,7 @@ class MusicPlayer:
             process = psutil.Process(pid)
             if process.create_time() != created or marker not in process.cmdline():
                 self._clear_matching(pid)
-                return {'stopped': False, 'note': 'No hay reproducción de JARVIS en curso.'}
+                return {'stopped': False, 'note': 'No se encontró un reproductor mpv anterior de JARVIS. Si la música está en el navegador, pausa o cierra la pestaña de YouTube.'}
             process.terminate()
             try:
                 process.wait(timeout=3)
@@ -135,11 +90,11 @@ class MusicPlayer:
                 process.kill()
                 process.wait(timeout=3)
             self._clear_matching(pid)
-            return {'stopped': True}
+            return {'stopped': True, 'note': 'Se detuvo mpv anterior. Esto no detiene pestañas de YouTube; páusalas o ciérralas manualmente.'}
         except FileNotFoundError:
-            return {'stopped': False, 'note': 'No hay reproducción de JARVIS en curso.'}
+            return {'stopped': False, 'note': 'No se encontró un reproductor mpv anterior de JARVIS. Si la música está en el navegador, pausa o cierra la pestaña de YouTube.'}
         except psutil.NoSuchProcess:
             self._clear_matching(pid)
-            return {'stopped': False, 'note': 'No hay reproducción de JARVIS en curso.'}
+            return {'stopped': False, 'note': 'No se encontró un reproductor mpv anterior de JARVIS. Si la música está en el navegador, pausa o cierra la pestaña de YouTube.'}
         except (psutil.Error, OSError, ValueError, KeyError, TypeError, AttributeError):
             return {'stopped': False, 'error': 'No se pudo verificar o detener el reproductor guardado; comprueba mpv en el sistema.'}

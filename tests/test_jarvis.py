@@ -426,36 +426,40 @@ def test_scoped_permission_cannot_allow_terminal(tmp_path, monkeypatch):
     assert not permissions.preapproved('play_music')
 
 
-def test_music_player_start_and_stop(monkeypatch, tmp_path):
+def test_music_player_opens_first_result_in_browser(monkeypatch, tmp_path):
+    import sys
+    import music_player
+    class Downloader:
+        def __init__(self, options): assert options['extract_flat'] is True
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, query, download):
+            assert query == 'ytsearch1:tema' and not download
+            return {'entries': [{'title': 'Tema', 'id': 'dfojvebIwJc'}]}
+    opened = []
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
+    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
+    monkeypatch.setattr(music_player.webbrowser, 'open', lambda url, new: opened.append((url, new)) or True)
+    player = music_player.MusicPlayer()
+    result = player.play('tema')
+    assert result['opened'] and opened == [('https://www.youtube.com/watch?v=dfojvebIwJc', 2)]
+    assert 'no se ha confirmado' in result['note'].lower()
+    assert 'navegador' in player.stop()['note']
+
+
+def test_music_browser_failure_is_reported(monkeypatch, tmp_path):
     import sys
     import music_player
     class Downloader:
         def __init__(self, options): pass
         def __enter__(self): return self
         def __exit__(self, *args): pass
-        def extract_info(self, query, download):
-            assert query == 'ytsearch1:tema' and not download
-            return {'entries': [{'title': 'Tema', 'id': 'dfojvebIwJc'}]}
-    class Process:
-        def __init__(self, args, **kwargs): self.args, self.kwargs, self.running, self.pid = args, kwargs, True, 424242
-        def poll(self): return None if self.running else 0
-        def terminate(self): self.running = False
-        def wait(self, timeout):
-            if self.running: raise music_player.subprocess.TimeoutExpired('mpv', timeout)
-            return 0
+        def extract_info(self, *args, **kwargs):
+            return {'entries': [{'id': 'dfojvebIwJc', 'title': 'Tema'}]}
     monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
-    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/mpv')
-    monkeypatch.setattr(music_player.subprocess, 'Popen', Process)
     monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.psutil, 'Process', lambda pid: SimpleNamespace(create_time=lambda: 123.0))
-    player = music_player.MusicPlayer()
-    assert player.play('tema')['started']
-    assert player.process.args[0] == '/usr/bin/mpv'
-    assert player.process.args[-1] == 'https://www.youtube.com/watch?v=dfojvebIwJc'
-    assert '--ytdl=no' not in player.process.args and '--no-config' in player.process.args
-    assert player.process.kwargs['env']['PATH'].split(music_player.os.pathsep)[0] == str(music_player.Path(sys.executable).absolute().parent)
-    assert player.stop()['stopped']
-    assert not player.stop()['stopped']
+    monkeypatch.setattr(music_player.webbrowser, 'open', lambda *args, **kwargs: False)
+    assert not music_player.MusicPlayer().play('tema')['opened']
 
 
 def test_network_preapproval_applies_to_agent_but_not_terminal(tmp_path, monkeypatch):
