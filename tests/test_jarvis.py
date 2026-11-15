@@ -606,3 +606,42 @@ def test_vision_network_errors_are_safe(monkeypatch):
     with pytest.raises(VisionError) as exc:
         analyze(b'\x89PNG\r\n\x1a\n' + b'test', 'Describe', Session)
     assert 'TLS' in str(exc.value) and 'secret' not in str(exc.value)
+
+
+def test_gmail_search_and_attachment_flow(monkeypatch):
+    import base64
+    import gmail_access
+    data = b'\x89PNG\r\n\x1a\ncontenido'
+    message = {'id': 'abc123', 'payload': {'headers': [{'name': 'Subject', 'value': 'Foto'}],
+                'parts': [{'partId': '1', 'filename': 'foto.png', 'mimeType': 'image/png',
+                           'body': {'size': len(data), 'attachmentId': 'attachment_1'}}]}}
+    closed = []
+    class Response:
+        status_code = 200
+        def __init__(self, value): self.value = value
+        def json(self): return self.value
+    class Session:
+        def get(self, url, **kwargs):
+            assert kwargs['allow_redirects'] is False
+            if url.endswith('/messages'): return Response({'messages': [{'id': 'abc123'}]})
+            if url.endswith('/attachments/attachment_1'):
+                return Response({'data': base64.urlsafe_b64encode(data).decode().rstrip('=')})
+            return Response(message)
+        def close(self): closed.append(True)
+    monkeypatch.setattr(gmail_access, 'client', Session)
+    sent = []
+    monkeypatch.setattr(gmail_access, 'analyze', lambda data, question: sent.append((data, question)) or 'Una foto')
+    listing = gmail_access.search_messages('from:ana has:attachment')
+    assert listing['messages'][0]['images'][0]['part_id'] == '1'
+    assert gmail_access.inspect_attachment('abc123', '1', 'Describe')['description'] == 'Una foto'
+    assert sent == [(data, 'Describe')] and len(closed) == 2
+    with pytest.raises(gmail_access.GmailError): gmail_access.inspect_attachment('abc123', 'wrong', 'Describe')
+    assert len(sent) == 1
+
+
+def test_gmail_tools_need_per_action_authorization(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_network_permission(True)
+    assert not permissions.preapproved('search_gmail')
+    assert not permissions.preapproved('inspect_gmail_image')

@@ -41,7 +41,9 @@ class VoiceSession:
                 return False
             privacy = (' Se capturará la pantalla y se enviará a NVIDIA. La descripción puede enviarse al proveedor del chat.'
                        if name == 'inspect_screen' else ' La imagen se enviará a NVIDIA y la descripción puede enviarse al proveedor del chat.'
-                       if name == 'inspect_image' else '')
+                       if name == 'inspect_image' else ' Se buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
+                       if name == 'search_gmail' else ' Se descargará el adjunto de Gmail y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
+                       if name == 'inspect_gmail_image' else '')
             message = (f'Señor, solicito permiso para usar la herramienta {name}, '
                        f'con estos argumentos: {details}.' + privacy +
                        ' Diga autorizo para aprobar esta acción, o cualquier otra cosa para rechazarla.')

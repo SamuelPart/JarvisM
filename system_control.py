@@ -20,6 +20,7 @@ from agenda import Agenda, timestamp_from_iso
 from web_search import search
 from music_player import MusicPlayer
 from nvidia_vision import read_image, analyze, validate_image, VisionError
+import gmail_access
 
 
 class SystemController:
@@ -129,6 +130,12 @@ class SystemController:
         image = read_image(path)
         return {'description': analyze(image, question),
                 'note': 'La imagen y la pregunta se enviaron a NVIDIA. La descripción puede enviarse al proveedor del chat.'}
+
+    def search_gmail(self, query: str) -> dict:
+        return gmail_access.search_messages(query)
+
+    def inspect_gmail_image(self, message_id: str, part_id: str, question: str = 'Describe esta imagen en español.') -> dict:
+        return gmail_access.inspect_attachment(message_id, part_id, question)
 
     def inspect_screen(self, question: str = 'Describe lo que aparece en pantalla en español.') -> dict:
         """Capture visible screen only after consent; send the capture to NVIDIA."""

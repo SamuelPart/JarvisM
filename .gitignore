@@ -13,3 +13,8 @@ __pycache__/
 .jarvis-memory.sqlite3*
 
 .jarvis-agenda.sqlite3*
+
+# Gmail OAuth credentials and refresh token
+.gmail-token.json
+.jarvis-gmail-token.json
+gmail-credentials.json

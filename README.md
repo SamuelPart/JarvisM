@@ -138,3 +138,16 @@ Para una imagen abierta en WhatsApp, Gmail u otra aplicación, pida «Analiza la
 Requiere conexión, `NVIDIA_VISION_API_KEY` o `NVIDIA_API_KEY` en `.env`, y acceso al modelo `mistralai/mistral-large-4-1t-a52b`; puede cambiarse con `NVIDIA_VISION_MODEL`. Cada envío de imagen o captura requiere aprobación separada y no se incluye en los permisos únicos de búsqueda/música. No comparta claves ni imágenes privadas sin entender que se envían a NVIDIA. Las capturas no se guardan como archivos en disco.
 
 Si aparece un error de conexión, el detalle distingue TLS, tiempo de espera, conexión de red y respuesta HTTP cuando sea posible, sin mostrar la clave. La llamada de visión no usa variables de proxy ni sigue redirecciones; redes que requieren proxy podrían no funcionar. Una falla de conexión no confirma que la clave o la ruta sean incorrectas.
+
+### Gmail: buscar y analizar adjuntos
+
+Esta integración es de la aplicación instalada, independiente de cualquier cuenta conectada en Arena. Usa la API oficial de Gmail con permiso **de lectura de todo el buzón**; no envía ni elimina correos. Para configurarla una sola vez:
+
+1. En Google Cloud cree un proyecto, active Gmail API y configure la pantalla de consentimiento OAuth. Cree un ID OAuth de tipo **aplicación de escritorio**. Si la aplicación está en modo de pruebas, añada su cuenta como usuario de prueba. Google podría limitar o advertir sobre aplicaciones no verificadas; usted controla el proyecto y los permisos que concede.
+2. Descargue el JSON de ese cliente desde Google Cloud, póngalo en la carpeta de JARVIS y nómbrelo `gmail-credentials.json`. No lo comparta ni lo suba a Git.
+3. En la carpeta de JARVIS instale las dependencias con `venv/bin/python -m pip install -r requirements.txt` en Linux (`venv\Scripts\python.exe -m pip install -r requirements.txt` en Windows). Ejecute `venv/bin/python gmail_access.py` (Windows: `venv\Scripts\python.exe gmail_access.py`). Se abrirá el navegador para iniciar sesión con Google y autorizar la lectura. No escriba contraseñas en JARVIS ni en el chat.
+4. Inicie JARVIS y pida, por ejemplo, «Busca el correo de Ana sobre el recibo y analiza la imagen adjunta». Autorice primero la búsqueda de Gmail y luego el envío de la imagen seleccionada a NVIDIA. Si hay varias coincidencias, indique cuál desea.
+
+La búsqueda consulta hasta 10 correos, descargando sus datos para identificar imágenes; solo devuelve al modelo metadatos (remitente, asunto, fecha y nombres/IDs de imágenes), que pueden ser privados y guardarse en la memoria de chat. El adjunto aprobado se lee en memoria y se envía a NVIDIA junto con la pregunta; la descripción puede enviarse al proveedor del chat. El permiso de búsqueda/música no cubre estas acciones. La autorización se guarda en `.jarvis-gmail-token.json`, excluida de Git; protege la cuenta. Para revocar, retire el acceso de la aplicación desde su cuenta de Google y elimine el archivo de token local. La captura de pantalla sigue disponible como alternativa, pero no equivale a acceso directo a Gmail.
+
+WhatsApp de escritorio no ofrece aquí una API personal integrada para leer mensajes o adjuntos. JARVIS no accede directamente a esa cuenta: puede analizar la pantalla visible con su permiso, o una imagen guardada localmente. No se solicitan contraseñas ni se usan datos privados de sesión de WhatsApp.
