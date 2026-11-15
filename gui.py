@@ -9,8 +9,8 @@ import threading
 from datetime import datetime
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QLineF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QPen, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -24,7 +24,7 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
-from face_particles import face_points, motion, deform
+from sphere_model import sphere_points, projected_particles
 from agenda import Agenda
 from approval import is_approved
 from permissions import read_state, set_network_permission, set_gmail_permission
@@ -39,7 +39,7 @@ class VoiceSignals(QObject):
 
 
 class CoreAnimation(QWidget):
-    """A free-standing expressive face formed from animated particles."""
+    """A procedural bristled sphere that moves in every state."""
     def __init__(self, preferences):
         super().__init__()
         self.preferences = preferences.copy()
@@ -48,28 +48,27 @@ class CoreAnimation(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.mode = 'idle'
         self.phase = 0.0
-        self.face = face_points()
+        self.points = sphere_points()
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
-        self.set_mode('idle')
+        self.timer.start()
 
     def set_mode(self, mode):
         self.mode = mode
-        if self.preferences['animation'] != 'desactivada':
-            self.timer.start()
-        else:
-            self.timer.stop()
         self.update()
 
     def configure(self, preferences):
         self.preferences = preferences.copy()
         scale = SCALES[self.preferences['size']]
         self.setFixedSize(round(300 * scale), round(260 * scale))
-        self.set_mode(self.mode)
+        self.update()
 
     def advance(self):
-        self.phase += 0.018 if self.preferences['animation'] == 'reducida' else 0.045
+        speed = 0.078 if self.mode == 'speaking' else 0.040 if self.mode == 'thinking' else 0.028
+        if self.preferences['animation'] == 'reducida':
+            speed *= 0.45
+        self.phase += speed
         self.update()
 
     def paintEvent(self, event):
@@ -78,24 +77,25 @@ class CoreAnimation(QWidget):
         painter.translate(self.width() / 2, self.height() / 2)
         scale = SCALES[self.preferences['size']]
         painter.scale(scale, scale)
+        colors = {'thinking': (159, 115, 225), 'speaking': (95, 218, 239),
+                  'approval': (255, 170, 67)}
+        color = colors.get(self.mode, PALETTES[self.preferences['color']][1])
+        # Dim shaded center and radial needles; no image, video, GIF, or box.
+        glow = QRadialGradient(QPointF(-24, -32), 130)
+        glow.setColorAt(0, QColor(*color, 23))
+        glow.setColorAt(0.72, QColor(*color, 11))
+        glow.setColorAt(1, QColor(*color, 0))
         painter.setPen(Qt.PenStyle.NoPen)
-        m = motion(self.phase, self.mode, self.preferences['animation'])
-        _, accent = PALETTES[self.preferences['color']]
-        # The pale points retain the photographic reference; palette colors tint them subtly.
-        color = (255, 199, 117) if self.mode == 'approval' else tuple(int(220 + c * 0.13) for c in accent)
-
-        def dot(x, y, size, alpha, tint=color):
-            painter.setBrush(QColor(*tint, max(0, min(255, int(alpha)))))
-            painter.drawEllipse(QPointF(x, y), size, size)
-
-        for x, y, light, offset, size in self.face:
-            px, py = deform(x, y, m)
-            # Micro-movement preserves the reference while making the whole cloud feel alive.
-            if self.preferences['animation'] != 'desactivada':
-                strength = 0.7 if self.mode == 'speaking' else 0.16
-                px += strength * math.sin(self.phase * 1.6 + offset)
-                py += strength * 0.55 * math.cos(self.phase * 1.3 + offset)
-            dot(px, py, size, 150 + 100 * light)
+        painter.setBrush(glow)
+        painter.drawEllipse(QPointF(0, 0), 112, 112)
+        pen = QPen()
+        pen.setWidthF(0.75)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        reduced = self.preferences['animation'] == 'reducida'
+        for _, x, y, tip_x, tip_y, shade in projected_particles(self.points, self.phase, self.mode == 'speaking', reduced):
+            pen.setColor(QColor(*color, int(35 + 150 * shade)))
+            painter.setPen(pen)
+            painter.drawLine(QLineF(x, y, tip_x, tip_y))
         painter.end()
 
 

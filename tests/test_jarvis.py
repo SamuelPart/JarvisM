@@ -885,19 +885,19 @@ def test_managed_browser_does_not_confirm_redirect(monkeypatch):
     assert not music.open('dfojvebIwJc')['opened']
 
 
-def test_particle_face_geometry_is_deterministic_and_finite():
+
+def test_sphere_surface_is_deterministic_and_moves_in_all_states():
     import math
-    from face_particles import face_points
-    face = face_points()
-    assert len(face) > 2000 and face == face_points()
-    assert all(len(point) == 5 and all(math.isfinite(n) for n in point) for point in face)
-    assert all(-145 <= p[0] <= 145 and -128 <= p[1] <= 128 for p in face)
+    from sphere_model import sphere_points, projected_particles
+    points = sphere_points()
+    assert len(points) == 4200 and points == sphere_points()
+    assert all(abs(sum(v*v for v in p) - 1) < 1e-9 for p in points)
+    first = projected_particles(points, 0.0)
+    later = projected_particles(points, 1.0)
+    assert first != later and all(all(math.isfinite(v) for v in p) for p in first)
+    assert projected_particles(points, 0.5, speaking=True) != projected_particles(points, 0.5)
 
 
-def test_particle_face_speaking_and_reduced_motion():
-    from face_particles import motion
-    idle = motion(1.2, 'idle', 'normal')
-    speech = [motion(t / 10, 'speaking', 'normal')['mouth'] for t in range(30)]
-    assert max(speech) > idle['mouth'] and max(speech) > min(speech)
-    assert motion(2, 'speaking', 'desactivada')['mouth'] == motion(4, 'speaking', 'desactivada')['mouth']
-    assert motion(1, 'approval', 'normal')['brow'] != idle['brow']
+def test_disabled_animation_setting_migrates_to_reduced():
+    from ui_settings import normalize
+    assert normalize({'animation': 'desactivada'})['animation'] == 'reducida'

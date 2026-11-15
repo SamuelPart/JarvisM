@@ -65,7 +65,7 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central es un rostro de partículas dibujado mediante Qt a partir de puntos extraídos de la imagen de referencia proporcionada, sin GIF ni descarga externa. No utiliza líneas para dibujar sus facciones. Parpadea y cambia sus expresiones según el estado; al hablar mueve la boca y las partículas. La animación es decorativa y no realiza sincronización labial real con el audio.
+El núcleo central es una esfera orgánica de partículas dibujada por Qt, inspirada en la referencia y creada por código, sin GIF. Se mueve continuamente y con mayor intensidad cuando JARVIS habla. La animación de voz es decorativa y no mide el audio real.
 
 La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
@@ -93,7 +93,7 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 
 ### Núcleo expresivo
 
-El rostro indica el estado: expresión tranquila en espera; movimientos sutiles al procesar una solicitud; boca y partículas en movimiento durante la voz; y tono ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
+La esfera indica el estado mediante color y movimiento: paleta elegida en espera, violeta al procesar, cian al hablar y ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
 
 ### Modo compacto flotante
 
@@ -101,7 +101,7 @@ Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con 
 
 ### Ajustes visuales
 
-En la ventana completa pulse «Ajustes» para elegir el color del rostro, su tamaño y animación normal, reducida o desactivada. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
+En la ventana completa pulse «Ajustes» para elegir el color en espera, su tamaño y animación normal o reducida. La esfera se mueve siempre; una preferencia antigua de animación desactivada se convierte a reducida. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
 
 ### Memoria entre sesiones
 
@@ -169,3 +169,5 @@ Puede consultar recordatorios de la agenda local tras autorización. Para consul
 La integración de ElevenLabs se retiró. Si una instalación anterior conserva `JARVIS_VOICE_MODE=elevenlabs`, JARVIS usará Edge TTS; cambie la línea a `JARVIS_VOICE_MODE=edge` y retire las líneas `ELEVENLABS_` de `.env` si ya no las necesita. El texto de voz se envía a Microsoft.
 
 Si hay un reproductor mpv registrado por la versión anterior, JARVIS puede intentar detenerlo verificando su identidad. La pausa de la nueva ventana controlada no cierra otras pestañas. El registro heredado `.jarvis-music.json` no se sube a Git.
+
+JARVIS muestra de inmediato que está procesando la solicitud, pero no puede garantizar respuestas en menos de dos segundos: dependen del proveedor de IA, la red, la voz y las herramientas usadas.

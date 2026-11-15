@@ -7,7 +7,7 @@ from pathlib import Path
 DEFAULTS = {'color': 'azul', 'size': 'mediano', 'animation': 'normal'}
 OPTIONS = {'color': ('azul', 'cian', 'violeta', 'verde'),
            'size': ('pequeño', 'mediano', 'grande'),
-           'animation': ('desactivada', 'reducida', 'normal')}
+           'animation': ('reducida', 'normal')}
 PALETTES = {
     'azul': ((70, 81, 255), (128, 136, 255)),
     'cian': ((27, 180, 220), (115, 240, 255)),
@@ -23,6 +23,8 @@ def normalize(values):
     result = {}
     for key, default in DEFAULTS.items():
         value = values.get(key)
+        if key == 'animation' and value == 'desactivada':
+            value = 'reducida'
         result[key] = value if isinstance(value, str) and value in OPTIONS[key] else default
     return result
 
