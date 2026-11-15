@@ -21,6 +21,7 @@ from web_search import search
 from music_player import MusicPlayer
 from nvidia_vision import read_image, analyze, validate_image, VisionError
 import gmail_access
+import calendar_access
 
 
 class SystemController:
@@ -32,6 +33,15 @@ class SystemController:
 
     def current_time(self) -> dict:
         return {'local_time': datetime.now().astimezone().isoformat(timespec='seconds')}
+
+    def list_reminders(self) -> dict:
+        reminders = Agenda().list()
+        return {'reminders': [{'id': r['id'], 'title': r['title'],
+                               'when': datetime.fromtimestamp(r['due']).astimezone().isoformat(timespec='seconds'),
+                               'notified': r['notified']} for r in reminders]}
+
+    def list_calendar_events(self, start: str, end: str) -> dict:
+        return calendar_access.list_events(start, end)
 
     def create_reminder(self, title: str, when: str) -> dict:
         """Create a one-shot local reminder after explicit user authorization."""
@@ -139,6 +149,9 @@ class SystemController:
 
     def send_gmail(self, to: str, subject: str, body: str) -> dict:
         return gmail_access.send_message(to, subject, body)
+
+    def reply_gmail(self, message_id: str, to: str, subject: str, body: str) -> dict:
+        return gmail_access.reply_message(message_id, to, subject, body)
 
     def classify_gmail(self, message_id: str, sender: str, subject: str, category: str) -> dict:
         return gmail_access.classify_message(message_id, sender, subject, category)

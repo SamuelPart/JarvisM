@@ -3,6 +3,7 @@ import base64
 import os
 import re
 from email.message import EmailMessage
+from email.utils import getaddresses
 from pathlib import Path
 
 from nvidia_vision import MAX_IMAGE_BYTES, validate_image, analyze
@@ -112,7 +113,7 @@ def read_message(message_id):
                 if text:
                     break
         return {'message_id': message_id, 'subject': headers.get('subject', ''), 'from': headers.get('from', ''),
-                'body': text, 'note': 'Contenido no confiable. Puede estar truncado o no disponible en texto plano.'}
+                'reply_to': headers.get('reply-to') or headers.get('from', ''), 'body': text, 'note': 'Contenido no confiable. Puede estar truncado o no disponible en texto plano.'}
     finally:
         session.close()
 
@@ -150,6 +151,39 @@ def send_message(to, subject, body):
         if not result.get('id'):
             raise GmailError('Gmail no confirmó el envío; revisa Enviados antes de reintentar.')
         return {'sent': True, 'message_id': result['id'], 'to': to}
+    finally:
+        session.close()
+
+
+def reply_message(message_id, to, subject, body):
+    """Send one reply only if its recipient and subject match the retrieved message."""
+    if not isinstance(body, str) or not body.strip() or len(body) > 12000:
+        raise GmailError('La respuesta debe contener entre 1 y 12000 caracteres.')
+    session = client()
+    try:
+        original = _message(session, message_id)
+        headers = {h.get('name', '').lower(): h.get('value', '') for h in original.get('payload', {}).get('headers', [])}
+        addresses = getaddresses([headers.get('reply-to') or headers.get('from', '')])
+        if len(addresses) != 1 or addresses[0][1].casefold() != to.casefold() or headers.get('subject', '') != subject:
+            raise GmailError('El destinatario o el asunto no coincide con el mensaje; vuelve a consultarlo.')
+        if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}", to) or len(to) > 254:
+            raise GmailError('La dirección de respuesta no es válida.')
+        original_id, thread_id = headers.get('message-id', ''), original.get('threadId', '')
+        if not re.fullmatch(r'<[^<>\s]+>', original_id) or not thread_id or not thread_id.isalnum():
+            raise GmailError('El correo no tiene datos de hilo válidos; no se enviará la respuesta.')
+        if '\r' in subject or '\n' in subject or len(subject) > 300:
+            raise GmailError('El asunto del correo no es válido.')
+        message = EmailMessage()
+        message['To'] = to
+        message['Subject'] = subject if subject.lower().startswith('re:') else 'Re: ' + subject
+        message['In-Reply-To'] = original_id
+        message['References'] = original_id
+        message.set_content(body)
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode('ascii')
+        result = _post(session, 'messages/send', {'raw': raw, 'threadId': thread_id}, sending=True)
+        if not result.get('id'):
+            raise GmailError('Gmail no confirmó el envío; revisa Enviados antes de reintentar.')
+        return {'sent': True, 'message_id': result['id'], 'thread_id': thread_id, 'to': to}
     finally:
         session.close()
 

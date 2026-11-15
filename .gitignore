@@ -18,3 +18,5 @@ __pycache__/
 .gmail-token.json
 .jarvis-gmail-token.json
 gmail-credentials.json
+
+.jarvis-calendar-token.json

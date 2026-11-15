@@ -571,8 +571,9 @@ class JarvisWindow(QMainWindow):
                    if name == 'search_gmail' else '\nSe descargará el adjunto de Gmail y se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_gmail_image' else ' El contenido del correo se enviará al proveedor del chat.'
                    if name == 'read_gmail' else ' Se enviará el correo completo al destinatario indicado.'
-                   if name == 'send_gmail' else ' Se modificará la clasificación de este correo en Gmail.'
-                   if name == 'classify_gmail' else '')
+                   if name in ('send_gmail', 'reply_gmail') else ' Se modificará la clasificación de este correo en Gmail.'
+                   if name == 'classify_gmail' else ' Se consultará tu agenda y los datos pueden enviarse al proveedor del chat.'
+                   if name in ('list_calendar_events', 'list_reminders') else '')
         details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
         self.append_chat('Sistema', 'Permiso solicitado para: ' + name + '\n' + details + privacy +
                          '\nEscribe AUTORIZO para aprobar o NO para rechazar.')

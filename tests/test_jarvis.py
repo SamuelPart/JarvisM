@@ -725,3 +725,57 @@ def test_gmail_persistent_permission_is_separate_and_revocable(tmp_path, monkeyp
     permissions.set_gmail_permission(False)
     assert not permissions.preapproved('send_gmail')
     assert permissions.preapproved('web_search')
+
+
+def test_reply_gmail_uses_verified_reply_to_and_thread(monkeypatch):
+    import base64
+    from email import message_from_bytes
+    import gmail_access
+    sent = []
+    class Response:
+        status_code = 200
+        def __init__(self, value): self.value = value
+        def json(self): return self.value
+    class Session:
+        def get(self, *args, **kwargs):
+            return Response({'id': 'abc123', 'threadId': 'abc456', 'payload': {'headers': [
+                {'name': 'From', 'value': 'Ana <ana@example.com>'}, {'name': 'Subject', 'value': 'Hola'},
+                {'name': 'Message-ID', 'value': '<original@example.com>'}]}})
+        def post(self, url, **kwargs):
+            sent.append(kwargs['json'])
+            return Response({'id': 'new123'})
+        def close(self): pass
+    monkeypatch.setattr(gmail_access, 'client', Session)
+    with pytest.raises(gmail_access.GmailError): gmail_access.reply_message('abc123', 'otro@example.com', 'Hola', 'Respuesta')
+    assert not sent
+    assert gmail_access.reply_message('abc123', 'ana@example.com', 'Hola', 'Respuesta')['sent']
+    assert sent[0]['threadId'] == 'abc456'
+    email = message_from_bytes(base64.urlsafe_b64decode(sent[0]['raw']))
+    assert email['In-Reply-To'] == '<original@example.com>' and email['Subject'] == 'Re: Hola'
+
+
+def test_calendar_validates_interval_and_limits_output(monkeypatch):
+    import calendar_access
+    calls = []
+    class Response:
+        status_code = 200
+        def json(self): return {'items': [{'summary': 'Reunión', 'start': {'dateTime': '2026-11-15T10:00:00-05:00'}}], 'nextPageToken': 'more'}
+    class Session:
+        def get(self, url, **kwargs): calls.append((url, kwargs)); return Response()
+        def close(self): pass
+    monkeypatch.setattr(calendar_access, 'client', Session)
+    result = calendar_access.list_events('2026-11-15T00:00:00-05:00', '2026-11-16T00:00:00-05:00')
+    assert result['events'][0]['title'] == 'Reunión' and result['truncated']
+    assert calls[0][1]['allow_redirects'] is False
+    with pytest.raises(calendar_access.CalendarError): calendar_access.list_events('2026-11-15', '2026-11-16')
+    with pytest.raises(calendar_access.CalendarError): calendar_access.list_events('2026-01-01T00:00:00+00:00', '2026-03-01T00:00:00+00:00')
+    assert len(calls) == 1
+
+
+def test_reply_included_in_gmail_permission_but_not_calendar(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_gmail_permission(True)
+    assert permissions.preapproved('reply_gmail')
+    assert not permissions.preapproved('list_calendar_events')
+    assert not permissions.preapproved('list_reminders')

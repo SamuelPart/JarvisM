@@ -6,7 +6,7 @@ from pathlib import Path
 
 STATE = Path(__file__).resolve().parent / '.jarvis-state.json'
 PREAPPROVED_TOOLS = frozenset({'web_search', 'music_search', 'play_music', 'stop_music'})
-GMAIL_TOOLS = frozenset({'search_gmail', 'read_gmail', 'send_gmail', 'classify_gmail'})
+GMAIL_TOOLS = frozenset({'search_gmail', 'read_gmail', 'send_gmail', 'reply_gmail', 'classify_gmail'})
 
 
 def read_state():
