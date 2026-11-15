@@ -58,6 +58,8 @@ def format_result(name, result):
     if result.get('error'):
         return 'No pude completar la solicitud: ' + str(result['error'])
     if name == 'play_music':
+        if result.get('requested') is True:
+            return 'Solicité abrir la canción en Chrome; no puedo confirmar la reproducción.'
         if result.get('opened') is True and result.get('playing') is True:
             return 'Listo, señor.'
         if result.get('opened') is True:

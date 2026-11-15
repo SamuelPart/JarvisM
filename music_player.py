@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 import psutil
 import subprocess
-import chrome_music
+import shutil
 
 
 STATE = Path(__file__).resolve().parent / '.jarvis-music.json'
@@ -38,10 +38,16 @@ class MusicPlayer:
         prior = self._stop_legacy()
         if prior.get('error'):
             return {'started': False, 'error': prior['error']}
-        result = chrome_music.command('open', video_id=video_id, start=True)
-        result['title'] = title
-        result['url'] = url
-        return result
+        chrome = shutil.which('google-chrome-stable') or shutil.which('google-chrome')
+        if not chrome:
+            return {'opened': False, 'error': 'No encontré Google Chrome instalado.'}
+        try:
+            subprocess.Popen([chrome, '--new-tab', url], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError:
+            return {'opened': False, 'error': 'No pude iniciar Google Chrome.'}
+        return {'requested': True, 'playing': False, 'title': title, 'url': url}
 
     def _clear_matching(self, pid):
         try:
@@ -51,13 +57,10 @@ class MusicPlayer:
             pass
 
     def stop(self):
-        result = chrome_music.command('pause')
-        if result.get('available') is False:
-            legacy = self._stop_legacy()
-            if legacy.get('stopped') or legacy.get('error'):
-                return legacy
-            return {'paused': False, 'note': 'No hay una pestaña musical de JARVIS activa en Chrome.'}
-        return result
+        legacy = self._stop_legacy()
+        if legacy.get('stopped') or legacy.get('error'):
+            return legacy
+        return {'paused': False, 'note': 'No puedo pausar la pestaña de Chrome; pausa el video directamente en YouTube.'}
 
     def _stop_legacy(self):
         if self.process is not None:

@@ -121,15 +121,7 @@ Al pedir información actual, JARVIS usa `web_search`, con permiso individual o 
 
 ### Música automática y enlaces
 
-Para música en **Linux con Google Chrome**, JARVIS busca el primer resultado de YouTube con `yt-dlp` y usa una extensión para abrirlo en una pestaña de la ventana y el perfil habituales de Chrome. La extensión solo controla la pestaña que creó, no otras pestañas. Si hay varios perfiles de Chrome, habilítala solo en el perfil deseado. No controla Firefox ni Chrome en Windows.
-
-Instalación única, después de actualizar JARVIS:
-
-1. En la terminal del proyecto, ejecuta `venv/bin/python install_chrome_music.py`.
-2. En Google Chrome abre `chrome://extensions`, activa **Modo desarrollador**, pulsa **Cargar descomprimida** y selecciona la carpeta `chrome_extension` dentro del proyecto. Comprueba que el ID es `dnklpndmbblkddologkklfhpkanfmcea` y deja la extensión activada en tu perfil habitual.
-3. Mantén Chrome abierto y pide una canción a JARVIS. Si acabas de cargar la extensión, espera unos segundos para que se conecte. Si no conecta, recarga la extensión en `chrome://extensions` y prueba nuevamente. Si mueves el proyecto, vuelve a ejecutar el instalador.
-
-La extensión puede acceder a páginas de YouTube y usa mensajería nativa para abrir y pausar únicamente su pestaña; no lee contraseñas ni cookies. JARVIS comprueba que el video solicitado avanza, pero no puede garantizar que se oiga: revisa el volumen, anuncios, consentimiento o bloqueos de YouTube. La pestaña puede seguir sonando al cerrar JARVIS; pausa tras reabrirlo mientras Chrome siga abierto. Si Chrome se reinicia, la pestaña anterior deja de estar asociada y tendrás que pausarla manualmente.
+Para música en **Linux con Google Chrome**, JARVIS busca el primer resultado de YouTube con `yt-dlp` y solicita abrirlo en una pestaña nueva de Chrome, sin extensiones ni Playwright. Chrome puede abrir una ventana si no hay ninguna abierta y elige el perfil según su propia configuración. JARVIS no puede verificar si la pestaña se abrió o el video se reproduce, ni pausarlo: pausa el video directamente en YouTube. La música puede seguir sonando después de cerrar JARVIS.
 
 Playwright ya no se necesita para música. Para eliminar **solo los navegadores descargados por Playwright** en la cuenta actual, revisa primero `ls ~/.cache/ms-playwright` y, si no los necesitan otros proyectos, ejecuta `rm -rf ~/.cache/ms-playwright`. Esto no desinstala Google Chrome ni borra su perfil. En el entorno virtual de JARVIS puedes retirar también la biblioteca con `venv/bin/python -m pip uninstall playwright`; no elimina dependencias de otros entornos.
 

@@ -426,37 +426,8 @@ def test_scoped_permission_cannot_allow_terminal(tmp_path, monkeypatch):
     assert not permissions.preapproved('play_music')
 
 
-def test_music_player_opens_verified_result(monkeypatch, tmp_path):
-    import sys
-    import music_player
-    class Downloader:
-        def __init__(self, options): assert options['extract_flat'] is True
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def extract_info(self, query, download):
-            assert query == 'ytsearch1:tema' and not download
-            return {'entries': [{'title': 'Tema', 'id': 'dfojvebIwJc'}]}
-    calls = []
-    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
-    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.chrome_music, 'command', lambda action, **kwargs: calls.append((action, kwargs)) or {'opened': True, 'playing': True})
-    result = music_player.MusicPlayer().play('tema')
-    assert result['playing'] and calls == [('open', {'video_id': 'dfojvebIwJc', 'start': True})]
-    assert result['url'] == 'https://www.youtube.com/watch?v=dfojvebIwJc'
 
 
-def test_music_control_preserves_failure(monkeypatch, tmp_path):
-    import sys
-    import music_player
-    class Downloader:
-        def __init__(self, options): pass
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def extract_info(self, *args, **kwargs): return {'entries': [{'id': 'dfojvebIwJc', 'title': 'Tema'}]}
-    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
-    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
-    monkeypatch.setattr(music_player.chrome_music, 'command', lambda *args, **kwargs: {'opened': False, 'error': 'No se pudo abrir'})
-    assert not music_player.MusicPlayer().play('tema')['opened']
 
 
 def test_network_preapproval_applies_to_agent_but_not_terminal(tmp_path, monkeypatch):
@@ -834,12 +805,6 @@ def test_old_elevenlabs_mode_uses_edge(monkeypatch):
 
 
 
-def test_managed_browser_pause_does_not_touch_other_browser(monkeypatch):
-    import music_player
-    commands = []
-    monkeypatch.setattr(music_player.chrome_music, 'command', lambda action: commands.append(action) or {'paused': True})
-    assert music_player.MusicPlayer().stop()['paused']
-    assert commands == ['pause']
 
 
 
@@ -1048,76 +1013,48 @@ def test_model_music_tool_failure_overrides_fabricated_success(tmp_path, monkeyp
 
 
 
-def test_chrome_client_rejects_invalid_id_and_reports_disconnected(monkeypatch, tmp_path):
-    import chrome_music
-    import install_chrome_music
-    monkeypatch.setattr(install_chrome_music, 'install', lambda **kwargs: None)
-    monkeypatch.setattr(chrome_music, 'socket_path', lambda: tmp_path / 'missing.sock')
-    assert 'inválida' in chrome_music.command('open', '../malicious')['error']
-    assert 'no está conectado' in chrome_music.command('pause')['error']
 
 
-def test_native_protocol_roundtrip_and_limits():
-    import io
-    import struct
-    import chrome_music_native as native
-    stream = io.BytesIO()
-    native.write_message(stream, {'id': 'abc', 'playing': False})
-    stream.seek(0)
-    assert native.read_message(stream) == {'id': 'abc', 'playing': False}
-    with pytest.raises(ValueError):
-        native.read_message(io.BytesIO(struct.pack('=I', 65537)))
-    with pytest.raises(ValueError):
-        native.read_message(io.BytesIO(struct.pack('=I', 10) + b'{}'))
 
 
-def test_chrome_installation_restricts_origin(monkeypatch, tmp_path):
-    import json
-    import install_chrome_music as installer
-    monkeypatch.setattr(installer.Path, 'home', lambda: tmp_path)
-    monkeypatch.setattr(installer.platform, 'system', lambda: 'Linux')
-    installer.install()
-    manifest = json.loads((tmp_path / '.config/google-chrome/NativeMessagingHosts/com.jarvis.music.json').read_text())
-    extension_id = (installer.ROOT / 'chrome_extension/extension_id.txt').read_text().strip()
-    assert manifest['allowed_origins'] == ['chrome-extension://' + extension_id + '/']
-    assert manifest['path'] == str(installer.ROOT / 'chrome_music_native.py')
 
 
-def test_native_bridge_opens_and_pauses_over_socket(tmp_path):
-    import os
-    import select
-    import socket
-    import struct
-    import subprocess
+
+
+def test_music_requests_chrome_new_tab_without_claiming_playback(monkeypatch, tmp_path):
     import sys
-    import json
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[1]
-    extension_id = (root / 'chrome_extension/extension_id.txt').read_text().strip()
-    env = dict(os.environ, TMPDIR=str(tmp_path))
-    proc = subprocess.Popen([sys.executable, str(root / 'chrome_music_native.py'),
-                             'chrome-extension://' + extension_id + '/'],
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-    path = tmp_path / ('jarvis-chrome-' + str(os.getuid())) / 'music.sock'
-    try:
-        import time
-        deadline = time.monotonic() + 5
-        while not path.exists() and time.monotonic() < deadline:
-            time.sleep(.02)
-        assert path.exists()
-        for action, response in [('open', {'opened': True, 'playing': True}), ('pause', {'paused': True})]:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-                client.settimeout(3)
-                client.connect(str(path))
-                client.sendall(json.dumps({'action': action, 'video_id': 'dfojvebIwJc'}).encode() + b'\n')
-                assert select.select([proc.stdout], [], [], 3)[0]
-                header = proc.stdout.read(4)
-                message = json.loads(proc.stdout.read(struct.unpack('=I', header)[0]))
-                assert message['action'] == action
-                body = json.dumps({'id': message['id'], 'result': response}).encode()
-                proc.stdin.write(struct.pack('=I', len(body)) + body)
-                proc.stdin.flush()
-                assert json.loads(client.recv(4096)) == response
-    finally:
-        proc.stdin.close()
-        proc.wait(timeout=5)
+    import music_player
+    from music_commands import format_result
+    class Downloader:
+        def __init__(self, options): assert options['extract_flat'] is True
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, query, download):
+            assert query == 'ytsearch1:tema' and not download
+            return {'entries': [{'id': 'dfojvebIwJc', 'title': 'Tema'}]}
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
+    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: '/usr/bin/google-chrome')
+    calls = []
+    monkeypatch.setattr(music_player.subprocess, 'Popen', lambda args, **kwargs: calls.append(args))
+    result = music_player.MusicPlayer().play('tema')
+    assert calls == [['/usr/bin/google-chrome', '--new-tab', 'https://www.youtube.com/watch?v=dfojvebIwJc']]
+    assert result['requested'] and not result['playing']
+    assert 'no puedo confirmar' in format_result('play_music', result)
+
+
+def test_music_missing_chrome_and_pause_are_honest(monkeypatch, tmp_path):
+    import sys
+    import music_player
+    class Downloader:
+        def __init__(self, options): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def extract_info(self, *args, **kwargs): return {'entries': [{'id': 'dfojvebIwJc'}]}
+    monkeypatch.setitem(sys.modules, 'yt_dlp', SimpleNamespace(YoutubeDL=Downloader))
+    monkeypatch.setattr(music_player, 'STATE', tmp_path / 'music.json')
+    monkeypatch.setattr(music_player.shutil, 'which', lambda name: None)
+    player = music_player.MusicPlayer()
+    assert 'No encontré Google Chrome' in player.play('tema')['error']
+    result = player.stop()
+    assert not result['paused'] and 'directamente' in result['note']
