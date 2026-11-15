@@ -18,6 +18,7 @@ from datetime import datetime
 from agenda import Agenda, timestamp_from_iso
 from web_search import search
 from music_player import MusicPlayer
+from nvidia_vision import read_image, analyze
 
 
 class SystemController:
@@ -119,6 +120,14 @@ class SystemController:
         opened = webbrowser.open(url)
         return {'opened': opened, 'sent': False,
                 'note': 'Se solicitó abrir un borrador. El usuario debe revisar el destinatario y pulsar Enviar.'}
+
+    def inspect_image(self, path: str, question: str = 'Describe esta imagen en español.') -> dict:
+        """After consent, read the requested image and send it to NVIDIA for analysis."""
+        if not path.strip():
+            raise ValueError('Se necesita la ruta de una imagen.')
+        image = read_image(path)
+        return {'description': analyze(image, question),
+                'note': 'La imagen y la pregunta se enviaron a NVIDIA. La descripción puede enviarse al proveedor del chat.'}
 
     def play_music(self, query: str) -> dict:
         return self.music.play(query)

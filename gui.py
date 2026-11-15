@@ -25,6 +25,7 @@ from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
 from agenda import Agenda
+from approval import is_approved
 from permissions import read_state, set_network_permission
 from text_links import markup, speech_text
 from nvidia_vision import analyze as analyze_image, read_image, validate_image, VisionError
@@ -235,32 +236,6 @@ class ChatWorker(QObject):
             self.error.emit(describe_error(exc))
         finally:
             self.finished.emit()
-
-
-class ApprovalDialog(QDialog):
-    def __init__(self, name, args, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle('Confirmar acción')
-        self.resize(560, 400)
-        layout = QVBoxLayout(self)
-        heading = QLabel('JARVIS solicita permiso')
-        heading.setObjectName('dialogTitle')
-        layout.addWidget(heading)
-        info = QLabel('Revisa la acción completa. Se ejecutará con tus permisos.')
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        details = QPlainTextEdit()
-        details.setReadOnly(True)
-        details.setPlainText(name + '\n\n' + json.dumps(args, ensure_ascii=False, indent=2, default=str))
-        layout.addWidget(details)
-        buttons = QDialogButtonBox()
-        deny = buttons.addButton('Rechazar', QDialogButtonBox.ButtonRole.RejectRole)
-        accept = buttons.addButton('Autorizar', QDialogButtonBox.ButtonRole.AcceptRole)
-        accept.setObjectName('approveButton')
-        deny.setDefault(True)
-        deny.clicked.connect(self.reject)
-        accept.clicked.connect(self.accept)
-        layout.addWidget(buttons)
 
 
 class VisualSettingsDialog(QDialog):
@@ -592,6 +567,7 @@ class JarvisWindow(QMainWindow):
         self.preferences = load_ui(UI_SETTINGS_PATH)
         self.thread = None
         self.worker = None
+        self.approval_pending = False
         self.compact = False
         self.expanded_geometry = None
         self.expanded_maximized = False
@@ -708,7 +684,21 @@ class JarvisWindow(QMainWindow):
 
     def submit_chat(self):
         text = self.input.text().strip()
-        if not text or self.thread is not None:
+        if not text:
+            return
+        if self.approval_pending:
+            self.input.clear()
+            self.approval_pending = False
+            approved = is_approved(text)
+            self.append_chat('Tú', text)
+            self.append_chat('Sistema', 'Acción autorizada.' if approved else 'Acción rechazada.')
+            self.input.setPlaceholderText('Escribe tu mensaje…')
+            self.send.setEnabled(False)
+            self.set_task_state('thinking')
+            self.status.setText('JARVIS está trabajando…')
+            self.worker.resolve_approval(approved)
+            return
+        if self.thread is not None:
             return
         self.input.clear()
         self.append_chat('Tú', text)
@@ -731,11 +721,21 @@ class JarvisWindow(QMainWindow):
     @pyqtSlot(str, object)
     def request_chat_approval(self, name, args):
         self.set_task_state('approval')
-        self.status.setText('Esperando tu autorización…')
-        approved = ApprovalDialog(name, args, self).exec() == QDialog.DialogCode.Accepted
-        self.worker.resolve_approval(approved)
-        self.set_task_state('thinking')
-        self.status.setText('JARVIS está trabajando…')
+        self.status.setText('Esperando tu autorización en el chat…')
+        self.approval_pending = True
+        privacy = ('\nLa imagen se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
+                   if name == 'inspect_image' else '')
+        details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
+        self.append_chat('Sistema', 'Permiso solicitado para: ' + name + '\n' + details + privacy +
+                         '\nEscribe AUTORIZO para aprobar o NO para rechazar.')
+        if self.compact:
+            self.toggle_compact()
+        self.chat_toggle.setChecked(True)
+        self.chat_panel.show()
+        self.input.setPlaceholderText('Responde AUTORIZO o NO')
+        self.input.setEnabled(True)
+        self.send.setEnabled(True)
+        self.input.setFocus()
 
     @pyqtSlot(str)
     def chat_result(self, text):
@@ -898,6 +898,8 @@ class JarvisWindow(QMainWindow):
         self.thread.deleteLater()
         self.thread = None
         self.worker = None
+        self.approval_pending = False
+        self.input.setPlaceholderText('Escribe tu mensaje…')
         self.set_task_state('idle')
         if not self.status.text().startswith('Error'):
             self.status.setText('Micrófono apagado')

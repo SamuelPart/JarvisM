@@ -532,3 +532,43 @@ def test_vision_uses_separate_key_and_falls_back(monkeypatch):
     monkeypatch.delenv('NVIDIA_VISION_API_KEY')
     assert analyze(image, 'Describe', Session) == 'ok'
     assert keys == ['Bearer vision-key', 'Bearer chat-key']
+
+
+def test_chat_approval_fails_closed():
+    from approval import is_approved
+    for phrase in ('AUTORIZO', 'sí', 'Si', '¡Autorizo!'):
+        assert is_approved(phrase)
+    for phrase in ('no', '', 'no autorizo', 'sí pero no', 'autorizo todo'):
+        assert not is_approved(phrase)
+
+
+def test_inspect_image_reads_selected_path_and_calls_vision(tmp_path, monkeypatch):
+    import system_control
+    file = tmp_path / 'foto.png'
+    image = b'\x89PNG\r\n\x1a\n' + b'contenido'
+    file.write_bytes(image)
+    received = []
+    monkeypatch.setattr(system_control, 'analyze', lambda data, question: received.append((data, question)) or 'Una foto')
+    result = SystemController().inspect_image(str(file), '¿Qué ves?')
+    assert result['description'] == 'Una foto'
+    assert received == [(image, '¿Qué ves?')]
+
+
+def test_image_tool_never_preapproved_and_denial_skips_io(tmp_path, monkeypatch):
+    import permissions
+    from google.genai import types as genai_types
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    assert not permissions.preapproved('inspect_image')
+    approvals = []
+    class Models:
+        step = 0
+        def generate_content(self, **kwargs):
+            self.step += 1
+            part = (genai_types.Part(function_call=genai_types.FunctionCall(name='inspect_image', args={'path': '/private.png'}))
+                    if self.step == 1 else genai_types.Part.from_text(text='Rechazado'))
+            return SimpleNamespace(candidates=[SimpleNamespace(content=genai_types.Content(role='model', parts=[part]))])
+    controller = SimpleNamespace(inspect_image=lambda **kwargs: pytest.fail('No se debe leer ni enviar imagen'))
+    brain = Brain('', controller, lambda name, args: approvals.append(name) or False, client=SimpleNamespace(models=Models()))
+    assert brain.ask('analiza la imagen') == 'Rechazado'
+    assert approvals == ['inspect_image']
