@@ -471,3 +471,11 @@ def test_network_preapproval_applies_to_agent_but_not_terminal(tmp_path, monkeyp
                   client=SimpleNamespace(models=Models()))
     assert agent.ask('Busca') == 'Listo'
     assert seen == ['terminal']
+
+
+def test_speech_text_removes_markdown_stars_and_urls():
+    from text_links import speech_text
+    text = '**Hola**, Señor. *Ejemplo*. [Fuente](https://example.com/a)'
+    result = speech_text(text)
+    assert result == 'Hola, Señor. Ejemplo. Fuente'
+    assert '*' not in result and 'https://' not in result

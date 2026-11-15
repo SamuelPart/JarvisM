@@ -26,7 +26,7 @@ from microphone import listen
 from core_state import CoreState
 from agenda import Agenda
 from permissions import read_state, set_network_permission
-from text_links import markup, without_links
+from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
@@ -580,7 +580,7 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('idle')
         self.append_chat('JARVIS', text)
         if self.chat_audio.isChecked():
-            self.voice.speak(without_links(text))
+            self.voice.speak(speech_text(text))
 
     @pyqtSlot(str)
     def chat_error(self, error):

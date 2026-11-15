@@ -11,6 +11,15 @@ def without_links(text):
     return URL.sub('', text).strip()
 
 
+def speech_text(text):
+    """Remove URLs and Markdown emphasis from model answers, not tool approvals."""
+    text = re.sub(r'\[([^\]]+)\]\(https?://[^\s)]+\)', r'\1', text, flags=re.IGNORECASE)
+    text = without_links(text)
+    text = text.replace('*', '')
+    text = re.sub(r'(?m)^\s*#{1,6}\s+', '', text)
+    return text.strip()
+
+
 def markup(text):
     pieces, position = [], 0
     for match in URL.finditer(text):

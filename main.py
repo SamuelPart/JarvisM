@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from voice import Voice
 from errors import describe_error
 from permissions import read_state, set_network_permission
-from text_links import without_links
+from text_links import speech_text
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / '.jarvis-state.json'
@@ -23,7 +23,7 @@ def speak(text):
 
 def announce(text):
     print(text, flush=True)
-    speak(without_links(text))
+    speak(speech_text(text))
 
 
 def confirm(prompt):
