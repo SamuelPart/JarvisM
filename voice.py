@@ -13,6 +13,7 @@ class Voice:
         self.queue = queue.Queue()
         self.thread = None
         self.lock = threading.Lock()
+        self.on_activity = None
 
     def speak(self, text):
         if not text.strip() or os.getenv('JARVIS_VOICE_MODE', 'edge').lower() == 'off':
@@ -40,8 +41,14 @@ class Voice:
             finally:
                 self.queue.task_done()
 
-    @staticmethod
-    def _neural(text):
+    def _activity(self, active):
+        if self.on_activity:
+            try:
+                self.on_activity(active)
+            except Exception:
+                pass  # Visual feedback must never interrupt audio.
+
+    def _neural(self, text):
         import edge_tts
         import pygame
         voice = os.getenv('JARVIS_TTS_VOICE', 'es-MX-JorgeNeural')
@@ -54,19 +61,22 @@ class Voice:
             try:
                 pygame.mixer.music.load(str(path))
                 pygame.mixer.music.play()
+                self._activity(True)
                 while pygame.mixer.music.get_busy():
                     time.sleep(0.1)
             finally:
+                self._activity(False)
                 pygame.mixer.music.stop()
                 pygame.mixer.music.unload()
                 pygame.mixer.quit()
 
-    @staticmethod
-    def _local(text):
+    def _local(self, text):
         import pyttsx3
         engine = pyttsx3.init()
         try:
             engine.say(text)
+            self._activity(True)
             engine.runAndWait()
         finally:
+            self._activity(False)
             engine.stop()

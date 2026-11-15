@@ -1,14 +1,14 @@
 """Interfaz de escritorio de JARVIS. Ejecutar con `python gui.py`."""
 from __future__ import annotations
 import json
+import math
 import os
 import sys
 import threading
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QSize, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QFont, QMovie
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QFont, QColor, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                              QPushButton, QPlainTextEdit, QTextBrowser, QVBoxLayout,
@@ -20,76 +20,67 @@ from system_control import SystemController
 from voice import Voice
 
 
-GIF_URL = 'https://i.pinimg.com/originals/82/8e/f1/828ef1f45c33f05b8329dd93fffb89d5.gif'
-GIF_PATH = ROOT / '.jarvis-core.gif'
-MAX_GIF_BYTES = 8 * 1024 * 1024
+class VoiceSignals(QObject):
+    activity = pyqtSignal(bool)
 
 
-class CoreAnimation(QFrame):
-    """Download the requested animation once, then use its local cached copy."""
+class CoreAnimation(QWidget):
+    """Draw a free-standing core; waves move only during audio playback."""
     def __init__(self):
         super().__init__()
-        self.setObjectName('corePanel')
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(3)
-        self.display = QLabel('◉')
-        self.display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.display.setFixedSize(230, 200)
-        self.display.setObjectName('coreFallback')
-        layout.addWidget(self.display, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.caption = QLabel('NÚCLEO  /  J.A.R.V.I.S.')
-        self.caption.setObjectName('coreCaption')
-        self.caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.caption)
-        self.movie = None
-        self.network = QNetworkAccessManager(self)
-        self.reply = None
-        if not self.load_gif():
-            self.download_gif()
+        self.setFixedSize(260, 225)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.active = False
+        self.phase = 0.0
+        self.timer = QTimer(self)
+        self.timer.setInterval(40)
+        self.timer.timeout.connect(self.advance)
 
-    def load_gif(self):
-        if not GIF_PATH.is_file() or GIF_PATH.stat().st_size > MAX_GIF_BYTES:
-            return False
-        movie = QMovie(str(GIF_PATH))
-        if not movie.isValid():
-            return False
-        movie.setScaledSize(QSize(200, 200))
-        self.movie = movie
-        self.display.setMovie(movie)
-        movie.start()
-        return True
+    @pyqtSlot(bool)
+    def set_speaking(self, active):
+        self.active = active
+        if active:
+            self.timer.start()
+        else:
+            self.timer.stop()
+            self.phase = 0.0
+        self.update()
 
-    def download_gif(self):
-        self.caption.setText('CARGANDO ANIMACIÓN…')
-        request = QNetworkRequest(QUrl(GIF_URL))
-        request.setTransferTimeout(15000)
-        self.reply = self.network.get(request)
-        self.reply.downloadProgress.connect(self.on_progress)
-        self.reply.finished.connect(self.on_downloaded)
+    def advance(self):
+        self.phase += 0.13
+        self.update()
 
-    def on_progress(self, received, total):
-        if received > MAX_GIF_BYTES or total > MAX_GIF_BYTES:
-            self.reply.abort()
-
-    def on_downloaded(self):
-        reply = self.reply
-        try:
-            if reply.error() != QNetworkReply.NetworkError.NoError:
-                raise OSError('No se pudo descargar el GIF')
-            data = bytes(reply.readAll())
-            if len(data) > MAX_GIF_BYTES or not data.startswith((b'GIF87a', b'GIF89a')):
-                raise ValueError('GIF inválido o demasiado grande')
-            GIF_PATH.write_bytes(data)
-            if not self.load_gif():
-                GIF_PATH.unlink(missing_ok=True)
-                raise ValueError('GIF no compatible')
-            self.caption.setText('NÚCLEO  /  J.A.R.V.I.S.')
-        except (OSError, ValueError):
-            self.caption.setText('ANIMACIÓN NO DISPONIBLE · VER README')
-        finally:
-            reply.deleteLater()
-            self.reply = None
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(self.width() / 2, self.height() / 2)
+        glow = QRadialGradient(QPointF(0, 0), 107)
+        glow.setColorAt(0, QColor(50, 218, 240, 65))
+        glow.setColorAt(0.65, QColor(28, 152, 195, 24))
+        glow.setColorAt(1, QColor(10, 40, 60, 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(QPointF(0, 0), 107, 107)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Static in standby; animated radii only while sound is playing.
+        for index, radius in enumerate((43, 58, 73, 88)):
+            path = QPainterPath()
+            for step in range(181):
+                angle = 2 * math.pi * step / 180
+                ripple = (3.5 * math.sin(angle * (5 + index) + self.phase * (1.2 + index * .18))
+                          + 1.5 * math.sin(angle * 11 - self.phase * 1.5)) if self.active else 0
+                r = radius + ripple
+                point = QPointF(r * math.cos(angle), r * math.sin(angle))
+                if step == 0: path.moveTo(point)
+                else: path.lineTo(point)
+            painter.setPen(QPen(QColor(87, 224, 245, 180 - index * 24), 1.5 if index < 2 else 1.0))
+            painter.drawPath(path)
+        painter.setPen(QPen(QColor(163, 248, 255, 235), 2))
+        painter.drawEllipse(QPointF(0, 0), 28, 28)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(111, 233, 250, 210))
+        painter.drawEllipse(QPointF(0, 0), 7, 7)
+        painter.end()
 
 
 class AgentWorker(QObject):
@@ -185,6 +176,12 @@ class JarvisWindow(QMainWindow):
         subtitle.setObjectName('muted')
         layout.addWidget(subtitle)
 
+        self.core = CoreAnimation()
+        layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.voice_signals = VoiceSignals(self)
+        self.voice_signals.activity.connect(self.core.set_speaking)
+        self.voice.on_activity = self.voice_signals.activity.emit
+
         panel = QFrame()
         panel.setObjectName('panel')
         panel_layout = QVBoxLayout(panel)
@@ -198,8 +195,6 @@ class JarvisWindow(QMainWindow):
         model_label.setObjectName('model')
         bar.addWidget(model_label)
         panel_layout.addLayout(bar)
-        self.core = CoreAnimation()
-        panel_layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
         self.history = QTextBrowser()
         self.history.setOpenExternalLinks(False)
         self.history.setPlaceholderText('La conversación aparecerá aquí…')
@@ -301,9 +296,6 @@ QLabel#muted, QLabel#footer { color: #8496aa; }
 QLabel#footer { font-size: 11px; }
 QLabel#statusBadge { color: #74d8c4; font-size: 11px; font-weight: 700; }
 QLabel#model { color: #8296ab; font-size: 11px; }
-QFrame#corePanel { background: #091521; border: 1px solid #1e4459; border-radius: 18px; }
-QLabel#coreFallback { color: #67d8eb; font-size: 100px; }
-QLabel#coreCaption { color: #75aab8; font-size: 10px; letter-spacing: 2px; }
 QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
 QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
 QTextBrowser { border: none; line-height: 1.6; }

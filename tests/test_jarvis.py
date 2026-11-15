@@ -89,3 +89,19 @@ def test_voice_fallback_and_off(monkeypatch):
     monkeypatch.setenv('JARVIS_VOICE_MODE', 'off')
     voice.speak('No hablar')
     assert len(calls) == 2
+
+
+def test_voice_activity_stops_even_on_local_error(monkeypatch):
+    import sys
+    from voice import Voice
+    events = []
+    class Engine:
+        def say(self, text): pass
+        def runAndWait(self): raise RuntimeError('audio failure')
+        def stop(self): pass
+    monkeypatch.setitem(sys.modules, 'pyttsx3', SimpleNamespace(init=lambda: Engine()))
+    voice = Voice()
+    voice.on_activity = events.append
+    with pytest.raises(RuntimeError):
+        voice._local('hola')
+    assert events == [True, False]

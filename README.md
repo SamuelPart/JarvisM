@@ -65,4 +65,4 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-La interfaz descarga una vez el GIF solicitado desde Pinterest y lo guarda localmente como `.jarvis-core.gif` (ignorado por Git); las siguientes ejecuciones usan la copia local. Esta descarga revela su dirección IP al servidor de Pinterest. Si no hay conexión, el servidor bloquea la descarga o la animación no se puede leer, se muestra un símbolo de respaldo. Para instalarla manualmente, descargue el GIF de `https://i.pinimg.com/originals/82/8e/f1/828ef1f45c33f05b8329dd93fffb89d5.gif` y guárdelo como `.jarvis-core.gif` en la carpeta del proyecto; reinicie la interfaz. El GIF debe ser válido y pesar como máximo 8 MB. Revise los derechos de uso antes de redistribuirlo.
+El núcleo central está dibujado mediante Qt, sin GIF ni descarga externa. Las ondas se animan mientras se reproduce una respuesta por voz y se detienen al terminar; son un efecto visual, no una medición de la amplitud real del audio. Si la voz está desactivada o falla, las ondas no se activan.
