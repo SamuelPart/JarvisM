@@ -134,6 +134,15 @@ class SystemController:
     def search_gmail(self, query: str) -> dict:
         return gmail_access.search_messages(query)
 
+    def read_gmail(self, message_id: str) -> dict:
+        return gmail_access.read_message(message_id)
+
+    def send_gmail(self, to: str, subject: str, body: str) -> dict:
+        return gmail_access.send_message(to, subject, body)
+
+    def classify_gmail(self, message_id: str, sender: str, subject: str, category: str) -> dict:
+        return gmail_access.classify_message(message_id, sender, subject, category)
+
     def inspect_gmail_image(self, message_id: str, part_id: str, question: str = 'Describe esta imagen en español.') -> dict:
         return gmail_access.inspect_attachment(message_id, part_id, question)
 

@@ -645,3 +645,67 @@ def test_gmail_tools_need_per_action_authorization(tmp_path, monkeypatch):
     permissions.set_network_permission(True)
     assert not permissions.preapproved('search_gmail')
     assert not permissions.preapproved('inspect_gmail_image')
+
+
+def test_gmail_send_validates_and_submits_with_approval_data(monkeypatch):
+    import base64
+    from email import message_from_bytes
+    import gmail_access
+    calls = []
+    class Reply:
+        status_code = 200
+        def json(self): return {'id': 'sent123'}
+    class Session:
+        def post(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return Reply()
+        def close(self): pass
+    monkeypatch.setattr(gmail_access, 'client', Session)
+    result = gmail_access.send_message('ana@example.com', 'Hola', 'Buenos días')
+    assert result['sent'] is True
+    email = message_from_bytes(base64.urlsafe_b64decode(calls[0][1]['json']['raw']))
+    assert email['To'] == 'ana@example.com' and email['Subject'] == 'Hola'
+    assert calls[0][1]['allow_redirects'] is False
+    with pytest.raises(gmail_access.GmailError): gmail_access.send_message('ana@example.com\nBcc:evil@example.com', 'Hola', 'texto')
+    assert len(calls) == 1
+
+
+def test_gmail_classification_verifies_identity_and_only_one_message(monkeypatch):
+    import gmail_access
+    calls = []
+    class Response:
+        status_code = 200
+        def json(self): return {'id': 'a123'}
+    class Session:
+        def get(self, *args, **kwargs):
+            class Msg:
+                status_code = 200
+                def json(self): return {'id': 'a123', 'payload': {'headers': [{'name': 'From', 'value': 'Ana <ana@example.com>'}, {'name': 'Subject', 'value': 'Recibo'}]}}
+            return Msg()
+        def post(self, url, **kwargs): calls.append((url, kwargs)); return Response()
+        def close(self): pass
+    monkeypatch.setattr(gmail_access, 'client', Session)
+    with pytest.raises(gmail_access.GmailError): gmail_access.classify_message('a123', 'Otro', 'Recibo', 'spam')
+    assert not calls
+    assert gmail_access.classify_message('a123', 'Ana <ana@example.com>', 'Recibo', 'important')['updated']
+    assert calls[0][1]['json'] == {'addLabelIds': ['IMPORTANT']}
+    assert calls[0][0].endswith('/messages/a123/modify')
+
+
+def test_gmail_send_timeout_has_uncertain_status(monkeypatch):
+    import gmail_access
+    import requests
+    class Session:
+        def post(self, *args, **kwargs): raise requests.Timeout('secret')
+        def close(self): pass
+    monkeypatch.setattr(gmail_access, 'client', Session)
+    with pytest.raises(gmail_access.GmailError, match='Enviados'):
+        gmail_access.send_message('ana@example.com', 'Hola', 'texto')
+
+
+def test_gmail_mutations_never_preapproved(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_network_permission(True)
+    for name in ('send_gmail', 'classify_gmail', 'read_gmail'):
+        assert not permissions.preapproved(name)
