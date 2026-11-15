@@ -61,6 +61,8 @@ El texto pronunciado se envía a Microsoft: no use el modo neuronal con informac
 
 ## Interfaz de escritorio
 
+En Linux, el instalador crea **JARVIS** en el escritorio (cuando existe) y en el menú de aplicaciones. Al abrirlo se muestra la interfaz gráfica sin terminal. También se actualiza el acceso al iniciar la interfaz; no sobrescribe un archivo ajeno con el mismo nombre. Para una instalación existente, después de actualizar ejecuta una vez `venv/bin/python desktop_launcher.py`. Algunos escritorios pueden pedir que marques el acceso como confiable antes de abrirlo. Si mueves el proyecto, vuelve a crear el acceso.
+
 Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux o `venv\Scripts\python.exe gui.py` en Windows. La ventana funciona por voz: pulse el icono de micrófono, diga «Jarvis» seguido de su orden o espere la respuesta «Le escucho» y diga su orden; diga exactamente «autorizo» para aprobar las herramientas que no tengan permiso permanente. Cualquier otra respuesta, silencio, error de reconocimiento o fallo de voz rechaza la acción. Pulse de nuevo el icono de micrófono para detener la escucha; puede tardar mientras termina la captura o solicitud en curso. La clave y la voz se configuran en el mismo `.env` que usa la consola; el texto hablado puede enviarse a Microsoft si está activado Edge TTS. El audio capturado se envía a Google para transcribirlo. El actualizador sigue disponible en consola (`python main.py`); las conversaciones completadas se conservan localmente. Se necesita una sesión gráfica. Para actualizar desde consola, salga de la interfaz primero.
 
 ### Animación del núcleo

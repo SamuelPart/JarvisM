@@ -1058,3 +1058,36 @@ def test_music_missing_chrome_and_pause_are_honest(monkeypatch, tmp_path):
     assert 'No encontré Google Chrome' in player.play('tema')['error']
     result = player.stop()
     assert not result['paused'] and 'directamente' in result['note']
+
+
+def test_desktop_launcher_creates_gui_shortcuts_without_overwriting(monkeypatch, tmp_path):
+    import desktop_launcher as launcher
+    project = tmp_path / 'proyecto con espacios'
+    (project / 'venv/bin').mkdir(parents=True)
+    (project / 'venv/bin/python').touch()
+    home = tmp_path / 'home'
+    desktop = home / 'Escritorio'
+    desktop.mkdir(parents=True)
+    monkeypatch.setattr(launcher, 'ROOT', project)
+    monkeypatch.setattr(launcher.Path, 'home', lambda: home)
+    monkeypatch.setattr(launcher.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(launcher, 'desktop_directory', lambda home: desktop)
+    monkeypatch.setattr(launcher.shutil, 'which', lambda name: None)
+    monkeypatch.delenv('XDG_DATA_HOME', raising=False)
+    paths = launcher.install()
+    shortcut = desktop / 'JARVIS.desktop'
+    assert shortcut in paths and shortcut.stat().st_mode & 0o111
+    text = shortcut.read_text()
+    assert 'Terminal=false' in text and 'gui.py"' in text
+    assert f'"{project}/venv/bin/python"' in text
+    assert (home / '.local/share/applications/jarvis-desktop.desktop').exists()
+    shortcut.write_text('Archivo ajeno')
+    launcher.install()
+    assert shortcut.read_text() == 'Archivo ajeno'
+
+
+def test_desktop_exec_escapes_field_codes_and_quotes():
+    import desktop_launcher
+    assert desktop_launcher._exec_arg('/a b/100%/$"x') == '"/a b/100%%/\\$\\"x"'
+    with pytest.raises(ValueError):
+        desktop_launcher._exec_arg('/bad\npath')

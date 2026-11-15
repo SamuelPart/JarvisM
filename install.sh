@@ -14,4 +14,5 @@ if [[ ! -f .env ]]; then
   (umask 077; printf 'GEMINI_API_KEY=%s\n' "$key" > .env)
   unset key
 fi
-echo 'Instalación terminada. Ejecute: venv/bin/python main.py'
+venv/bin/python desktop_launcher.py || echo 'No se pudo crear el acceso directo; puedes intentarlo después.'
+echo 'Instalación terminada. Abre JARVIS desde el escritorio o el menú de aplicaciones.'

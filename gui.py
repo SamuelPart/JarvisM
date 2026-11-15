@@ -853,6 +853,13 @@ QLabel#dialogTitle { font-size: 19px; font-weight: 700; }
 def main():
     load_dotenv(ROOT / '.env')
     app = QApplication(sys.argv)
+    # Keep the user's launcher current when the project moves or is updated.
+    if sys.platform.startswith('linux'):
+        try:
+            import desktop_launcher
+            desktop_launcher.install()
+        except (OSError, ValueError):
+            pass  # Desktop integration is optional; never block JARVIS.
     app.setFont(QFont('Segoe UI', 10))
     # Announce before the first-run gate, just like the console entry point.
     voice = Voice()
