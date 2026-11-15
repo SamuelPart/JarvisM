@@ -14,6 +14,8 @@ from pathlib import Path
 from urllib.parse import quote_plus, urlparse
 
 import psutil
+from datetime import datetime
+from agenda import Agenda, timestamp_from_iso
 
 
 class SystemController:
@@ -21,6 +23,16 @@ class SystemController:
         self.system = platform.system()
         if self.system not in ('Windows', 'Linux'):
             raise RuntimeError('Solo Windows y Linux son compatibles.')
+
+    def current_time(self) -> dict:
+        return {'local_time': datetime.now().astimezone().isoformat(timespec='seconds')}
+
+    def create_reminder(self, title: str, when: str) -> dict:
+        """Create a one-shot local reminder after explicit user authorization."""
+        due = timestamp_from_iso(when)
+        reminder_id = Agenda().add(title, due)
+        return {'id': reminder_id, 'title': title, 'when': when,
+                'note': 'Aviso local; JARVIS debe estar abierto para notificar a tiempo.'}
 
     def terminal(self, command: str) -> dict:
         """Execute a shell command after explicit interactive authorization."""

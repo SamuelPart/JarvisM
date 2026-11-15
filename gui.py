@@ -6,12 +6,13 @@ import os
 import sqlite3
 import sys
 import threading
+from datetime import datetime
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
-                             QComboBox, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
+                             QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
                              QScrollArea, QVBoxLayout, QWidget)
 
@@ -23,6 +24,7 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
+from agenda import Agenda
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
@@ -341,10 +343,85 @@ class MemoryDialog(QDialog):
         QMessageBox.information(self, 'Memoria', 'Conversaciones y preferencias borradas de la memoria local.')
 
 
+class AgendaDialog(QDialog):
+    def __init__(self, agenda, parent=None):
+        super().__init__(parent)
+        self.agenda = agenda
+        self.setWindowTitle('Agenda y recordatorios')
+        self.resize(580, 440)
+        layout = QVBoxLayout(self)
+        heading = QLabel('Agenda')
+        heading.setObjectName('dialogTitle')
+        layout.addWidget(heading)
+        note = QLabel('Avisos locales únicos. JARVIS debe estar abierto para avisar a tiempo; si estuvo cerrado, avisará al volver a abrirlo.')
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.title = QLineEdit()
+        self.title.setMaxLength(300)
+        self.title.setPlaceholderText('Ejemplo: llamar a mamá')
+        self.when = QDateTimeEdit(QDateTime.currentDateTime().addSecs(120))
+        self.when.setDisplayFormat('dd/MM/yyyy HH:mm')
+        self.when.setCalendarPopup(True)
+        form.addRow('Recordatorio', self.title)
+        form.addRow('Fecha y hora local', self.when)
+        layout.addLayout(form)
+        add = QPushButton('Guardar recordatorio')
+        add.clicked.connect(self.add_reminder)
+        layout.addWidget(add)
+        self.items = QListWidget()
+        layout.addWidget(self.items, 1)
+        row = QHBoxLayout()
+        delete = QPushButton('Eliminar seleccionado')
+        delete.clicked.connect(self.delete_selected)
+        close = QPushButton('Cerrar')
+        close.clicked.connect(self.accept)
+        row.addWidget(delete)
+        row.addStretch()
+        row.addWidget(close)
+        layout.addLayout(row)
+        self.refresh()
+
+    def refresh(self):
+        self.items.clear()
+        for reminder in self.agenda.list():
+            when = datetime.fromtimestamp(reminder['due']).astimezone().strftime('%d/%m/%Y %H:%M')
+            status = 'Avisado' if reminder['notified'] else 'Pendiente'
+            item = QListWidgetItem(f"{when}  ·  {status}  ·  {reminder['title']}")
+            item.setData(Qt.ItemDataRole.UserRole, reminder['id'])
+            self.items.addItem(item)
+
+    def add_reminder(self):
+        try:
+            self.agenda.add(self.title.text(), self.when.dateTime().toSecsSinceEpoch())
+            self.title.clear()
+            self.refresh()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Agenda', str(exc))
+        except (sqlite3.Error, OSError):
+            QMessageBox.warning(self, 'Agenda', 'No se pudo guardar el recordatorio.')
+
+    def delete_selected(self):
+        item = self.items.currentItem()
+        if item is None:
+            return
+        if QMessageBox.question(self, 'Eliminar recordatorio', '¿Eliminar el recordatorio seleccionado?',
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.agenda.delete(item.data(Qt.ItemDataRole.UserRole))
+            self.refresh()
+        except (sqlite3.Error, OSError):
+            QMessageBox.warning(self, 'Agenda', 'No se pudo eliminar el recordatorio.')
+
+
 class JarvisWindow(QMainWindow):
     def __init__(self, brain, voice):
         super().__init__()
         self.brain, self.voice = brain, voice
+        self.agenda = Agenda()
+        self.reminder_windows = {}
         self.preferences = load_ui(UI_SETTINGS_PATH)
         self.thread = None
         self.worker = None
@@ -370,6 +447,9 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
+        self.agenda_button = QPushButton('Agenda')
+        self.agenda_button.clicked.connect(self.open_agenda)
+        top.addWidget(self.agenda_button)
         self.memory_button = QPushButton('Memoria')
         self.memory_button.clicked.connect(self.open_memory)
         top.addWidget(self.memory_button)
@@ -439,6 +519,11 @@ class JarvisWindow(QMainWindow):
         chat_layout.addWidget(self.chat_audio)
         self.chat_panel.hide()
         layout.addWidget(self.chat_panel, 1)
+        self.agenda_timer = QTimer(self)
+        self.agenda_timer.setInterval(5000)
+        self.agenda_timer.timeout.connect(self.check_reminders)
+        self.agenda_timer.start()
+        QTimer.singleShot(0, self.check_reminders)
 
     @pyqtSlot(bool)
     def toggle_chat(self, enabled):
@@ -511,6 +596,35 @@ class JarvisWindow(QMainWindow):
         else:
             self.set_task_state('idle')
 
+    def open_agenda(self):
+        try:
+            AgendaDialog(self.agenda, self).exec()
+        except (sqlite3.Error, OSError):
+            QMessageBox.warning(self, 'Agenda', 'No se pudo abrir la agenda local.')
+
+    @pyqtSlot()
+    def check_reminders(self):
+        try:
+            reminders = self.agenda.claim_due()
+        except (sqlite3.Error, OSError):
+            self.status.setText('No se pudo consultar la agenda local')
+            return
+        for reminder in reminders:
+            title = reminder['title']
+            box = QMessageBox(self)
+            box.setWindowTitle('Recordatorio de JARVIS')
+            box.setTextFormat(Qt.TextFormat.PlainText)
+            box.setText(title)
+            box.setInformativeText('Aviso de tu agenda local')
+            box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            box.setWindowModality(Qt.WindowModality.NonModal)
+            self.reminder_windows[reminder['id']] = box
+            box.finished.connect(lambda _result, key=reminder['id']: self.reminder_windows.pop(key, None))
+            box.show()
+            # Never play a reminder into an active microphone/consent session.
+            if not isinstance(self.worker, VoiceWorker):
+                self.voice.speak('Señor, recordatorio: ' + title)
+
     def open_memory(self):
         if self.thread is not None:
             QMessageBox.information(self, 'Memoria', 'Detén el micrófono o espera a que termine la solicitud antes de modificar la memoria.')
@@ -546,6 +660,7 @@ class JarvisWindow(QMainWindow):
             self.compact = True
             self.settings_button.hide()
             self.memory_button.hide()
+            self.agenda_button.hide()
             self.heading.hide()
             self.subtitle.hide()
             self.chat_toggle.setChecked(False)
@@ -561,6 +676,7 @@ class JarvisWindow(QMainWindow):
             self.compact = False
             self.settings_button.show()
             self.memory_button.show()
+            self.agenda_button.show()
             self.heading.show()
             self.subtitle.show()
             self.chat_toggle.setChecked(True)
@@ -695,7 +811,11 @@ def main():
     except (ValueError, RuntimeError) as exc:
         QMessageBox.critical(None, 'No se pudo iniciar', str(exc))
         return 1
-    window = JarvisWindow(brain, voice)
+    try:
+        window = JarvisWindow(brain, voice)
+    except (sqlite3.Error, OSError):
+        QMessageBox.critical(None, 'JARVIS', 'No se pudo abrir la agenda o la memoria local.')
+        return 1
     window.show()
     return app.exec()
 

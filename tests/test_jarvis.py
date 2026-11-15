@@ -315,3 +315,43 @@ def test_gemini_memory_context(tmp_path):
     agent = PersistentBrain(brain, memory)
     assert agent.ask('¿Cómo me llamo?') == 'Ana'
     assert len(memory.recent()) == 4
+
+
+def test_reminder_lifecycle_and_restart(tmp_path):
+    from agenda import Agenda
+    path = tmp_path / 'agenda.sqlite3'
+    agenda = Agenda(path)
+    with pytest.raises(ValueError): agenda.add('   ', 1001, now=1000)
+    with pytest.raises(ValueError): agenda.add('Prueba', 999, now=1000)
+    reminder = agenda.add('Llamar', 1100, now=1000)
+    assert agenda.claim_due(now=1099) == []
+    assert Agenda(path).claim_due(now=1150) == [{'id': reminder, 'title': 'Llamar', 'due': 1100}]
+    assert Agenda(path).claim_due(now=1200) == []
+    assert agenda.list()[0]['notified'] is True
+    assert agenda.delete(reminder) and agenda.list() == []
+
+
+def test_reminder_atomic_claim_and_timezone(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from agenda import Agenda, timestamp_from_iso
+    path = tmp_path / 'agenda.sqlite3'
+    agenda = Agenda(path)
+    reminder = agenda.add('Dos instancias', 2000, now=1000)
+    def claim(_): return Agenda(path).claim_due(now=2000)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(claim, range(2)))
+    assert sum(len(result) for result in results) == 1
+    assert any(result and result[0]['id'] == reminder for result in results)
+    assert timestamp_from_iso('2026-12-01T15:30:00-05:00') == timestamp_from_iso('2026-12-01T20:30:00+00:00')
+    with pytest.raises(ValueError): timestamp_from_iso('2026-12-01T15:30:00')
+
+
+def test_agent_reminder_tool(tmp_path, monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from agenda import Agenda
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.db'))
+    controller = SystemController()
+    future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    result = controller.create_reminder('Prueba', future)
+    assert Agenda().list()[0]['id'] == result['id']
+    assert 'local_time' in controller.current_time()

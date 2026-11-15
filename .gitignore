@@ -11,3 +11,5 @@ __pycache__/
 .jarvis-ui.json
 
 .jarvis-memory.sqlite3*
+
+.jarvis-agenda.sqlite3*
