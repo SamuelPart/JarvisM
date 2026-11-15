@@ -10,7 +10,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -24,6 +24,7 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
+from face_particles import face_points, ambient_points, motion
 from agenda import Agenda
 from approval import is_approved
 from permissions import read_state, set_network_permission, set_gmail_permission
@@ -38,7 +39,7 @@ class VoiceSignals(QObject):
 
 
 class CoreAnimation(QWidget):
-    """Draw a free-standing core; waves move only during audio playback."""
+    """A free-standing expressive face formed from animated particles."""
     def __init__(self, preferences):
         super().__init__()
         self.preferences = preferences.copy()
@@ -47,13 +48,16 @@ class CoreAnimation(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.mode = 'idle'
         self.phase = 0.0
+        self.face = face_points()
+        self.ambient = ambient_points()
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
+        self.set_mode('idle')
 
     def set_mode(self, mode):
         self.mode = mode
-        if mode in ('thinking', 'speaking') and self.preferences['animation'] != 'desactivada':
+        if self.preferences['animation'] != 'desactivada':
             self.timer.start()
         else:
             self.timer.stop()
@@ -66,7 +70,7 @@ class CoreAnimation(QWidget):
         self.set_mode(self.mode)
 
     def advance(self):
-        self.phase += 0.022 if self.preferences['animation'] == 'reducida' else 0.055
+        self.phase += 0.018 if self.preferences['animation'] == 'reducida' else 0.045
         self.update()
 
     def paintEvent(self, event):
@@ -75,52 +79,57 @@ class CoreAnimation(QWidget):
         painter.translate(self.width() / 2, self.height() / 2)
         scale = SCALES[self.preferences['size']]
         painter.scale(scale, scale)
-        radius = 109.0
-
-        # A dark, transparent glow rather than a rectangular background.
-        glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
-        if self.mode == 'approval':
-            glow.setColorAt(0, QColor(130, 65, 4, 22))
-            glow.setColorAt(0.76, QColor(230, 130, 18, 38))
-            glow.setColorAt(1, QColor(90, 45, 5, 0))
-        else:
-            glow.setColorAt(0, QColor(20, 16, 100, 18))
-            glow.setColorAt(0.76, QColor(28, 28, 174, 28))
-            glow.setColorAt(1, QColor(12, 10, 85, 0))
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(glow)
-        painter.drawEllipse(QPointF(0, 0), radius * 1.12, radius * 1.12)
+        m = motion(self.phase, self.mode, self.preferences['animation'])
+        _, accent = PALETTES[self.preferences['color']]
+        # The pale points retain the photographic reference; palette colors tint them subtly.
+        color = (255, 199, 117) if self.mode == 'approval' else tuple(int(220 + c * 0.13) for c in accent)
 
-        # Latitude rings projected in 3D: points on both hemispheres make the
-        # hologram look like the reference, including its dotted polar circles.
-        tilt = 0.22
-        points = []
-        for latitude in range(1, 41):
-            theta = math.pi * latitude / 41
-            sin_theta, cos_theta = math.sin(theta), math.cos(theta)
-            count = max(12, round(72 * sin_theta))
-            for longitude in range(count):
-                angle = 2 * math.pi * longitude / count + self.phase * 0.65
-                x = sin_theta * math.cos(angle)
-                y = cos_theta
-                depth = sin_theta * math.sin(angle)
-                # Tilt exposes the rings around the upper and lower poles.
-                screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
-                z = depth * math.cos(tilt) + y * math.sin(tilt)
-                pulse = 1.0
-                if self.mode == 'speaking' and self.preferences['animation'] != 'desactivada':
-                    pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
-                px, py = radius * x * pulse, -radius * screen_y * pulse
-                alpha = int(105 + 110 * (z + 1) / 2)
-                dot = 0.65 + 0.35 * (z + 1) / 2
-                points.append((z, px, py, dot, alpha))
+        def dot(x, y, size, alpha, tint=color):
+            painter.setBrush(QColor(*tint, max(0, min(255, int(alpha)))))
+            painter.drawEllipse(QPointF(x, y), size, size)
 
-        dim_color, bright_color = ((255, 140, 32), (255, 195, 100)) if self.mode == 'approval' else PALETTES[self.preferences['color']]
-        for _, x, y, dot, alpha in sorted(points):
-            painter.setBrush(QColor(*dim_color, max(20, alpha // 5)))
-            painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
-            painter.setBrush(QColor(*bright_color, alpha))
-            painter.drawEllipse(QPointF(x, y), dot, dot)
+        for x, y, light, offset, size in self.ambient:
+            flicker = 0.8 + 0.2 * math.sin(self.phase * 0.8 + offset)
+            dot(x + m['sway'] * 0.4, y, size * 0.8, 95 * light * flicker)
+        energy = 1.0 if self.mode != 'speaking' else 1.0 + 0.035 * math.sin(self.phase * 3.1)
+        for x, y, light, offset, size in self.face:
+            drift = 0.0
+            if self.preferences['animation'] != 'desactivada':
+                drift = (0.7 if self.mode == 'speaking' else 0.25) * math.sin(self.phase * 1.6 + offset)
+            px = x * energy + m['sway'] + drift
+            py = y + drift * 0.45
+            dot(px, py, size * 0.65, 62 + 168 * light)
+
+        # Dotted eyebrows, eye contours and pupils; a periodic blink closes both eyes.
+        for side in (-1, 1):
+            center = side * 29 + m['sway']
+            for i in range(29):
+                t = i / 28 * 2 - 1
+                brow_y = -41 - 4 * (1 - t * t) + m['brow'] + side * t * (2 if self.mode == 'approval' else 0)
+                dot(center + t * 18, brow_y, 0.75, 210)
+                arch = math.sqrt(max(0.0, 1 - t * t)) * 6 * m['blink']
+                dot(center + t * 16, -25 - arch, 0.65, 230)
+                dot(center + t * 16, -25 + arch * 0.72, 0.6, 190)
+            for i in range(15):
+                angle = math.tau * i / 15
+                dot(center + 3.5 * math.cos(angle), -25 + 3.5 * math.sin(angle) * m['blink'], 0.7, 235)
+
+        # Nose bridge and nostrils remain defined even as the mouth moves.
+        for i in range(26):
+            t = i / 25
+            dot(m['sway'] + 4 * math.sin(t * 3), -20 + t * 48, 0.6, 125 + 75 * t)
+        for side in (-1, 1):
+            for i in range(12):
+                t = i / 11
+                dot(m['sway'] + side * (4 + t * 9), 27 + 2 * math.sin(t * math.pi), 0.65, 200)
+
+        for i in range(45):
+            t = i / 44 * 2 - 1
+            curve = math.sqrt(max(0.0, 1 - t * t))
+            x = m['sway'] + t * 23
+            dot(x, 51 - curve * (2 + m['mouth'] * 0.35), 0.7, 235)
+            dot(x, 51 + curve * m['mouth'], 0.72, 215)
         painter.end()
 
 

@@ -65,7 +65,7 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central es una esfera de puntos dibujada mediante Qt, inspirada en la referencia, sin GIF ni descarga externa. Sus puntos se animan mientras se reproduce una respuesta por voz y se detienen al terminar; son un efecto visual, no una medición de la amplitud real del audio. Si la voz está desactivada o falla, las ondas no se activan.
+El núcleo central es un rostro de partículas dibujado mediante Qt, inspirado en la referencia, sin GIF ni descarga externa. Parpadea y cambia sus expresiones según el estado; al hablar mueve la boca y las partículas. La animación es decorativa y no realiza sincronización labial real con el audio.
 
 La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
@@ -93,7 +93,7 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 
 ### Núcleo expresivo
 
-La esfera indica el estado: azul quieto en espera; gira al procesar una solicitud; pulsa durante la reproducción de voz; y pasa a ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
+El rostro indica el estado: expresión tranquila en espera; cejas diferentes al procesar una solicitud; boca y partículas en movimiento durante la voz; y tono ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
 
 ### Modo compacto flotante
 
@@ -101,7 +101,7 @@ Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con 
 
 ### Ajustes visuales
 
-En la ventana completa pulse «Ajustes» para elegir el color de la esfera, su tamaño y animación normal, reducida o desactivada. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
+En la ventana completa pulse «Ajustes» para elegir el color del rostro, su tamaño y animación normal, reducida o desactivada. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
 
 ### Memoria entre sesiones
 

@@ -883,3 +883,22 @@ def test_managed_browser_does_not_confirm_redirect(monkeypatch):
     music.page = Page()
     monkeypatch.setattr(music, '_ensure_browser', lambda: None)
     assert not music.open('dfojvebIwJc')['opened']
+
+
+def test_particle_face_geometry_is_deterministic_and_finite():
+    import math
+    from face_particles import face_points, ambient_points
+    face = face_points()
+    assert len(face) == 1900 and face == face_points()
+    assert len(ambient_points()) == 135
+    assert all(all(math.isfinite(n) for n in point) for point in face)
+    assert all(-76 <= p[0] <= 76 and -103 <= p[1] <= 103 for p in face)
+
+
+def test_particle_face_speaking_and_reduced_motion():
+    from face_particles import motion
+    idle = motion(1.2, 'idle', 'normal')
+    speech = [motion(t / 10, 'speaking', 'normal')['mouth'] for t in range(30)]
+    assert max(speech) > idle['mouth'] and max(speech) > min(speech)
+    assert motion(2, 'speaking', 'desactivada')['mouth'] == motion(4, 'speaking', 'desactivada')['mouth']
+    assert motion(1, 'approval', 'normal')['brow'] != idle['brow']
