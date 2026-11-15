@@ -6,6 +6,7 @@ permissions of the current user. Never run this program as administrator.
 from __future__ import annotations
 import os
 import platform
+import re
 import shutil
 import subprocess
 import webbrowser
@@ -91,6 +92,18 @@ class SystemController:
         if parsed.scheme not in ('http', 'https') or not parsed.hostname:
             raise ValueError('Solo se permiten URL HTTP o HTTPS válidas.')
         return {'opened': webbrowser.open(url)}
+
+    def whatsapp_prepare(self, phone: str, message: str) -> dict:
+        """Open a WhatsApp draft; the user must review and send it manually."""
+        phone = phone.strip()
+        if not re.fullmatch(r'\+?[1-9][0-9]{6,14}', phone):
+            raise ValueError('Indique el número internacional con código de país y solo dígitos.')
+        if not message.strip() or len(message) > 4000:
+            raise ValueError('El mensaje debe tener entre 1 y 4000 caracteres.')
+        url = 'https://wa.me/' + phone.lstrip('+') + '?text=' + quote_plus(message)
+        opened = webbrowser.open(url)
+        return {'opened': opened, 'sent': False,
+                'note': 'Se solicitó abrir un borrador. El usuario debe revisar el destinatario y pulsar Enviar.'}
 
     def web_search(self, query: str) -> dict:
         if not query.strip(): raise ValueError('La consulta está vacía.')

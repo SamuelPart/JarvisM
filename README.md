@@ -72,3 +72,9 @@ La confirmación por voz **no verifica la identidad**: otra persona, una grabaci
 La activación por «Jarvis» usa reconocimiento de voz de Google, no detección local: con el micrófono activado, cada frase capturada se envía a Google aunque no contenga la palabra. Requiere Internet y puede reconocerla incorrectamente. El botón apaga la escucha.
 
 La interfaz tiene pestañas **Chat** y **Voz**. En Chat, escriba y pulse Enviar; las herramientas requieren autorización en un cuadro que muestra los argumentos completos. Puede desactivar la lectura en voz alta con la casilla. Para cambiar de pestaña, espere a que termine la solicitud o apague el micrófono. Las conversaciones solo permanecen en memoria durante la ejecución.
+
+### Preparar un mensaje de WhatsApp
+
+Pida a JARVIS que prepare el mensaje e indique el número con código de país. La herramienta pide autorización mostrando número y texto y abre un borrador mediante `wa.me` en el navegador. Requiere WhatsApp Web o la aplicación vinculada. **No envía el mensaje por sí sola**: revise destinatario y contenido y pulse Enviar. JARVIS no tiene acceso a sus contactos y no debe inventar números. La apertura del navegador tampoco confirma que el mensaje haya sido entregado.
+
+Si aparece un error Gemini, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.

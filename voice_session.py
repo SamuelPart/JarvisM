@@ -2,6 +2,7 @@
 import json
 import re
 import threading
+from errors import describe_error
 
 
 def is_approval(text):
@@ -79,8 +80,8 @@ class VoiceSession:
             self.status('Pensando')
             try:
                 answer = self.brain.ask(request)
-            except Exception:
-                answer = 'Señor, no pude completar la solicitud. Compruebe la conexión e inténtelo de nuevo.'
+            except Exception as exc:
+                answer = 'Señor, ' + describe_error(exc)
             if not self.stop_event.is_set():
                 self.speak(answer)
         self.status('Micrófono apagado')

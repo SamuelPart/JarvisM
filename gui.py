@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QPushButton, QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget)
 
 from brain import Brain
+from errors import describe_error
 from main import ROOT, STATE
 from system_control import SystemController
 from voice import Voice
@@ -142,7 +143,7 @@ class ChatWorker(QObject):
             self.brain.approve = self.ask_approval
             self.result.emit(self.brain.ask(self.text))
         except Exception as exc:
-            self.error.emit(f'No se pudo completar la solicitud ({type(exc).__name__}).')
+            self.error.emit(describe_error(exc))
         finally:
             self.finished.emit()
 

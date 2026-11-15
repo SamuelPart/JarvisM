@@ -153,3 +153,24 @@ def test_wake_word_conversation():
     session.run()
     assert requests == ['hola', 'qué hora es']
     assert 'Le escucho, señor.' in spoken
+
+
+def test_whatsapp_draft(monkeypatch):
+    import system_control
+    opened = []
+    monkeypatch.setattr(system_control.webbrowser, 'open', lambda url: opened.append(url) or True)
+    control = SystemController()
+    result = control.whatsapp_prepare('+51987654321', 'te amo 💙')
+    assert result['opened'] and not result['sent']
+    assert opened[0].startswith('https://wa.me/51987654321?text=')
+    assert 'te+amo' in opened[0]
+    for phone in ('prisila', '000', '123?x=1'):
+        with pytest.raises(ValueError): control.whatsapp_prepare(phone, 'hola')
+
+
+def test_error_message_no_secrets():
+    from google.genai import errors as genai_errors
+    from errors import describe_error
+    exc = genai_errors.ClientError(429, {'error': {'message': 'secret-api-key'}})
+    text = describe_error(exc)
+    assert '429' in text and 'secret-api-key' not in text

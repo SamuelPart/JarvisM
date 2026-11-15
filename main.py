@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
+from errors import describe_error
 
 ROOT = Path(__file__).resolve().parent
 STATE = ROOT / '.jarvis-state.json'
@@ -99,7 +100,7 @@ def main():
             try: announce(brain.ask(text))
             except Exception as exc:
                 # Avoid exposing API keys or provider response details in the console.
-                print(f'No se pudo completar la solicitud ({type(exc).__name__}).')
+                print(describe_error(exc))
         except (KeyboardInterrupt, EOFError):
             print('\nHasta pronto.'); break
     return 0
