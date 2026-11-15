@@ -61,7 +61,7 @@ El texto pronunciado se envía a Microsoft: no use el modo neuronal con informac
 
 ## Interfaz de escritorio
 
-Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux o `venv\Scripts\python.exe gui.py` en Windows. La ventana funciona por voz: pulse «Activar micrófono», diga «Jarvis» seguido de su orden o espere la respuesta «Le escucho» y diga su orden; diga exactamente «autorizo» para aprobar cada herramienta. Cualquier otra respuesta, silencio, error de reconocimiento o fallo de voz rechaza la acción. Pulse «Apagar micrófono» para detener la escucha; puede tardar mientras termina la captura o solicitud en curso. La clave y la voz se configuran en el mismo `.env` que usa la consola; el texto hablado puede enviarse a Microsoft si está activado Edge TTS. El audio capturado se envía a Google para transcribirlo. El actualizador sigue disponible en consola (`python main.py`); la conversación no persiste tras cerrarla. Se necesita una sesión gráfica. Para actualizar desde consola, salga de la interfaz primero.
+Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux o `venv\Scripts\python.exe gui.py` en Windows. La ventana funciona por voz: pulse el icono de micrófono, diga «Jarvis» seguido de su orden o espere la respuesta «Le escucho» y diga su orden; diga exactamente «autorizo» para aprobar cada herramienta. Cualquier otra respuesta, silencio, error de reconocimiento o fallo de voz rechaza la acción. Pulse de nuevo el icono de micrófono para detener la escucha; puede tardar mientras termina la captura o solicitud en curso. La clave y la voz se configuran en el mismo `.env` que usa la consola; el texto hablado puede enviarse a Microsoft si está activado Edge TTS. El audio capturado se envía a Google para transcribirlo. El actualizador sigue disponible en consola (`python main.py`); la conversación no persiste tras cerrarla. Se necesita una sesión gráfica. Para actualizar desde consola, salga de la interfaz primero.
 
 ### Animación del núcleo
 
@@ -71,7 +71,7 @@ La confirmación por voz **no verifica la identidad**: otra persona, una grabaci
 
 La activación por «Jarvis» usa reconocimiento de voz de Google, no detección local: con el micrófono activado, cada frase capturada se envía a Google aunque no contenga la palabra. Requiere Internet y puede reconocerla incorrectamente. El botón apaga la escucha.
 
-La interfaz tiene pestañas **Chat** y **Voz**. En Chat, escriba y pulse Enviar; las herramientas requieren autorización en un cuadro que muestra los argumentos completos. Puede desactivar la lectura en voz alta con la casilla. Para cambiar de pestaña, espere a que termine la solicitud o apague el micrófono. Las conversaciones solo permanecen en memoria durante la ejecución.
+El chat comienza oculto: pulse 💬 para mostrarlo u ocultarlo. Pulse 🎙 para activar o detener el micrófono. En Chat, escriba y pulse Enviar; las herramientas requieren autorización en un cuadro que muestra los argumentos completos. Puede desactivar la lectura en voz alta con la casilla. El envío de mensajes se desactiva durante la sesión de voz y el micrófono se desactiva durante una solicitud escrita. Las conversaciones solo permanecen en memoria durante la ejecución.
 
 ### Preparar un mensaje de WhatsApp
 
@@ -95,13 +95,9 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 
 La esfera indica el estado: azul quieto en espera; gira al procesar una solicitud; pulsa durante la reproducción de voz; y pasa a ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
 
-### Panel de estado
-
-Muestra el modelo configurado, el resultado de la última consulta al proveedor (sin comprobar hasta la primera), el estado de la sesión de micrófono y uso local de CPU y RAM actualizado cada dos segundos. La sesión de micrófono puede estar activada pero pausada mientras JARVIS habla o procesa. El resultado de la última consulta no garantiza conectividad actual ni indica por sí solo la causa de un error.
-
 ### Modo compacto flotante
 
-Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y un botón de micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Los permisos siguen requiriendo confirmación.
+Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y los iconos de chat y micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Los permisos siguen requiriendo confirmación.
 
 ### Ajustes visuales
 

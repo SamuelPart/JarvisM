@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont, QColor, QPainter, QRadialGradient
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
-                             QComboBox, QFormLayout, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                             QComboBox, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
-                             QScrollArea, QTabWidget, QVBoxLayout, QWidget)
+                             QScrollArea, QVBoxLayout, QWidget)
 
 from provider import create_brain
 from errors import describe_error
@@ -22,7 +22,6 @@ from voice import Voice
 from voice_session import VoiceSession
 from microphone import listen
 from core_state import CoreState
-from status_data import sample_usage
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
@@ -173,57 +172,13 @@ class ChatHistory(QScrollArea):
         bar.setValue(bar.maximum())
 
 
-class StatusPanel(QFrame):
-    """Last provider result and locally sampled resource usage; no network probe."""
-    def __init__(self, model):
-        super().__init__()
-        self.setObjectName('statusPanel')
-        grid = QGridLayout(self)
-        grid.setContentsMargins(14, 9, 14, 9)
-        grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(4)
-        self.model = self.add_item(grid, 0, 0, 'MODELO', model)
-        self.connection = self.add_item(grid, 0, 1, 'ÚLTIMA CONSULTA IA', 'Sin comprobar')
-        self.microphone = self.add_item(grid, 1, 0, 'MICRÓFONO', 'Apagado')
-        self.usage = self.add_item(grid, 1, 1, 'RECURSOS', 'CPU —  ·  RAM —')
-        self.model.setToolTip(model)
-        self.connection.setToolTip('Resultado de la última solicitud al proveedor, no un monitor de Internet en tiempo real.')
-        self.microphone.setToolTip('La sesión de voz activada pausa la escucha mientras JARVIS habla o procesa.')
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh_usage)
-        self.timer.start(2000)
-        self.refresh_usage()
-
-    @staticmethod
-    def add_item(grid, row, column, label, value):
-        container = QWidget()
-        container.setObjectName('statusItem')
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        caption = QLabel(label)
-        caption.setObjectName('metricCaption')
-        text = QLabel(value)
-        text.setObjectName('metricValue')
-        text.setWordWrap(True)
-        layout.addWidget(caption)
-        layout.addWidget(text, 1)
-        grid.addWidget(container, row, column)
-        return text
-
-    def refresh_usage(self):
-        data = sample_usage()
-        self.usage.setText(f"CPU {data['cpu']}  ·  RAM {data['memory']}")
-
-
 class VoiceWorker(QObject):
     status = pyqtSignal(str)
-    connection = pyqtSignal(str)
     finished = pyqtSignal()
 
     def __init__(self, brain, voice):
         super().__init__()
-        self.session = VoiceSession(brain, voice, listen, self.status.emit, self.connection.emit)
+        self.session = VoiceSession(brain, voice, listen, self.status.emit)
 
     @pyqtSlot()
     def run(self):
@@ -362,8 +317,6 @@ class JarvisWindow(QMainWindow):
         self.compact_toggle.clicked.connect(self.toggle_compact)
         top.addWidget(self.compact_toggle)
         layout.addLayout(top)
-        self.metrics = StatusPanel(self.brain.model)
-        layout.addWidget(self.metrics)
 
         self.heading = QLabel('Tu asistente, listo para ayudarte.')
         self.heading.setObjectName('heading')
@@ -383,16 +336,27 @@ class JarvisWindow(QMainWindow):
         self.status.setObjectName('statusBadge')
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
-        self.compact_mic = QPushButton('Activar micrófono')
-        self.compact_mic.setObjectName('send')
-        self.compact_mic.clicked.connect(self.toggle_microphone)
-        self.compact_mic.hide()
-        layout.addWidget(self.compact_mic)
+        controls = QHBoxLayout()
+        controls.addStretch()
+        self.chat_toggle = QPushButton('💬')
+        self.chat_toggle.setObjectName('modeIcon')
+        self.chat_toggle.setCheckable(True)
+        self.chat_toggle.setToolTip('Mostrar u ocultar chat')
+        self.chat_toggle.setAccessibleName('Mostrar u ocultar chat')
+        self.chat_toggle.toggled.connect(self.toggle_chat)
+        controls.addWidget(self.chat_toggle)
+        self.mic = QPushButton('🎙')
+        self.mic.setObjectName('modeIcon')
+        self.mic.setCheckable(True)
+        self.mic.setToolTip('Activar micrófono')
+        self.mic.setAccessibleName('Activar o apagar micrófono')
+        self.mic.clicked.connect(self.toggle_microphone)
+        controls.addWidget(self.mic)
+        controls.addStretch()
+        layout.addLayout(controls)
 
-        self.tabs = QTabWidget()
-        layout.addWidget(self.tabs, 1)
-        chat = QWidget()
-        chat_layout = QVBoxLayout(chat)
+        self.chat_panel = QWidget()
+        chat_layout = QVBoxLayout(self.chat_panel)
         self.history = ChatHistory()
         chat_layout.addWidget(self.history, 1)
         composer = QHBoxLayout()
@@ -408,23 +372,16 @@ class JarvisWindow(QMainWindow):
         self.chat_audio = QCheckBox('Leer respuestas en voz alta')
         self.chat_audio.setChecked(True)
         chat_layout.addWidget(self.chat_audio)
-        self.tabs.addTab(chat, 'Chat')
+        self.chat_panel.hide()
+        layout.addWidget(self.chat_panel, 1)
 
-        voice_tab = QWidget()
-        voice_layout = QVBoxLayout(voice_tab)
-        voice_layout.addStretch(1)
-        self.mic = QPushButton('Activar micrófono')
-        self.mic.setObjectName('send')
-        self.mic.setMinimumHeight(60)
-        self.mic.clicked.connect(self.toggle_microphone)
-        voice_layout.addWidget(self.mic)
-        info = QLabel('Di “Jarvis” para empezar y “autorizo” para aprobar una acción.')
-        info.setObjectName('footer')
-        info.setWordWrap(True)
-        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        voice_layout.addWidget(info)
-        voice_layout.addStretch(1)
-        self.tabs.addTab(voice_tab, 'Voz')
+    @pyqtSlot(bool)
+    def toggle_chat(self, enabled):
+        if enabled and self.compact:
+            self.toggle_compact()
+        self.chat_panel.setVisible(enabled and not self.compact)
+        if enabled and not self.compact:
+            self.input.setFocus()
 
     def append_chat(self, author, text):
         self.history.add_message(author, text)
@@ -438,8 +395,7 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('thinking')
         self.status.setText('JARVIS está pensando…')
         self.send.setEnabled(False)
-        self.compact_mic.setEnabled(False)
-        self.tabs.tabBar().setEnabled(False)
+        self.mic.setEnabled(False)
         self.thread = QThread(self)
         self.worker = ChatWorker(self.brain, text)
         self.worker.moveToThread(self.thread)
@@ -464,7 +420,6 @@ class JarvisWindow(QMainWindow):
     @pyqtSlot(str)
     def chat_result(self, text):
         self.set_task_state('idle')
-        self.metrics.connection.setText('Respondió')
         self.append_chat('JARVIS', text)
         if self.chat_audio.isChecked():
             self.voice.speak(text)
@@ -472,7 +427,6 @@ class JarvisWindow(QMainWindow):
     @pyqtSlot(str)
     def chat_error(self, error):
         self.set_task_state('idle')
-        self.metrics.connection.setText('Error al consultar')
         self.append_chat('Sistema', error)
 
     def set_task_state(self, state):
@@ -516,12 +470,11 @@ class JarvisWindow(QMainWindow):
             self.expanded_maximized = self.isMaximized()
             self.showNormal()
             self.compact = True
-            self.metrics.hide()
             self.settings_button.hide()
             self.heading.hide()
             self.subtitle.hide()
-            self.tabs.hide()
-            self.compact_mic.show()
+            self.chat_toggle.setChecked(False)
+            self.chat_panel.hide()
             self.compact_toggle.setText('Abrir chat')
             self.root_layout.setContentsMargins(10, 10, 10, 10)
             self.root_layout.setSpacing(6)
@@ -531,12 +484,11 @@ class JarvisWindow(QMainWindow):
             self.resize(360, 390)
         else:
             self.compact = False
-            self.compact_mic.hide()
-            self.metrics.show()
             self.settings_button.show()
             self.heading.show()
             self.subtitle.show()
-            self.tabs.show()
+            self.chat_toggle.setChecked(True)
+            self.chat_panel.show()
             self.compact_toggle.setText('Modo compacto')
             self.root_layout.setContentsMargins(30, 24, 30, 24)
             self.root_layout.setSpacing(18)
@@ -553,24 +505,21 @@ class JarvisWindow(QMainWindow):
             if not isinstance(self.worker, VoiceWorker):
                 return
             self.worker.session.stop()
-            self.metrics.microphone.setText('Deteniendo')
             self.status.setText('Deteniendo micrófono…')
             self.mic.setEnabled(False)
-            self.compact_mic.setEnabled(False)
             return
         self.thread = QThread(self)
         self.worker = VoiceWorker(self.brain, self.voice)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self.on_voice_status)
-        self.worker.connection.connect(self.metrics.connection.setText)
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.cleanup)
-        self.metrics.microphone.setText('Activado')
-        self.mic.setText('Apagar micrófono')
-        self.compact_mic.setText('Apagar micrófono')
-        self.tabs.tabBar().setEnabled(False)
+        self.mic.setChecked(True)
+        self.mic.setToolTip('Apagar micrófono')
+        self.input.setEnabled(False)
+        self.send.setEnabled(False)
         self.thread.start()
 
     @pyqtSlot()
@@ -581,13 +530,11 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('idle')
         if not self.status.text().startswith('Error'):
             self.status.setText('Micrófono apagado')
-        self.metrics.microphone.setText('Apagado')
-        self.mic.setText('Activar micrófono')
-        self.compact_mic.setText('Activar micrófono')
-        self.compact_mic.setEnabled(True)
+        self.mic.setChecked(False)
+        self.mic.setToolTip('Activar micrófono')
         self.mic.setEnabled(True)
+        self.input.setEnabled(True)
         self.send.setEnabled(True)
-        self.tabs.tabBar().setEnabled(True)
 
     def closeEvent(self, event):
         if self.thread is not None:
@@ -614,10 +561,6 @@ QLabel#muted, QLabel#footer { color: #8496aa; }
 QLabel#footer { font-size: 11px; }
 QLabel#statusBadge { color: #74d8c4; font-size: 11px; font-weight: 700; }
 QLabel#model { color: #8296ab; font-size: 11px; }
-QFrame#statusPanel { background: #101c29; border: 1px solid #21384b; border-radius: 10px; }
-QWidget#statusItem { background: transparent; }
-QLabel#metricCaption { color: #748ea5; font-size: 9px; font-weight: 700; }
-QLabel#metricValue { color: #b7dce8; font-size: 10px; }
 QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
 QLineEdit, QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
 QTextBrowser { border: none; line-height: 1.6; }
@@ -635,6 +578,9 @@ QScrollBar::handle:vertical { background: #34566b; min-height: 25px; border-radi
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QPushButton { border: 1px solid #31475b; border-radius: 9px; padding: 10px 16px; background: #1c2b3b; }
 QPushButton:hover { background: #294154; }
+QPushButton#modeIcon { font-size: 22px; min-width: 40px; padding: 8px; }
+QPushButton#modeIcon:checked { background: #186979; border: 1px solid #7fe4ee; }
+QPushButton#modeIcon:disabled { color: #6c7d89; background: #1a2731; }
 QPushButton#send, QPushButton#approveButton { background: #76d7e4; color: #07151d; border: none; font-weight: 700; }
 QPushButton#send:disabled { background: #344957; color: #8296aa; }
 QComboBox { background: #172838; color: #e4edf7; border: 1px solid #355266; border-radius: 7px; padding: 7px; }
