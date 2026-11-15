@@ -783,50 +783,6 @@ def test_reply_included_in_gmail_permission_but_not_calendar(tmp_path, monkeypat
     assert not permissions.preapproved('list_reminders')
 
 
-def test_elevenlabs_voice_request_and_audio(monkeypatch):
-    import requests
-    from voice import Voice
-    calls, played = [], []
-    class Response:
-        status_code = 200
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def iter_content(self, chunk_size): return iter([b'audio'])
-    class Session:
-        def __init__(self): self.trust_env = True
-        def post(self, url, **kwargs):
-            calls.append((url, kwargs, self.trust_env))
-            return Response()
-        def close(self): pass
-    monkeypatch.setattr(requests, 'Session', Session)
-    monkeypatch.setenv('ELEVENLABS_API_KEY', 'test-key')
-    monkeypatch.setenv('ELEVENLABS_VOICE_ID', 'voice123')
-    monkeypatch.setenv('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2')
-    voice = Voice()
-    monkeypatch.setattr(voice, '_play_file', lambda path: played.append(path.read_bytes()))
-    voice._elevenlabs('Buenos días')
-    assert played == [b'audio']
-    url, kwargs, trust = calls[0]
-    assert url == 'https://api.elevenlabs.io/v1/text-to-speech/voice123'
-    assert kwargs['headers']['xi-api-key'] == 'test-key' and kwargs['json']['text'] == 'Buenos días'
-    assert trust is False and kwargs['allow_redirects'] is False
-
-
-def test_elevenlabs_invalid_voice_and_network_error_do_not_leak_key(monkeypatch):
-    import requests
-    from voice import Voice, VoiceError
-    monkeypatch.setenv('ELEVENLABS_API_KEY', 'secret-test-key')
-    monkeypatch.setenv('ELEVENLABS_VOICE_ID', '../wrong')
-    with pytest.raises(VoiceError): Voice()._elevenlabs('Hola')
-    monkeypatch.setenv('ELEVENLABS_VOICE_ID', 'valid')
-    class Session:
-        def post(self, *args, **kwargs): raise requests.ConnectionError('secret-test-key')
-        def close(self): pass
-    monkeypatch.setattr(requests, 'Session', Session)
-    with pytest.raises(VoiceError) as error: Voice()._elevenlabs('Hola')
-    assert 'secret-test-key' not in str(error.value)
-
-
 def test_music_can_stop_verified_process_after_restart(tmp_path, monkeypatch):
     import json
     import music_player
@@ -859,14 +815,13 @@ def test_music_does_not_stop_reused_or_foreign_process(tmp_path, monkeypatch):
     assert not state.exists()
 
 
-def test_elevenlabs_error_shows_allowlisted_diagnosis_without_private_data():
-    from voice import elevenlabs_error
-    class Response:
-        status_code = 400
-        def __init__(self, data): self.data = data
-        def iter_content(self, chunk_size): return iter([self.data])
-    error = elevenlabs_error(Response(b'{"detail":{"status":"quota_exceeded","message":"secret"}}'))
-    assert 'cuota' in error and 'secret' not in error
-    error = elevenlabs_error(Response(b'{"detail":{"status":"secret","message":"private"}}'))
-    assert 'causa exacta no' in error and 'secret' not in error and 'private' not in error
-    assert 'HTTP 400' in elevenlabs_error(Response(b'not json'))
+
+def test_old_elevenlabs_mode_uses_edge(monkeypatch):
+    from voice import Voice
+    monkeypatch.setenv('JARVIS_VOICE_MODE', 'elevenlabs')
+    calls = []
+    voice = Voice()
+    monkeypatch.setattr(voice, '_neural', lambda text: calls.append(text))
+    monkeypatch.setattr(voice, '_local', lambda text: pytest.fail('No debería usar voz local'))
+    assert voice.speak_wait('Hola')
+    assert calls == ['Hola']

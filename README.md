@@ -166,19 +166,6 @@ JARVIS puede buscar correos no leídos, leerlos y responder dentro del hilo medi
 
 Puede consultar recordatorios de la agenda local tras autorización. Para consultar también eventos del **calendario principal de Google**, habilite Google Calendar API en el mismo proyecto de Google Cloud y ejecute `venv/bin/python calendar_access.py` (Windows: `venv\Scripts\python.exe calendar_access.py`). Se abrirá Google para autorizar acceso de solo lectura al calendario, separado de Gmail. La cuenta usada para el calendario puede ser distinta; seleccione la deseada. Se guarda `.jarvis-calendar-token.json`, excluido de Git; no comparta el archivo. Cada consulta requiere permiso en JARVIS; sus eventos pueden enviarse al proveedor de IA. Puede consultar hasta 31 días y 100 eventos por petición; indica si hay más. No crea ni modifica eventos de Google Calendar. Para revocar el acceso, hágalo en Google y elimine el token local.
 
-### Voz de ElevenLabs
-
-Para elegir ElevenLabs, agregue en `.env` (sin compartir su clave):
-
-```text
-JARVIS_VOICE_MODE=elevenlabs
-ELEVENLABS_API_KEY=SU_CLAVE
-ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb
-ELEVENLABS_MODEL_ID=eleven_multilingual_v2
-```
-
-El ID mostrado corresponde a la voz pública George; puede sustituirlo por el ID de una voz disponible en su cuenta. El modelo multilingüe admite español, pero la pronunciación y la disponibilidad dependen de la voz, modelo, cuenta y cuota. La clave debe tener permiso de texto a voz. Si ya existe `JARVIS_VOICE_MODE` en `.env`, cambie esa línea en vez de duplicarla. Reinicie JARVIS después de editarlo.
-
-El texto pronunciado (incluidos posibles datos privados de correos y recordatorios) se envía a ElevenLabs, donde su uso está sujeto a sus políticas y su cuota. El micrófono sigue usando Google para transcribir. Se necesita Internet y salida de audio; el MP3 se guarda temporalmente y se elimina tras reproducirse. Las variables de proxy no se usan para esta solicitud. Si ElevenLabs falla, JARVIS informa el error en la terminal y **no cambia automáticamente a la voz local**; el texto permanece visible. La aprobación por voz falla de manera segura si no se puede reproducir el audio.
+La integración de ElevenLabs se retiró. Si una instalación anterior conserva `JARVIS_VOICE_MODE=elevenlabs`, JARVIS usará Edge TTS; cambie la línea a `JARVIS_VOICE_MODE=edge` y retire las líneas `ELEVENLABS_` de `.env` si ya no las necesita. El texto de voz se envía a Microsoft.
 
 La música puede seguir sonando al cerrar JARVIS. La aplicación registra de forma local la identidad del proceso que inició para poder detenerlo después de volver a abrirla o tras un cierre inesperado; verifica PID, hora de inicio y marca antes de terminarlo, sin cerrar reproductores ajenos. La recuperación no reconoce reproductores iniciados por versiones anteriores ni está garantizada si el sistema no permite verificar el proceso. El registro `.jarvis-music.json` no se sube a Git.
