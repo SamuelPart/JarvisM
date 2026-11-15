@@ -1050,6 +1050,8 @@ def test_model_music_tool_failure_overrides_fabricated_success(tmp_path, monkeyp
 
 def test_chrome_client_rejects_invalid_id_and_reports_disconnected(monkeypatch, tmp_path):
     import chrome_music
+    import install_chrome_music
+    monkeypatch.setattr(install_chrome_music, 'install', lambda **kwargs: None)
     monkeypatch.setattr(chrome_music, 'socket_path', lambda: tmp_path / 'missing.sock')
     assert 'inválida' in chrome_music.command('open', '../malicious')['error']
     assert 'no está conectado' in chrome_music.command('pause')['error']

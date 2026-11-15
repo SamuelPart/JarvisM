@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
-def install():
+def install(quiet=False):
     if platform.system() != 'Linux':
         raise RuntimeError('La instalación automática solo está disponible para Google Chrome en Linux.')
     extension_id = (ROOT / 'chrome_extension' / 'extension_id.txt').read_text(encoding='utf-8').strip()
@@ -19,17 +19,24 @@ def install():
     target.mkdir(parents=True, exist_ok=True)
     manifest = {'name': 'com.jarvis.music', 'description': 'JARVIS: control limitado de YouTube',
                 'path': str(host), 'type': 'stdio', 'allowed_origins': ['chrome-extension://' + extension_id + '/']}
+    destination = target / 'com.jarvis.music.json'
+    try:
+        if json.loads(destination.read_text(encoding='utf-8')) == manifest:
+            return
+    except (OSError, ValueError):
+        pass
     name = None
     try:
         with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=target, delete=False) as file:
             name = file.name
             json.dump(manifest, file, ensure_ascii=False, indent=2)
-        os.replace(name, target / 'com.jarvis.music.json')
+        os.replace(name, destination)
     finally:
         if name and os.path.exists(name):
             os.unlink(name)
-    print('Conexión registrada. Carga la carpeta chrome_extension en chrome://extensions.')
-    print('ID de la extensión:', extension_id)
+    if not quiet:
+        print('Conexión registrada. Carga la carpeta chrome_extension en chrome://extensions.')
+        print('ID de la extensión:', extension_id)
 
 
 if __name__ == '__main__':

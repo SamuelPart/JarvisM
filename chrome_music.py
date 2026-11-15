@@ -24,6 +24,10 @@ def command(action, video_id=None, start=False):
             (not isinstance(video_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id))):
         return {'error': 'Solicitud de música inválida.'}
     try:
+        # Register the narrowly scoped native host automatically on first use.
+        # Chrome must still have the extension installed and enabled.
+        from install_chrome_music import install
+        install(quiet=True)
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(55)
             client.connect(str(socket_path()))
