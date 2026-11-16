@@ -22,29 +22,16 @@ def _normalize_phrase(text):
     folded = unicodedata.normalize('NFD', (text or '').casefold())
     plain = ''.join(char for char in folded if unicodedata.category(char) != 'Mn')
     words = re.sub(r'[^\w\s]', ' ', plain).split()
-    while words and words[-1] in {'por', 'favor'}:
+    while words and words[-1] in {'por', 'favor', 'gracias'}:
         words.pop()
     return ' '.join(words)
 
-def _is_conversation_on(phrase):
-    norm = _normalize_phrase(phrase)
-    return norm in CONVERSATION_ON
-
 def _is_conversation_off(phrase):
-    norm = _normalize_phrase(phrase)
-    return norm in CONVERSATION_OFF
+    return _normalize_phrase(phrase) in CONVERSATION_OFF
 
-CONVERSATION_ON = frozenset({
-    'modo conversacion', 'activar conversacion', 'activar el modo conversacion',
-    'activa modo conversacion', 'activa el modo conversacion', 'activa la conversacion',
-    'inicia conversacion', 'inicia el modo conversacion', 'iniciar conversacion',
-    'iniciar el modo conversacion', 'quiero modo conversacion', 'conversa conmigo sin decir jarvis',
-})
 CONVERSATION_OFF = frozenset({
-    'detener conversacion', 'detener la conversacion', 'deten conversacion', 'deten la conversacion', 'desactivar conversacion',
-    'desactivar la conversacion', 'salir de conversacion', 'salir del modo conversacion',
-    'salir de modo conversacion', 'terminar conversacion', 'terminar la conversacion',
-    'finalizar conversacion', 'quiero volver a decir jarvis',
+    'eso es todo', 'esto es todo', 'eso sera todo', 'eso seria todo',
+    'nada mas', 'eso es todo gracias', 'ya me voy', 'terminamos',
 })
 
 
@@ -170,7 +157,7 @@ class VoiceSession:
 
     def run(self):
         self.brain.approve = self.approve
-        if not self.speak('Señor, micrófono activado. Diga Jarvis para hablar conmigo, o diga modo conversación para no repetirlo.'):
+        if not self.speak('Señor, micrófono activado. Diga Jarvis para hablar conmigo; cuando termine, diga eso es todo.'):
             self.status('Error: voz no disponible; micrófono apagado')
             return
         while not self.stop_event.is_set():
@@ -186,7 +173,10 @@ class VoiceSession:
                     norm = _normalize_phrase(request)
                     if _is_conversation_off(request):
                         self.set_conversation_mode(False)
-                        self.speak('Modo conversación desactivado. Vuelva a decir Jarvis para hablar conmigo.')
+                        self.speak('Hasta luego, señor.')
+                        continue
+                    if stripped == '':
+                        self.speak('Le escucho, señor.')
                         continue
                     if not norm:
                         continue
@@ -194,15 +184,12 @@ class VoiceSession:
                     request = wake_request(heard)
                     if request is None:
                         continue
-                    if _is_conversation_on(request):
-                        self.set_conversation_mode(True)
-                        self.speak('Modo conversación activado. Diga detener conversación para volver a usar el nombre.')
-                        continue
+                    # Any wake-word interaction opens free conversation until «eso es todo».
+                    self.set_conversation_mode(True)
                     if not request:
                         if not self.speak('Le escucho, señor.') or self.stop_event.is_set():
                             break
-                        self.status('Escuchando tu orden')
-                        request = self.listen().strip()
+                        continue
             except TimeoutError:
                 continue
             except Exception as exc:

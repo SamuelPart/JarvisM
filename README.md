@@ -233,13 +233,14 @@ JARVIS puede diagnosticar por voz o chat el micrófono de esta computadora: cuá
 
 ## Modo conversación (escritorio)
 
-Por defecto, JARVIS de escritorio (micrófono activado) exige decir «Jarvis» en cada orden. Si no quieres repetirlo, puedes activar el **modo conversación**: haciendo que JARVIS trate todo lo que escuche como una orden hasta que lo desactives.
+Por defecto, JARVIS de escritorio (micrófono activado) exige decir «Jarvis» en cada orden. Con la **conversación libre** (modo conversación) no hace falta repetirlo:
 
-- **Activarlo:** con el micrófono encendido di «Jarvis, modo conversación» (también valen variantes como «activa el modo conversación») o marca la casilla **Modo conversación (no decir «Jarvis»)** en Ajustes antes o durante la sesión.
-- **Desactivarlo:** di «detener conversación» (también vale «detén la conversación») o desmarca la casilla en Ajustes. Apagar el micrófono también lo desactiva.
-- **No se guarda:** al cerrar el programa vuelve el requisito de decir «Jarvis»; no hay modo conversación permanente escondido.
-- **Con el modo activo** todo el audio ambiente puede convertirse en una orden, así que no lo actives si hay otras personas hablando cerca; los comandos encienden acciones destructivas o de gasto que dependan del permiso amplio concedido.
-- La escucha, el reconocimiento y la síntesis dependen de los servicios externos configurados (Google y Microsoft Edge); sigue siendo posible preguntar recuperando el micrófono pulsando el botón de micrófono cuando no quieras usarlo.
+- **Entrar:** di **«Jarvis»** (puedes decirlo sin nada más, o seguido de tu orden; JARVIS la ejecuta y se queda escuchando). También puedes marcar la casilla **Conversación libre (no decir «Jarvis»)** en Ajustes antes o durante la sesión.
+- **Terminar:** di **«eso es todo»** (también valen «esto es todo», «eso será todo», «nada más» o «listo, me voy») o desmarca la casilla en Ajustes; apagar el micrófono también termina la conversación.
+- **No se guarda:** al cerrar el programa vuelve el requisito de decir «Jarvis»; el estado del modo nunca se persiste.
+- **Con el modo activo** todo el audio ambiente puede convertirse en una orden; no lo actives con otras personas hablando cerca.
+- La conversación sigue sujeta a todos los permisos y a las autorizaciones por voz cuando una acción las requiere.
+- La escucha, el reconocimiento y la síntesis dependen de los servicios externos configurados (Google y Microsoft Edge); desactívalo diciendo «eso es todo» o apaga el micrófono cuando no lo uses.
 
 ## JARVIS independiente para Android
 

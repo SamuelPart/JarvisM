@@ -2331,15 +2331,13 @@ def test_microphone_non_linux_is_honest():
     assert 'solo está disponible en Linux' in result['checks'][0]['detail']
 
 
+
 def test_conversation_mode_voice_flow():
-    from voice_session import VoiceSession, _normalize_phrase, CONVERSATION_ON, CONVERSATION_OFF
-    assert _normalize_phrase('detén la conversación, por favor') in CONVERSATION_OFF
-    from voice_session import wake_request
-    assert wake_request('Jarvis, activa el modo conversación') == 'activa el modo conversación'
-    assert _normalize_phrase(wake_request('Jarvis, activa el modo conversación')) == 'activa el modo conversacion'
-    assert 'activa el modo conversacion' in CONVERSATION_ON
-    spoken, requests, states = [], [], []
-    inputs = iter(['conversación ajena', 'Jarvis, modo conversación', 'hola', 'qué hora es', 'detener conversación', 'qué hora es'])
+    from voice_session import VoiceSession, _normalize_phrase, CONVERSATION_OFF
+    assert _normalize_phrase('eso es todo, gracias') in CONVERSATION_OFF
+    assert _normalize_phrase('eso será todo') in CONVERSATION_OFF
+    spoken, requests = [], []
+    inputs = iter(['conversación ajena', 'Jarvis, hola', 'qué hora es', 'eso es todo', 'qué hora es'])
     voice = SimpleNamespace(speak_wait=lambda text: spoken.append(text) or True)
     def listen():
         try: return next(inputs)
@@ -2347,19 +2345,17 @@ def test_conversation_mode_voice_flow():
             session.stop()
             return ''
     brain = SimpleNamespace(ask=lambda text: requests.append(text) or 'respuesta')
-    session = VoiceSession(brain, voice, listen, statuses := (lambda s: states.append(s)), conversation_changed=states.append)
+    session = VoiceSession(brain, voice, listen)
     session.run()
     assert requests == ['hola', 'qué hora es']
-    assert any('conversación activado' in text for text in spoken)
-    assert any('desactivado' in text for text in spoken)
-    assert states[0] != 'Conversación activa · te escucho' or session.conversation_mode is False
     assert session.conversation_mode is False
+    assert 'Hasta luego, señor.' in spoken
 
 
-def test_conversation_mode_keeps_wake_word_optional():
+def test_conversation_mode_empty_wake_word_enters():
     from voice_session import VoiceSession
     spoken, requests = [], []
-    inputs = iter(['enciende la luz del salón', 'pon música', 'detener conversación', 'qué hora es'])
+    inputs = iter(['Jarvis', 'enciende la luz del salón', 'eso es todo', 'qué hora es'])
     voice = SimpleNamespace(speak_wait=lambda text: spoken.append(text) or True)
     def listen():
         try: return next(inputs)
@@ -2368,10 +2364,10 @@ def test_conversation_mode_keeps_wake_word_optional():
             return ''
     brain = SimpleNamespace(ask=lambda text: requests.append(text) or 'ok')
     session = VoiceSession(brain, voice, listen)
-    session.set_conversation_mode(True)
     session.run()
-    assert requests == ['enciende la luz del salón', 'pon música']
-    assert 'qué hora es' not in requests
+    assert requests == ['enciende la luz del salón']
+    assert 'Le escucho, señor.' in spoken
+    assert session.conversation_mode is False
 
 
 def test_conversation_mode_not_persisted_by_default():
@@ -2380,4 +2376,3 @@ def test_conversation_mode_not_persisted_by_default():
     assert session.conversation_mode is False
     session.set_conversation_mode(True)
     assert session.conversation_mode is True
-    assert session.set_conversation_mode is not None

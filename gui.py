@@ -378,9 +378,9 @@ class VisualSettingsDialog(QDialog):
             form.addRow(label, combo)
             self.fields[key] = combo
         layout.addLayout(form)
-        self.conversation_live = QCheckBox('Modo conversación (no decir «Jarvis»)')
+        self.conversation_live = QCheckBox('Conversación libre (no decir «Jarvis»)')
         self.conversation_live.setChecked(conversation_enabled)
-        self.conversation_live.setToolTip('Solo para esta ejecución del programa; no se guarda al cerrarlo. Con el micrófono encendido, trata todo lo que escuche como una orden hasta que lo desmarques junto con la casilla, apagues el micrófono o digas «detener conversación». También se activa con la voz: «Jarvis, modo conversación». No actives esto si hay otras personas hablando cerca.')
+        self.conversation_live.setToolTip('Solo para esta ejecución del programa; no se guarda al cerrarlo. Con el micrófono encendido es como si hubieras dicho «Jarvis»: todo lo que escuche será una orden hasta que digas «eso es todo», desmarques la casilla o apagues el micrófono. No actives esto si hay otras personas hablando cerca.')
         layout.addWidget(self.conversation_live)
         self.automation_permission = QCheckBox('Automatización amplia y actualizaciones al iniciar')
         self.automation_permission.setChecked(read_state().get('automation_accepted') is True)
@@ -1156,7 +1156,7 @@ class JarvisWindow(QMainWindow):
     @pyqtSlot(bool)
     def on_conversation_changed(self, enabled):
         self.conversation_enabled = enabled
-        self.status.setText('Modo conversación activado · te escucho' if enabled else 'Modo conversación desactivado')
+        self.status.setText('Conversando · te escucho' if enabled else 'Esperando que digas Jarvis')
 
     def on_voice_status(self, status):
         self.status.setText(status)
