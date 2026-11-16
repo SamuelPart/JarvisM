@@ -44,27 +44,41 @@ def _fetch(url, params):
 
 
 def _country(name):
-    # Only exact country aliases count; avoid treating a similarly named city as a country.
-    result = _fetch('https://restcountries.com/v3.1/name/' + quote(name, safe=''),
-                    {'fields': 'name,translations,capital,cca2,cca3'})
-    if not isinstance(result, list):
-        return None
+    # REST Countries' name endpoint does not reliably search translated names.
+    # Query its translation endpoint too, then require an exact alias match so
+    # a city or a partial country name is never silently treated as a country.
     wanted = _norm(name)
-    matches = []
-    for item in result:
-        if not isinstance(item, dict):
+    matches = {}
+    service_failed = False
+    succeeded = False
+    for endpoint in ('name', 'translation'):
+        try:
+            result = _fetch('https://restcountries.com/v3.1/' + endpoint + '/' + quote(name, safe=''),
+                            {'fields': 'name,translations,capital,cca2,cca3'})
+            succeeded = True
+        except WeatherError:
+            service_failed = True
             continue
-        base = item.get('name') or {}
-        translations = item.get('translations') or {}
-        if not isinstance(base, dict) or not isinstance(translations, dict):
+        if not isinstance(result, list):
             continue
-        names = [base.get('common', ''), base.get('official', ''), item.get('cca2', ''), item.get('cca3', '')]
-        for entry in translations.values():
-            if isinstance(entry, dict):
-                names += [entry.get('common', ''), entry.get('official', '')]
-        if wanted and wanted in {_norm(n) for n in names if n}:
-            matches.append(item)
-    return matches[0] if len(matches) == 1 else None
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            base, translations = item.get('name') or {}, item.get('translations') or {}
+            if not isinstance(base, dict) or not isinstance(translations, dict):
+                continue
+            names = [base.get('common', ''), base.get('official', ''), item.get('cca2', ''), item.get('cca3', '')]
+            for entry in translations.values():
+                if isinstance(entry, dict):
+                    names += [entry.get('common', ''), entry.get('official', '')]
+            if wanted and wanted in {_norm(n) for n in names if n}:
+                key = item.get('cca2') or item.get('cca3') or str(base.get('common'))
+                matches[key] = item
+    if len(matches) == 1:
+        return next(iter(matches.values()))
+    if not succeeded and service_failed:
+        raise WeatherError('No pude consultar el servicio de países. Revisa tu conexión e inténtalo de nuevo.')
+    return None
 
 
 def _geocode(query, forced_country=None, allow_top=False):
@@ -123,12 +137,13 @@ def get_weather(location):
         raise WeatherError('Indica una ciudad, región o país para consultar el clima.')
     location = re.sub(r'\s+', ' ', location).strip(' ,')
     country, is_capital = None, False
+    country_error = None
     if ',' not in location:
         try:
             country = _country(location)
-        except WeatherError:
+        except WeatherError as exc:
             # A geocoder may still resolve a city if the country service is down.
-            country = None
+            country_error = exc
     if country:
         capitals = country.get('capital') or []
         code = country.get('cca2') or ''
@@ -151,7 +166,12 @@ def get_weather(location):
             if qualifier:
                 query = match.group(1) + ', ' + match.group(2)
                 explicit_country = qualifier.get('cca2') or None
-        location_data = _geocode(query, forced_country=explicit_country)
+        try:
+            location_data = _geocode(query, forced_country=explicit_country)
+        except WeatherError as exc:
+            if country_error and str(exc).startswith('No encontré esa ubicación'):
+                raise country_error from exc
+            raise
     if location_data.get('ambiguous'):
         return {'ambiguous': True, 'location': location, 'options': location_data['options']}
     values = _fetch('https://api.open-meteo.com/v1/forecast', {

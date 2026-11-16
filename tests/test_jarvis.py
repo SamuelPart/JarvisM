@@ -2038,3 +2038,30 @@ def test_weather_failure_shows_no_fabricated_values(tmp_path, monkeypatch):
     answer = agent.ask('¿Cómo está el clima en Lima?')
     assert 'No pude conectar' in answer and 'grados' not in answer
     assert [e[0] for e in events] == ['loading', 'error']
+
+
+def test_country_recognizes_spanish_translation_when_name_endpoint_misses(monkeypatch):
+    import weather
+    calls = []
+    peru = {'name': {'common': 'Peru', 'official': 'Republic of Peru'},
+            'translations': {'spa': {'common': 'Perú', 'official': 'República del Perú'}},
+            'capital': ['Lima'], 'cca2': 'PE', 'cca3': 'PER'}
+    def fetch(url, params):
+        calls.append(url)
+        return [peru] if '/translation/' in url else None
+    monkeypatch.setattr(weather, '_fetch', fetch)
+    assert weather._country('Perú') == peru
+    assert any('/translation/' in url for url in calls)
+    assert weather._country('Perúx') is None
+
+
+def test_country_service_outage_is_not_reported_as_missing_location(monkeypatch):
+    import weather
+    def unavailable(name):
+        raise weather.WeatherError('No pude consultar el servicio de países. Revisa tu conexión e inténtalo de nuevo.')
+    def missing(*args, **kwargs):
+        raise weather.WeatherError('No encontré esa ubicación. Dime una ciudad o región y su país.')
+    monkeypatch.setattr(weather, '_country', unavailable)
+    monkeypatch.setattr(weather, '_geocode', missing)
+    with pytest.raises(weather.WeatherError, match='servicio de países'):
+        weather.get_weather('Perú')
