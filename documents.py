@@ -11,6 +11,7 @@ import csv
 import json
 import os
 import re
+from pathlib import Path
 
 BODY_LIMIT = 1_000_000
 ROWS_LIMIT = 1000
@@ -22,12 +23,38 @@ class DocumentError(ValueError):
     pass
 
 
+def desktop_dir():
+    """Real desktop directory: xdg-user-dir, then existing folders, then a locale guess."""
+    home = Path.home()
+    try:
+        from desktop_launcher import desktop_directory
+        found = desktop_directory(home)
+        if found is not None:
+            return Path(found)
+    except Exception:
+        pass
+    for name in ('Escritorio', 'Desktop'):
+        if (home / name).is_dir():
+            return home / name
+    locale_text = (os.environ.get('LC_ALL') or os.environ.get('LC_MESSAGES') or os.environ.get('LANG') or '').lower()
+    return home / ('Escritorio' if locale_text.startswith(('es', 'ca', 'eu', 'gl')) else 'Desktop')
+
+
 def _resolve_path(path):
     if not path or not isinstance(path, str):
         raise DocumentError('Indica la ruta del archivo a crear.')
     path = os.path.expanduser(path.strip())
+    # «escritorio/nombre» or «desktop/nombre» means the real desktop folder,
+    # which is ~/Escritorio on Spanish systems, not ~/Desktop.
+    head, sep, tail = path.replace('\\', '/').partition('/')
+    if head.lower() in ('escritorio', 'desktop'):
+        if not sep:
+            raise DocumentError('Indica el nombre del archivo dentro del escritorio.')
+        path = str(desktop_dir() / tail) if tail else str(desktop_dir())
+        if not tail:
+            raise DocumentError('Indica el nombre del archivo dentro del escritorio.')
     if not os.path.isabs(path):
-        path = str(os.path.join(os.path.expanduser('~'), 'Documentos', path))
+        path = str(Path.home() / 'Documentos' / path)
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
@@ -247,8 +274,45 @@ def _create_document(fmt, path, body, rows_json, header, title, overwrite):
                 bullet = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
                 bullet.text = (line[2:] if line.startswith('- ') else line)[:400]
         presentation.save(path)
+    if not os.path.isfile(path):
+        raise DocumentError(f'No pude confirmar que el archivo se creó en {path}.')
     size = os.path.getsize(path)
-    return {'created': path, 'format': fmt, 'bytes': size}
+    if size <= 0:
+        raise DocumentError(f'El archivo se creó vacío: {path}.')
+    return {'created': path, 'format': fmt, 'bytes': size, 'exists': True}
+
+
+def creation_report(results):
+    """Deterministic, truthful summary of create_document tool results.
+
+    Rebuilt from the filesystem at answer time so the spoken/printed answer can
+    never claim a file exists when it does not.
+    """
+    created, failed, missing = [], [], []
+    for result in results:
+        if not isinstance(result, dict):
+            failed.append('error desconocido')
+            continue
+        path = result.get('created')
+        if path and os.path.isfile(path):
+            created.append(path)
+        elif path:
+            missing.append(path)
+        else:
+            failed.append(str(result.get('error') or 'error desconocido'))
+    parts = []
+    if len(created) == 1:
+        parts.append('He creado el archivo: ' + created[0])
+    elif created:
+        parts.append(f'He creado {len(created)} archivos:\n' + '\n'.join('- ' + path for path in created))
+    if failed:
+        parts.append('No pude crear: ' + '; '.join(failed))
+    if missing:
+        parts.append('Aviso: la herramienta dijo crearlos pero no encuentro en disco: ' + '; '.join(missing))
+    if not parts:
+        parts.append('No creé ningún archivo; la herramienta no devolvió un resultado utilizable.')
+    return '. '.join(parts) + '.'
+
 
 
 def _latin(text):

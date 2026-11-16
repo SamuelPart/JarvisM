@@ -4,6 +4,7 @@ import re
 import time
 from datetime import datetime
 import learning
+import documents
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
@@ -363,6 +364,10 @@ class PersistentBrain:
                 elif name == 'delete_reminder':
                     answer = ('Listo, eliminé el recordatorio.' if isinstance(result, dict) and result.get('deleted') is True
                               else 'No pude eliminar el recordatorio; puede que ya no exista.')
+                elif name == 'create_document':
+                    # The spoken/typed answer must reflect what the tool actually did.
+                    answer = documents.creation_report([item for item in trace.results if item[0] == 'create_document'])
+
                 elif name == 'whatsapp_prepare':
                     if not isinstance(result, dict):
                         answer = 'No pude preparar el borrador de WhatsApp; no conozco la causa.'

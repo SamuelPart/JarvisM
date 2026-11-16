@@ -255,7 +255,8 @@ Por defecto, JARVIS de escritorio (micrófono activado) exige decir «Jarvis» e
 
 JARVIS puede crear archivos locales por voz o por chat con el formato que pidas: **txt, md, csv, json, rtf, pdf, docx (Word), xlsx (Excel) y pptx (PowerPoint)**. Ejemplos: «crea un PDF con el plan de entrenamiento» o «hazme un Excel con esta lista de gastos». Reglas:
 
-- La ruta relativa va a **~/Documentos**; la absoluta crea los directorios necesarios.
+- La ruta relativa va a **~/Documentos**; **«escritorio/nombre» o «desktop/nombre»** se traduce a la carpeta real del escritorio (`xdg-user-dir`, `~/Escritorio` en español), no se crea una carpeta inventada; la absoluta crea los directorios necesarios.
+- La respuesta de creación se **verifica contra el disco** antes de comunicarla: si la herramienta no confirmó o el archivo no aparece, JARVIS dirá que no se creó en lugar de inventarse un «ya está»; la ruta que informa es exactamente la del archivo comprobado. Si le dices que no lo encuentras, está instruido a comprobar (`files`) antes de confirmar.
 - **No sobrescribe archivos existentes** sin acuerdo explícito (`overwrite`); te avisa y pide confirmación.
 - El nombre y el contenido deben salir de lo acordado, sin inventar cifras ni datos que no tengas.
 - El contenido admite un esquema simple: `# Título`, `## Sección` y `- viñeta`; el resto son párrafos.

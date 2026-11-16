@@ -2479,3 +2479,42 @@ def test_create_document_bad_format_and_bad_rows(tmp_path):
     from documents import create_document
     assert 'no admitido' in create_document('exe', str(tmp_path / 'x.exe'))['error']
     assert 'JSON' in create_document('csv', str(tmp_path / 'x.csv'), rows_json='{no es json')['error']
+
+
+def test_create_document_desktop_alias(tmp_path, monkeypatch):
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    out = documents.create_document('pdf', 'escritorio/prueba.pdf', body='hola')
+    assert out['created'] == str(desktop / 'prueba.pdf')
+    assert out['exists'] is True and out['bytes'] > 0
+    assert open(desktop / 'prueba.pdf', 'rb').read(4) == b'%PDF'
+    out = documents.create_document('txt', 'desktop/nota.txt', body='hola')
+    assert out['created'] == str(desktop / 'nota.txt')
+    out = documents.create_document('txt', 'escritorio', body='hola')
+    assert 'Indica el nombre' in out['error']
+
+
+def test_creation_report_is_truthful(tmp_path):
+    import documents
+    real = tmp_path / 'ok.pdf'
+    real.write_bytes(b'%PDF-1.4 test')
+    report = documents.creation_report([{'created': str(real), 'bytes': real.stat().st_size}])
+    assert str(real) in report and 'No pude' not in report
+    report = documents.creation_report([{'created': str(real)}, {'created': str(tmp_path / 'ok2.pdf')}])
+    (tmp_path / 'ok2.pdf').write_text('x')
+    report = documents.creation_report([{'created': str(real)}, {'created': str(tmp_path / 'ok2.pdf')}])
+    assert 'He creado 2 archivos' in report
+    report = documents.creation_report([{'error': 'Falta la dependencia para PDF'}])
+    assert 'No pude crear' in report and 'dependencia' in report
+    report = documents.creation_report([{'created': str(tmp_path / 'ghost.pdf')}])
+    assert 'no encuentro' in report
+    report = documents.creation_report([])
+    assert 'No creé ningún archivo' in report
+
+
+def test_create_document_verified_flag(tmp_path):
+    from documents import create_document
+    out = create_document('txt', str(tmp_path / 'v.txt'), body='abc')
+    assert out['exists'] is True and out['bytes'] == 3
