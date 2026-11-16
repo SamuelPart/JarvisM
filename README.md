@@ -253,6 +253,18 @@ Por defecto, JARVIS de escritorio (micrófono activado) exige decir «Jarvis» e
 - La conversación sigue sujeta a todos los permisos y a las autorizaciones por voz cuando una acción las requiere.
 - La escucha, el reconocimiento y la síntesis dependen de los servicios externos configurados (Google y Microsoft Edge); desactívalo diciendo «eso es todo» o apaga el micrófono cuando no lo uses.
 
+## Crear documentos
+
+JARVIS puede crear archivos locales por voz o por chat con el formato que pidas: **txt, md, csv, json, rtf, pdf, docx (Word), xlsx (Excel) y pptx (PowerPoint)**. Ejemplos: «crea un PDF con el plan de entrenamiento» o «hazme un Excel con esta lista de gastos». Reglas:
+
+- La ruta relativa va a **~/Documentos**; la absoluta crea los directorios necesarios.
+- **No sobrescribe archivos existentes** sin acuerdo explícito (`overwrite`); te avisa y pide confirmación.
+- El nombre y el contenido deben salir de lo acordado, sin inventar cifras ni datos que no tengas.
+- El contenido admite un esquema simple: `# Título`, `## Sección` y `- viñeta`; el resto son párrafos.
+- Las tablas (csv/xlsx) se pasan como filas; puedes pedir encabezados con estilo en Excel.
+- **PDF** es de texto, con fuentes básicas: no está maquetado con HTML/CSS, ni lleva imágenes insertadas ni formularios ni contraseña. **RTF** es mínimo (Word lo abre bien). **.doc binario antiguo** y **.xls** no: se entrega docx/xlsx, que Word y Excel modernos abren. Google Docs/Drive no están soportados (sin OAuth de Drive ni creación de documentos en la nube).
+- **docx, xlsx, pptx y pdf** usan librerías adicionales incluidas en `requirements.txt` (python-docx, openpyxl, python-pptx, fpdf2): si actualizas JARVIS desde el autoactualizador de la app, se instalan solas; en instalaciones manuales ejecuta `pip install -r requirements.txt`. Si alguna falta, JARVIS te dirá exactamente cuál falta en vez de fingir.
+
 ## JARVIS independiente para Android
 
 Hay una primera aplicación Android nativa en [`android-app/`](android-app/README.md), independiente de la laptop. Incluye chat, botón para hablar y escucha opcional de «Jarvis» con notificación visible; esta última puede ser interrumpida por Android y el reconocimiento puede enviar audio al proveedor del teléfono. La app permite su propia clave NVIDIA (predeterminada) o Gemini, que se introduce en sus ajustes y se guarda cifrada; no recibe automáticamente la configuración o memoria de escritorio. Por ahora solo incluye acciones locales limitadas, no todas las funciones de escritorio. Consulta sus [limitaciones, privacidad y compilación](android-app/README.md).

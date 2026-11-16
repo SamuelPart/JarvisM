@@ -29,6 +29,7 @@ import scheduled_emails
 import weather
 import android_phone
 import hardware_diagnostics
+import documents
 
 
 class SystemController:
@@ -282,6 +283,17 @@ class SystemController:
     def web_search(self, query: str) -> dict:
         """Return untrusted search snippets for the model to summarize with citations."""
         return search(query)
+
+    def create_document(self, format: str, path: str, body: str = '', rows_json: str = '',
+                        header: bool = False, title: str = '', overwrite: bool = False) -> dict:
+        """Create a txt, md, csv, json, rtf, pdf, docx, xlsx or pptx file locally."""
+        rows = rows_json if rows_json else None
+        title = title or None
+        try:
+            return documents.create_document(format, path, body=body, rows_json=rows,
+                                             header=bool(header), title=title, overwrite=bool(overwrite))
+        except documents.DocumentError as exc:
+            return {'error': str(exc)}
 
     def diagnose_microphone(self) -> dict:
         """Local, read-only microphone diagnostic; nothing is transmitted."""

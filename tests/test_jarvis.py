@@ -2425,3 +2425,57 @@ def test_merge_facts_keeps_user_text_with_priority(tmp_path):
     stored = mem.get_preferences()
     assert 'Mi perfil importante' in stored
     assert len(stored) <= 2000
+
+
+def test_create_txt_md_csv_json_rtf(tmp_path):
+    from documents import create_document
+    txt = create_document('txt', str(tmp_path / 'nota.txt'), body='línea uno\nlínea dos\n', overwrite=True)
+    assert txt['created'].endswith('nota.txt')
+    assert (tmp_path / 'nota.txt').read_text(encoding='utf-8') == 'línea uno\nlínea dos\n'
+    md = create_document('md', str(tmp_path / 'nota.md'), body='## Sección\n- punto', overwrite=True)
+    assert '## Sección' in (tmp_path / 'nota.md').read_text(encoding='utf-8')
+    csv_res = create_document('csv', str(tmp_path / 'tabla.csv'), rows_json='[["Nombre","Edad"],["Ana",30]]')
+    assert csv_res['format'] == 'csv' and (tmp_path / 'tabla.csv').read_text(encoding='utf-8-sig').startswith('Nombre,Edad')
+    res_json = create_document('json', str(tmp_path / 'data.json'), body='{"clave": "valor"}')
+    assert '"clave"' in (tmp_path / 'data.json').read_text(encoding='utf-8')
+    rtf = create_document('rtf', str(tmp_path / 'nota.rtf'), body='Ático… perforado')
+    assert (tmp_path / 'nota.rtf').read_text(encoding='utf-8').startswith('{\\rtf1')
+
+
+def test_create_pdf_docx_xlsx_pptx(tmp_path):
+    from documents import create_document
+    pdf = create_document('pdf', str(tmp_path / 'informe.pdf'), title='Informe',
+                          body='## Resumen\n- punto uno\n\nTexto final')
+    assert (tmp_path / 'informe.pdf').read_bytes().startswith(b'%PDF')
+    docx = create_document('docx', str(tmp_path / 'carta.docx'), title='Carta',
+                           body='## Asunto\n- punto\n\npárrafo')
+    assert open(tmp_path / 'carta.docx', 'rb').read(2) == b'PK'
+    xlsx = create_document('xlsx', str(tmp_path / 'datos.xlsx'),
+                           rows_json='[["Nombre","Edad"],["Ana",30],["Luis",25]]', header=True)
+    from openpyxl import load_workbook
+    wb = load_workbook(tmp_path / 'datos.xlsx')
+    ws = wb.active
+    assert ws['A1'].value == 'Nombre' and ws['A2'].value == 'Ana' and ws['B3'].value == 25
+    pptx = create_document('pptx', str(tmp_path / 'charla.pptx'), title='Charla',
+                           body='## Tema\n- punto uno\n- punto dos')
+    assert open(tmp_path / 'charla.pptx', 'rb').read(2) == b'PK'
+
+
+def test_create_document_refuses_overwrite_and_relative_path(tmp_path, monkeypatch):
+    import documents
+    target = tmp_path / 'ya-existe.txt'
+    target.write_text('original')
+    out = documents.create_document('txt', str(target), body='otra cosa')
+    assert 'ya existe' in out['error']
+    assert target.read_text() == 'original'
+    home = tmp_path / 'home'
+    home.mkdir()
+    monkeypatch.setenv('HOME', str(home))
+    rel = documents.create_document('txt', 'prueba-relativa.txt', body='hola')
+    assert rel['created'] == str(home / 'Documentos' / 'prueba-relativa.txt')
+
+
+def test_create_document_bad_format_and_bad_rows(tmp_path):
+    from documents import create_document
+    assert 'no admitido' in create_document('exe', str(tmp_path / 'x.exe'))['error']
+    assert 'JSON' in create_document('csv', str(tmp_path / 'x.csv'), rows_json='{no es json')['error']
