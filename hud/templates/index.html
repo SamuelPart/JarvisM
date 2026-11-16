@@ -3,440 +3,313 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>J.A.R.V.I.S. — SYSTEM HUD</title>
+<title>J.A.R.V.I.S.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --cyan:#00f0ff; --cyan-dim:#7ff4ff; --blue:#2f7bff; --blue-deep:#0057ff;
-  --ok:#39ffd0; --warn:#ffc04d; --panel:rgba(6,20,28,.72); --border:rgba(0,240,255,.32);
-  --glow:0 0 22px rgba(0,240,255,.28), inset 0 0 26px rgba(0,240,255,.07);
+  --cyan:#00f0ff; --cyan-soft:#8ff4ff; --cyan-dim:#1e4a5c; --text-dim:#3a6a7c;
+  --ok:#46ffb1; --warn:#ffc84d; --bad:#ff5c5c; --panel:rgba(4,10,14,.78);
 }
 *{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
 body{
   background:#000; color:var(--cyan); font-family:'Orbitron','Consolas',monospace;
-  min-height:100vh; overflow-x:hidden;
+  overflow:hidden; height:100vh; position:relative;
   background-image:
-    radial-gradient(ellipse 70% 55% at 50% 38%, rgba(0,90,140,.28), transparent 65%),
-    radial-gradient(ellipse 45% 40% at 12% 90%, rgba(0,60,160,.16), transparent 60%),
-    radial-gradient(ellipse 45% 40% at 88% 12%, rgba(0,60,160,.14), transparent 60%);
+    linear-gradient(rgba(0,240,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,240,255,.045) 1px, transparent 1px),
+    linear-gradient(rgba(0,240,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,240,255,.018) 1px, transparent 1px),
+    radial-gradient(ellipse 60% 55% at 50% 46%, rgba(0,70,110,.32), transparent 68%),
+    radial-gradient(ellipse 130% 110% at 50% 50%, transparent 46%, rgba(0,0,0,.82) 100%);
+  background-size:140px 140px, 140px 140px, 28px 28px, 28px 28px, 100% 100%, 100% 100%;
 }
-.scanline{position:fixed; inset:0; pointer-events:none; z-index:40;
-  background:repeating-linear-gradient(to bottom, transparent 0 3px, rgba(0,240,255,.028) 3px 4px);
-  mix-blend-mode:screen;}
-/* ---------- top bar ---------- */
-.topbar{display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:10px 18px; border-bottom:1px solid var(--border);
-  background:linear-gradient(180deg, rgba(0,240,255,.09), rgba(0,0,0,.35));
+.scanline{position:fixed; inset:0; pointer-events:none; z-index:30;
+  background:repeating-linear-gradient(to bottom, transparent 0 3px, rgba(0,240,255,.025) 3px 4px);}
+.vignette{position:fixed; inset:0; pointer-events:none; z-index:29;
+  background:radial-gradient(ellipse 75% 75% at 50% 48%, transparent 55%, rgba(0,0,0,.78) 100%);}
+
+/* ── top-right: reloj + estado + expression box ───────────────────── */
+.topright{position:fixed; top:14px; right:26px; z-index:20; text-align:right; user-select:none;}
+.clock{font-size:21px; font-weight:500; letter-spacing:.32em; color:#c9f6ff;
+  text-shadow:0 0 14px rgba(0,240,255,.6); font-variant-numeric:tabular-nums;}
+.sysline{margin-top:5px; font-size:8.5px; letter-spacing:.34em; color:#b9f2ff; opacity:.9;}
+.stateline{margin-top:2px; font-size:13px; letter-spacing:.5em; text-indent:.5em; color:#d8fbff;
   text-shadow:0 0 12px rgba(0,240,255,.7);}
-.topbar .ver{font-size:11px; letter-spacing:.28em; color:var(--cyan-dim);}
-.topbar .ver b{color:#eafcff;}
-.status{display:flex; align-items:center; gap:10px; font-size:12px; letter-spacing:.45em; color:#eafcff;}
-.dot{width:11px; height:11px; border-radius:50%; background:var(--ok); box-shadow:0 0 12px var(--ok); animation:blink 1.7s ease-in-out infinite;}
-@keyframes blink{0%,100%{opacity:1; transform:scale(1);}50%{opacity:.45; transform:scale(.82);}}
-.clock{font-size:11px; text-align:right; color:var(--cyan-dim); letter-spacing:.12em;}
-.clock b{color:#eafcff; font-size:13px;}
-/* ---------- layout ---------- */
-.grid{display:grid; grid-template-columns:350px minmax(0,1fr) 350px; gap:14px; padding:14px; height:calc(100vh - 47px);}
-.col{display:flex; flex-direction:column; gap:12px; min-height:0;}
-.panel{position:relative; background:linear-gradient(165deg, rgba(0,240,255,.055), rgba(0,15,30,.55));
-  border:1px solid var(--border); border-radius:8px; padding:12px 14px; box-shadow:var(--glow);
-  backdrop-filter:blur(3px);}
-.panel::before{content:''; position:absolute; top:-1px; left:-1px; width:18px; height:18px;
-  border-top:2px solid var(--cyan); border-left:2px solid var(--cyan); border-top-left-radius:8px;}
-.panel::after{content:''; position:absolute; bottom:-1px; right:-1px; width:18px; height:18px;
-  border-bottom:2px solid var(--cyan); border-right:2px solid var(--cyan); border-bottom-right-radius:8px;}
-.panel h2{font-size:10px; font-weight:700; letter-spacing:.32em; color:var(--cyan-dim);
-  border-bottom:1px solid rgba(0,240,255,.18); padding-bottom:7px; margin-bottom:9px;
-  display:flex; justify-content:space-between; align-items:baseline;}
-.panel h2 span{font-size:8px; color:#3fd4e6; opacity:.75; letter-spacing:.18em;}
-/* ---------- bars ---------- */
-.bar-row{margin:8px 0;}
-.bar-label{display:flex; justify-content:space-between; font-size:9px; letter-spacing:.18em; color:#9ff1ff; margin-bottom:4px;}
-.bar-label b{color:#eafcff;}
-.bar{height:9px; border:1px solid rgba(0,240,255,.25); border-radius:4px; background:rgba(0,240,255,.06); overflow:hidden;}
-.bar>i{display:block; height:100%; width:0%; border-radius:3px;
-  background:linear-gradient(90deg, var(--blue-deep), var(--cyan));
-  box-shadow:0 0 12px rgba(0,240,255,.75); transition:width .9s cubic-bezier(.25,.9,.3,1);}
-.bar.small{height:7px;}
-.big-num{font-size:26px; font-weight:900; color:#eafcff; text-shadow:0 0 18px rgba(0,240,255,.8);}
-.sub{font-size:8px; letter-spacing:.2em; color:#5fd8e8; opacity:.8;}
-/* ---------- gauges ---------- */
-.gauge-wrap{display:flex; align-items:center; gap:14px;}
-svg text{fill:#eafcff; font-family:'Orbitron',monospace;}
-.gauge-track{stroke:rgba(0,240,255,.12);}
-.gauge-fill{stroke:var(--cyan); filter:drop-shadow(0 0 6px rgba(0,240,255,.9)); transition:stroke-dashoffset 1s ease;}
-/* ---------- center column ---------- */
-.title-block{text-align:center; padding:6px 0 2px;}
-.title-block h1{font-size:clamp(44px,5.4vw,74px); font-weight:900; letter-spacing:.34em; text-indent:.34em; color:#f2feff;
-  text-shadow:0 0 16px rgba(0,240,255,.9), 0 0 60px rgba(0,150,255,.55), 0 0 120px rgba(0,120,255,.4);}
-.title-block p{font-size:8.5px; letter-spacing:.42em; color:#7ff4ff; opacity:.85; margin-top:6px;}
-.core-row{flex:1; display:grid; grid-template-columns:120px minmax(0,1fr) 120px; align-items:center; gap:6px; min-height:0;}
-.core-side{display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center;}
-.core-side .lbl{font-size:9px; letter-spacing:.3em; color:var(--cyan-dim);}
-.core-side .val{font-size:22px; font-weight:700; color:#eafcff; text-shadow:0 0 14px rgba(0,240,255,.8);}
-.core-side .sub{font-size:8px; color:#5fd8e8;}
-.reactor{display:flex; justify-content:center; align-items:center;}
-#reactorWrap{will-change:filter;}
-@keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
-@keyframes spin-rev{from{transform:rotate(0);}to{transform:rotate(-360deg);}}
-.ring-a{animation:spin 14s linear infinite; transform-origin:center;}
-.ring-b{animation:spin-rev 20s linear infinite; transform-origin:center;}
-.ring-c{animation:spin 9s linear infinite; transform-origin:center;}
-.ring-d{animation:spin-rev 26s linear infinite; transform-origin:center;}
-@keyframes corePulse{0%,100%{opacity:.82;}50%{opacity:1;}}
-.core-glow{animation:corePulse 2.6s ease-in-out infinite;}
-.ops{margin-top:4px; border:1px solid rgba(57,255,208,.55); border-radius:6px; padding:13px 10px; text-align:center;
-  color:var(--ok); letter-spacing:.4em; text-indent:.4em; font-size:13px; font-weight:700;
-  box-shadow:0 0 28px rgba(57,255,208,.3), inset 0 0 22px rgba(57,255,208,.12); background:rgba(0,60,45,.18);}
-.ops.warn{color:var(--warn); border-color:rgba(255,192,77,.6); box-shadow:0 0 28px rgba(255,192,77,.32), inset 0 0 22px rgba(255,192,77,.14); background:rgba(70,45,0,.2);}
-.icon-row{display:flex; justify-content:space-around; margin-top:10px; opacity:.95;}
-.icon-row .cell{display:flex; flex-direction:column; align-items:center; gap:4px; color:#8ff4ff;}
-.icon-row small{font-size:7px; letter-spacing:.24em;}
-/* ---------- right column ---------- */
-.module-row{margin:9px 0;}
-.module-row .bar-label{letter-spacing:.22em;}
-.arch svg{max-height:150px; width:100%;}
-.radar{position:relative; width:150px; height:150px; margin:4px auto 2px; border-radius:50%;
-  border:1px solid rgba(0,240,255,.4);
-  background:radial-gradient(circle, rgba(0,240,255,.06) 0 24%, transparent 25% 49%, rgba(0,240,255,.09) 50% 50.5%, transparent 50.5% 74%, rgba(0,240,255,.09) 75% 75.5%, transparent 76%);
-  box-shadow:inset 0 0 30px rgba(0,240,255,.18), 0 0 24px rgba(0,240,255,.18);}
-.radar::before,.radar::after{content:''; position:absolute; background:rgba(0,240,255,.28);}
-.radar::before{left:50%; top:0; bottom:0; width:1px;}
-.radar::after{top:50%; left:0; right:0; height:1px;}
-.sweep{position:absolute; inset:0; border-radius:50%;
-  background:conic-gradient(from 0deg, rgba(0,240,255,.55), rgba(0,240,255,.12) 22%, transparent 30%);
-  animation:sweep 3.4s linear infinite;}
-@keyframes sweep{from{transform:rotate(0);}to{transform:rotate(360deg);}}
-.blip{position:absolute; width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:blip 3.4s ease-out infinite;}
-@keyframes blip{0%,12%{opacity:0; transform:scale(.4);}25%{opacity:1; transform:scale(1.25);}55%{opacity:.15; transform:scale(.9);}100%{opacity:0;}}
-.arch-metrics{display:grid; grid-template-columns:1fr 1fr; gap:4px 10px; margin-top:8px; font-size:8.5px; letter-spacing:.08em; color:#9ff1ff;}
-.arch-metrics b{color:#eafcff; display:block; font-size:9.5px;}
-.env-line{font-size:9px; letter-spacing:.18em; color:#9ff1ff; display:flex; justify-content:space-between; margin:6px 0;}
-.env-line b{color:#eafcff;}
-@media (max-width:1100px){ .grid{grid-template-columns:1fr; height:auto;} body{overflow:auto;} }
+.stateline.warn{color:var(--warn); text-shadow:0 0 14px rgba(255,200,77,.7);}
+.stateline.bad{color:var(--bad); text-shadow:0 0 14px rgba(255,92,92,.7);}
+.expression{margin:16px 0 0 auto; text-align:left; width:158px;}
+.expression .lbl{font-size:7px; letter-spacing:.34em; color:var(--text-dim); margin-bottom:2px; display:flex; justify-content:space-between;}
+.expr-box{border:1px solid rgba(140,240,255,.28); background:rgba(3,12,16,.82); box-shadow:0 0 16px rgba(0,240,255,.06), inset 0 0 14px rgba(0,240,255,.05);}
+.expr-row{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:6px 9px; font-size:9px; letter-spacing:.3em; color:#9be9f5; border-bottom:1px solid rgba(140,240,255,.12); cursor:pointer; transition:all .25s;}
+.expr-row:last-child{border-bottom:none;}
+.expr-row svg{flex:0 0 auto;}
+.expr-row:hover{color:#eafcff; background:rgba(0,240,255,.07);}
+.expr-row.active{color:#eafcff; background:rgba(0,240,255,.12); box-shadow:inset 3px 0 0 var(--cyan); text-shadow:0 0 10px rgba(0,240,255,.8);}
+
+/* ── top-left: diagnósticos reales, discretos ─────────────────────── */
+.diag{position:fixed; top:14px; left:26px; z-index:20; user-select:none; width:215px;}
+.diag .lbl{font-size:7px; letter-spacing:.34em; color:var(--text-dim); border-bottom:1px solid rgba(140,240,255,.14); padding-bottom:4px; margin-bottom:7px; display:flex; justify-content:space-between;}
+.diag-row{display:flex; justify-content:space-between; align-items:baseline; font-size:8px; letter-spacing:.14em; padding:2.6px 0; color:#6fb6c9;}
+.diag-row b{color:#d5f9ff; font-weight:500; font-variant-numeric:tabular-nums; text-shadow:0 0 8px rgba(0,240,255,.45);}
+.diag-row b.ok{color:var(--ok);} .diag-row b.warn{color:var(--warn);} .diag-row b.bad{color:var(--bad);}
+
+/* ── núcleo central ───────────────────────────────────────────────── */
+.core-stage{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10;}
+#reactorWrap{will-change:filter; transition:filter .6s;}
+.ring-a{animation:spin 16s linear infinite; transform-origin:150px 150px;}
+.ring-b{animation:spin-rev 30s linear infinite; transform-origin:150px 150px;}
+.ring-c{animation:spin-rev 42s linear infinite; transform-origin:150px 150px;}
+.ring-d{animation:spin 22s linear infinite; transform-origin:150px 150px;}
+.ring-e{animation:spin 7.5s linear infinite; transform-origin:150px 150px;}
+@keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+@keyframes spin-rev{from{transform:rotate(0deg);}to{transform:rotate(-360deg);}}
+@keyframes corePulse{0%,100%{opacity:.75;}50%{opacity:1;}}
+.core-pulse{animation:corePulse 3.1s ease-in-out infinite;}
+@keyframes particleDrift{0%,100%{opacity:.15; transform:translate(0,0) scale(.8);}50%{opacity:.9; transform:translate(var(--dx),var(--dy)) scale(1.15);}}
+.particle{animation:particleDrift var(--dur) ease-in-out infinite; animation-delay:var(--delay);}
+#jarvisText{fill:#d9fbff; letter-spacing:.42em; font-weight:700; font-size:14.5px;
+  text-shadow:0 0 18px rgba(0,240,255,.95);}
+
+/* ── esquinas inferiores ──────────────────────────────────────────── */
+.corner{position:fixed; bottom:16px; z-index:20; font-size:8px; letter-spacing:.3em; color:#2c5a6c; user-select:none;}
+.corner b{color:#7fd8e8; font-weight:500;}
+.corner .sep{margin:0 10px; color:#173845;}
+.bottomleft{left:26px;} .bottomright{right:26px; text-align:right;}
+
+/* ── foco (Modo F.O.C.U.S.) ───────────────────────────────────────── */
+body.focus .diag, body.focus .corner, body.focus .topright .expression{opacity:.07; filter:blur(.4px); transition:opacity .5s;}
+body.focus .topright .clock, body.focus .topright .sysline, body.focus .topright .stateline{opacity:.32; transition:opacity .5s;}
+
+@media (max-width: 900px){
+  .diag{display:none;} .corner{letter-spacing:.18em;}
+}
+@media (max-width: 640px){
+  .expression{display:none;} .corner{display:none;}
+  .clock{font-size:16px;}
+}
 </style>
 </head>
 <body>
-<header class="topbar">
-  <div class="ver"><b>J.A.R.V.I.S.</b> · SYSTEM VERSION 10.0</div>
-  <div class="status"><span class="dot"></span>ONLINE</div>
-  <div class="clock"><span id="dateLine">—</span><br><b id="timeLine">--:--:--</b></div>
-</header>
-
-<main class="grid">
-  <!-- ══════════ COLUMNA IZQUIERDA ══════════ -->
-  <section class="col">
-    <div class="panel">
-      <h2>SYSTEM DIAGNOSTICS <span>HEALTH MONITOR</span></h2>
-      <div class="gauge-wrap">
-        <svg width="104" height="104" viewBox="0 0 104 104" role="img" aria-label="Salud general del sistema">
-          <circle class="gauge-track" cx="52" cy="52" r="44" stroke-width="7" fill="none"/>
-          <circle id="healthGauge" class="gauge-fill" cx="52" cy="52" r="44" stroke-width="7" fill="none"
-                  stroke-dasharray="276.5" stroke-dashoffset="276.5" stroke-linecap="round" transform="rotate(-90 52 52)"/>
-          <text x="52" y="50" text-anchor="middle" font-size="17" font-weight="700" id="healthText">—</text>
-          <text x="52" y="66" text-anchor="middle" font-size="6" fill="#5fd8e8" letter-spacing="2">HEALTH</text>
-        </svg>
-        <div>
-          <div class="sub">ESTADO GENERAL</div>
-          <div class="big-num"><span id="healthNum">—</span><span style="font-size:14px; color:#7ff4ff">%</span></div>
-          <div class="sub" id="healthState">CALCULANDO…</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>CPU USAGE <span id="cpuTotal">0%</span></h2>
-      <div id="cpuCores"></div>
-    </div>
-
-    <div class="panel">
-      <h2>MEMORY USAGE <span id="ramPercent">—</span></h2>
-      <div class="bar-row">
-        <div class="bar-label"><span>RAM</span><b><span id="ramUsed">0</span> / <span id="ramTotal">0</span> GB</b></div>
-        <div class="bar"><i id="ramBar"></i></div>
-      </div>
-      <div class="bar-row">
-        <div class="bar-label"><span>SWAP</span><b><span id="swapPercent">0</span>%</b></div>
-        <div class="bar small"><i id="swapBar"></i></div>
-      </div>
-      <div class="bar-row">
-        <div class="bar-label"><span>DISCO LIBRE</span><b><span id="diskFree">—</span> GB</b></div>
-        <div class="bar small"><i id="diskBar"></i></div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>NETWORK STATUS <span>REAL TIME</span></h2>
-      <div style="display:flex; gap:16px;">
-        <div><div class="sub">DOWNLINK</div><div class="big-num"><span id="downMbps">0.0</span><span style="font-size:11px; color:#7ff4ff"> Mb/s</span></div></div>
-        <div><div class="sub">UPLINK</div><div class="big-num"><span id="upMbps">0.0</span><span style="font-size:11px; color:#7ff4ff"> Mb/s</span></div></div>
-      </div>
-      <canvas id="netWave" width="280" height="52" style="width:100%; margin-top:8px; border:1px solid rgba(0,240,255,.18); border-radius:6px; background:rgba(0,20,35,.35);"></canvas>
-    </div>
-
-    <div class="panel">
-      <h2>ENVIRONMENT <span>SENSORS</span></h2>
-      <div class="env-line"><span>CPU TEMP</span><b id="cpuTemp">N/D</b></div>
-      <div class="env-line"><span>CPU FREQ</span><b id="cpuFreq">—</b></div>
-      <div class="env-line"><span>CPU MODEL</span><b id="cpuModel" style="max-width:180px; text-align:right;">—</b></div>
-    </div>
-  </section>
-
-  <!-- ══════════ COLUMNA CENTRAL ══════════ -->
-  <section class="col" style="align-items:stretch;">
-    <div class="title-block">
-      <h1>JARVIS</h1>
-      <p>JUST A RATHER VERY INTELLIGENT SYSTEM</p>
-    </div>
-
-    <div class="core-row">
-      <div class="core-side">
-        <div class="lbl">POWER<br>LEVEL</div>
-        <svg width="86" height="86" viewBox="0 0 86 86" role="img" aria-label="Nivel de batería">
-          <circle class="gauge-track" cx="43" cy="43" r="35" stroke-width="6" fill="none"/>
-          <circle id="batteryGauge" class="gauge-fill" cx="43" cy="43" r="35" stroke-width="6" fill="none"
-                  stroke-dasharray="219.9" stroke-dashoffset="219.9" stroke-linecap="round" transform="rotate(-90 43 43)"/>
-          <text id="batteryText" x="43" y="47" text-anchor="middle" font-size="14" font-weight="700">—</text>
-        </svg>
-        <div class="sub" id="batteryState">ANALIZANDO…</div>
-      </div>
-
-      <div class="reactor">
-        <div id="reactorWrap">
-          <svg id="reactorSvg" width="min(300px, 34vw)" height="min(300px, 34vw)" viewBox="0 0 300 300" role="img" aria-label="Núcleo ARC">
-            <defs>
-              <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#f4feff"/>
-                <stop offset="28%" stop-color="#8ff4ff"/>
-                <stop offset="62%" stop-color="#00c8e8" stop-opacity=".85"/>
-                <stop offset="100%" stop-color="#002a44" stop-opacity="0"/>
-              </radialGradient>
-              <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
-                <feGaussianBlur stdDeviation="6" result="b"/>
-                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
-            </defs>
-            <circle class="ring-d" cx="150" cy="150" r="132" fill="none" stroke="rgba(0,240,255,.28)" stroke-width="3" stroke-dasharray="10 14"/>
-            <circle class="ring-b" cx="150" cy="150" r="112" fill="none" stroke="#00f0ff" stroke-width="2.4" stroke-opacity=".8"
-                    stroke-dasharray="150 46 8 46" filter="url(#softGlow)"/>
-            <g class="ring-a">
-              <circle cx="150" cy="150" r="88" fill="none" stroke="rgba(0,240,255,.35)" stroke-width="6" stroke-dasharray="40 22"/>
-              <circle cx="150" cy="62" r="5" fill="#00f0ff" filter="url(#softGlow)"/>
-            </g>
-            <circle class="ring-c" cx="150" cy="150" r="64" fill="none" stroke="#4dd8ff" stroke-width="8" stroke-opacity=".9"
-                    stroke-dasharray="34 12" filter="url(#softGlow)"/>
-            <circle cx="150" cy="150" r="46" fill="url(#coreGrad)" class="core-glow"/>
-            <circle cx="150" cy="150" r="46" fill="none" stroke="rgba(240,254,255,.85)" stroke-width="1.4"/>
-            <g stroke="rgba(0,240,255,.6)" stroke-width="1">
-              <line x1="150" y1="96" x2="150" y2="118"/><line x1="150" y1="182" x2="150" y2="204"/>
-              <line x1="96" y1="150" x2="118" y2="150"/><line x1="182" y1="150" x2="204" y2="150"/>
-            </g>
-          </svg>
-        </div>
-      </div>
-
-      <div class="core-side">
-        <div class="lbl">SYSTEM<br>UPTIME</div>
-        <div class="val" id="uptimeVal" style="font-size:17px;">—</div>
-        <div class="sub">DÍAS · HH:MM:SS</div>
-        <div class="lbl" style="margin-top:10px;">PROCESSES</div>
-        <div class="val" id="procVal">—</div>
-        <div class="sub">ACTIVOS</div>
-      </div>
-    </div>
-
-    <div class="ops" id="opsBox">ALL SYSTEMS OPERATIONAL</div>
-    <div class="icon-row">
-      <div class="cell"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg><small>CORE</small></div>
-      <div class="cell"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11v2M12 11v2M17 11v2"/></svg><small>MEMORY</small></div>
-      <div class="cell"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="#00f0ff"/></svg><small>NETWORK</small></div>
-      <div class="cell"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5L13 2Z"/></svg><small>POWER</small></div>
-      <div class="cell"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7l8-4Z"/></svg><small>SECURE</small></div>
-      <div class="cell"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3"/></svg><small>AUDIO</small></div>
-    </div>
-  </section>
-
-  <!-- ══════════ COLUMNA DERECHA ══════════ -->
-  <section class="col">
-    <div class="panel">
-      <h2>ACTIVE MODULES <span>ASSISTANT SYSTEMS</span></h2>
-      <div id="moduleList"></div>
-    </div>
-
-    <div class="panel arch">
-      <h2>SYSTEM ARCHITECTURE <span>SUIT DIAGNOSTICS</span></h2>
-      <svg viewBox="0 0 200 150" role="img" aria-label="Silueta holográfica con métricas de hardware">
-        <defs>
-          <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#00f0ff" stop-opacity=".85"/>
-            <stop offset="1" stop-color="#0057ff" stop-opacity=".25"/>
-          </linearGradient>
-        </defs>
-        <g stroke="#00f0ff" stroke-opacity=".9" stroke-width="1.2" stroke-dasharray="4 3" fill="url(#bodyGrad)" fill-opacity=".12">
-          <circle cx="100" cy="22" r="14"/>
-          <path d="M100 36 C 72 40, 66 62, 70 88 L 76 128 L 92 126 L 96 96 L 104 96 L 108 126 L 124 128 L 130 88 C 134 62, 128 40, 100 36 Z"/>
-          <path d="M70 52 C 52 58, 46 78, 48 96 M130 52 C 148 58, 154 78, 152 96" fill="none"/>
-        </g>
-        <circle cx="100" cy="60" r="8" fill="none" stroke="#8ff4ff" stroke-width="1"/>
-        <circle cx="100" cy="60" r="2.4" fill="#eafcff"/>
-        <text x="100" y="146" text-anchor="middle" font-size="7" fill="#5fd8e8" letter-spacing="3">UNIDAD CENTRAL</text>
-      </svg>
-      <div class="arch-metrics">
-        <div>CPU CORES<b id="archCores">—</b></div>
-        <div>CPU FREQ<b id="archFreq">—</b></div>
-        <div>RAM TOTAL<b id="archRam">—</b></div>
-        <div>DISCO LIBRE<b id="archDisk">—</b></div>
-      </div>
-    </div>
-
-    <div class="panel" style="flex:1; display:flex; flex-direction:column; align-items:center;">
-      <h2 style="width:100%;">NETWORK RADAR <span>TARGETING SYSTEM</span></h2>
-      <div class="radar">
-        <div class="sweep"></div>
-        <span class="blip" style="top:34%; left:62%; animation-delay:.4s;"></span>
-        <span class="blip" style="top:58%; left:32%; animation-delay:1.7s;"></span>
-        <span class="blip" style="top:44%; left:47%; animation-delay:2.6s;"></span>
-      </div>
-      <div class="sub" style="margin-top:6px;">ESCANEO DE INTERFACES ACTIVAS</div>
-      <div class="env-line" style="width:100%; margin-top:8px;"><span>TRÁFICO NETO</span><b><span id="netTotal">0.0</span> Mb/s</b></div>
-    </div>
-  </section>
-</main>
-
+<div class="vignette"></div>
 <div class="scanline"></div>
+
+<!-- top-left · diagnósticos reales -->
+<div class="diag" aria-hidden="true">
+  <div class="lbl">SYSTEM // DIAGNOSTICS <span>LIVE</span></div>
+  <div class="diag-row"><span>HEALTH</span><b id="dHealth">—</b></div>
+  <div class="diag-row"><span>CPU</span><b id="dCpu">—</b></div>
+  <div class="diag-row"><span>MEMORY</span><b id="dRam">—</b></div>
+  <div class="diag-row"><span>SWAP</span><b id="dSwap">—</b></div>
+  <div class="diag-row"><span>DISK FREE</span><b id="dDisk">—</b></div>
+  <div class="diag-row"><span>NET ↓ / ↑</span><b id="dNet">—</b></div>
+  <div class="diag-row"><span>POWER</span><b id="dPower">—</b></div>
+  <div class="diag-row"><span>UPTIME</span><b id="dUptime">—</b></div>
+  <div class="diag-row"><span>PROCESSES</span><b id="dProc">—</b></div>
+</div>
+
+<!-- top-right · reloj, estado y expression (layout de la referencia) -->
+<div class="topright">
+  <div class="clock" id="timeLine">--:--:--</div>
+  <div class="sysline" id="sysLine">ALL SYSTEMS NORMAL</div>
+  <div class="stateline" id="stateLine">IDLE</div>
+  <div class="expression">
+    <div class="lbl">EXPRESSION<span>06</span></div>
+    <div class="expr-box">
+      <div class="expr-row active" id="exprJarvis" role="button" tabindex="0">
+        <span>J.A.R.V.I.S</span>
+        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M5 0 10 5 5 10 0 5Z" fill="#00f0ff"/></svg>
+      </div>
+      <div class="expr-row" id="exprFocus" role="button" tabindex="0"><span>F.O.C.U.S.</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- núcleo central -->
+<div class="core-stage">
+  <div id="reactorWrap">
+    <svg id="reactorSvg" width="min(64vmin, 540px)" height="min(64vmin, 540px)" viewBox="0 0 300 300" role="img" aria-label="Núcleo JARVIS">
+      <defs>
+        <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#123a4e"/>
+          <stop offset="34%" stop-color="#0a2433"/>
+          <stop offset="75%" stop-color="#041420"/>
+          <stop offset="100%" stop-color="#010a10"/>
+        </radialGradient>
+        <radialGradient id="innerPhoton" cx="50%" cy="42%" r="58%">
+          <stop offset="0%" stop-color="#8ff4ff" stop-opacity=".5"/>
+          <stop offset="55%" stop-color="#0af0ff" stop-opacity=".08"/>
+          <stop offset="100%" stop-color="transparent"/>
+        </radialGradient>
+        <linearGradient id="arcCyan" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#00f0ff"/>
+          <stop offset=".5" stop-color="#19c8e8"/>
+          <stop offset="1" stop-color="#00f0ff"/>
+        </linearGradient>
+        <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="3.4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glowBig" x="-120%" y="-120%" width="340%" height="340%">
+          <feGaussianBlur stdDeviation="9" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- anillo ambiental más exterior -->
+      <circle cx="150" cy="150" r="146" fill="none" stroke="rgba(0,240,255,.05)" stroke-width="20"/>
+      <circle cx="150" cy="150" r="144.5" fill="none" stroke="rgba(140,240,255,.16)" stroke-width="1" stroke-dasharray="1 9"/>
+
+      <!-- anillo de marcas (ticks) -->
+      <g class="ring-c" opacity=".85">
+        <circle cx="150" cy="150" r="128" fill="none" stroke="#35e0f4" stroke-width="7.5"
+                stroke-dasharray="1.6 3.75" stroke-linecap="butt"/>
+      </g>
+      <g class="ring-d" opacity=".4">
+        <circle cx="150" cy="150" r="112" fill="none" stroke="#00f0ff" stroke-width="1.6"
+                stroke-dasharray="58 12 240 12 70 12"/>
+      </g>
+
+      <!-- arcos gruesos translúcidos principales -->
+      <g class="ring-b" filter="url(#glow)">
+        <circle cx="150" cy="150" r="92" fill="none" stroke="url(#arcCyan)" stroke-opacity=".5"
+                stroke-width="26" stroke-linecap="round"
+                stroke-dasharray="104 40 152 34 88 46"/>
+      </g>
+      <!-- arco amarillo superior (firma de la referencia) -->
+      <g class="ring-a" filter="url(#glow)">
+        <circle cx="150" cy="150" r="105" fill="none" stroke="#ffd54a" stroke-opacity=".95"
+                stroke-width="3.2" stroke-linecap="round" stroke-dasharray="96 622"
+                transform="rotate(-97 150 150)"/>
+      </g>
+      <!-- segmentos azul eléctrico exteriores -->
+      <g class="ring-a" opacity=".8" filter="url(#glow)">
+        <circle cx="150" cy="150" r="135" fill="none" stroke="#2f7bff" stroke-width="2.6"
+                stroke-dasharray="30 120 12 200 46 90"/>
+        <circle cx="150" cy="150" r="76" fill="none" stroke="#5fd8ff" stroke-width="2"
+                stroke-dasharray="64 40 10 220 28 60"/>
+      </g>
+      <!-- arco de salud (real) -->
+      <circle id="healthArc" cx="150" cy="150" r="59" fill="none" stroke="#46ffb1" stroke-width="2.6"
+              stroke-linecap="round" stroke-dasharray="370.7" stroke-dashoffset="370.7"
+              opacity=".9" filter="url(#glow)" transform="rotate(-90 150 150)"
+              style="transition:stroke-dashoffset 1s ease, stroke .6s;"/>
+
+      <!-- anillo interno discontinuo -->
+      <g class="ring-e" opacity=".9">
+        <circle cx="150" cy="150" r="48.5" fill="none" stroke="#59e6f7" stroke-width="3"
+                stroke-dasharray="2.2 5.2"/>
+      </g>
+
+      <!-- núcleo -->
+      <circle cx="150" cy="150" r="45" fill="url(#coreGrad)"/>
+      <circle cx="150" cy="150" r="45" fill="url(#innerPhoton)" class="core-pulse"/>
+      <circle cx="150" cy="150" r="45" fill="none" stroke="rgba(150,250,255,.4)" stroke-width="1.1"/>
+      <circle cx="150" cy="150" r="33" fill="none" stroke="rgba(120,235,255,.14)" stroke-width="1"/>
+      <circle cx="150" cy="150" r="21" fill="none" stroke="rgba(120,235,255,.18)" stroke-width=".7" stroke-dasharray="2 4"/>
+
+      <!-- partículas (bokeh cian estilo referencia) -->
+      <g fill="#aefcff" filter="url(#glow)">
+        <circle class="particle" style="--dx:4px; --dy:-7px; --dur:4.6s; --delay:-.6s"  cx="128" cy="132" r="1.5" opacity=".8"/>
+        <circle class="particle" style="--dx:-6px; --dy:5px; --dur:5.4s; --delay:-2.1s" cx="166" cy="120" r="1.1" opacity=".7"/>
+        <circle class="particle" style="--dx:5px; --dy:6px; --dur:3.9s; --delay:-1.4s" cx="176" cy="158" r="1.8" opacity=".8"/>
+        <circle class="particle" style="--dx:-4px; --dy:-5px; --dur:6.1s; --delay:-3.2s" cx="132" cy="166" r="1.2" opacity=".6"/>
+        <circle class="particle" style="--dx:6px; --dy:-3px; --dur:4.1s; --delay:-.2s"  cx="152" cy="141" r=".9"  opacity=".9"/>
+        <circle class="particle" style="--dx:-5px; --dy:-6px; --dur:5.8s; --delay:-4.1s" cx="141" cy="122" r="1"   opacity=".55"/>
+      </g>
+
+      <!-- marca central -->
+      <text id="jarvisText" x="152" y="153.5" text-anchor="middle" dominant-baseline="middle">J.A.R.V.I.S</text>
+    </svg>
+  </div>
+</div>
+
+<!-- esquinas inferiores con datos reales -->
+<div class="corner bottomleft">STATE <b id="stateLabel">IDLE</b><span class="sep">·</span>PANELS <b id="panelLabel">ALL</b><span class="sep">·</span>CORE <b id="coreLabel">0%</b></div>
+<div class="corner bottomright">MODE <b id="modeLabel">AUTO</b><span class="sep">·</span>DATA FLOW <b id="dataFlowLabel">1.0Hz</b><span class="sep">·</span>TEMP <b id="tempLabel">N/D</b></div>
 
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-const CIRC_HEALTH = 276.5, CIRC_BATT = 219.9;
-let lastTraffic = 0;
+const HEALTH_CIRC = 370.7;
+let lastTickAt = 0, pollHz = 1.0;
 
-function setGauge(id, circ, pct){
-  const el = $(id);
-  const clamped = Math.max(0, Math.min(100, pct == null ? 0 : pct));
-  el.style.strokeDashoffset = String(circ * (1 - clamped / 100));
-}
-function setBar(id, pct){
-  const el = $(id); if (el) el.style.width = (Math.max(0, Math.min(100, pct || 0))).toFixed(1) + '%';
-}
-function renderCores(perCore){
-  const box = $('cpuCores');
-  if (box.childElementCount !== perCore.length){
-    box.innerHTML = perCore.map((_, i) => `
-      <div class="bar-row"><div class="bar-label"><span>CORE ${i + 1}</span><b class="corePct">0%</b></div>
-      <div class="bar small"><i class="coreBar"></i></div></div>`).join('');
-  }
-  const bars = box.querySelectorAll('.coreBar'), labels = box.querySelectorAll('.corePct');
-  perCore.forEach((value, i) => { bars[i].style.width = value + '%'; labels[i].textContent = value.toFixed(0) + '%'; });
-}
-function renderModules(modules){
-  const box = $('moduleList');
-  const names = Object.keys(modules);
-  if (box.childElementCount !== names.length){
-    box.innerHTML = names.map(name => `
-      <div class="module-row"><div class="bar-label"><span>${name}</span><b>0%</b></div>
-      <div class="bar"><i></i></div></div>`).join('');
-  }
-  box.querySelectorAll('.module-row').forEach((row, i) => {
-    const value = modules[names[i]];
-    row.querySelector('b').textContent = value + '%';
-    row.querySelector('i').style.width = value + '%';
-  });
-}
-function renderUptime(seconds){
-  const days = Math.floor(seconds / 86400), rem = seconds % 86400;
+function setText(id, value){ const el = $(id); if (el) el.textContent = value; }
+function padTime(d){ return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':'); }
+function fmtUptime(sec){
+  const days = Math.floor(sec / 86400), rem = sec % 86400;
   const h = String(Math.floor(rem / 3600)).padStart(2, '0');
   const m = String(Math.floor((rem % 3600) / 60)).padStart(2, '0');
   const s = String(rem % 60).padStart(2, '0');
-  $('uptimeVal').textContent = `${days}d ${h}:${m}:${s}`;
+  return `${days}D ${h}:${m}:${s}`;
 }
+function healthTone(h){ return h >= 70 ? '' : (h >= 40 ? 'warn' : 'bad'); }
+function cpuState(cpu){ return cpu < 25 ? 'IDLE' : (cpu < 60 ? 'ACTIVE' : 'BUSY'); }
+
 function render(d){
-  $('dateLine').textContent = new Date(d.server_time).toLocaleDateString('es', {day:'2-digit', month:'short', year:'numeric'}).toUpperCase();
-  $('timeLine').textContent = new Date(d.server_time).toLocaleTimeString('es', {hour12: false});
-  $('cpuTotal').textContent = d.cpu_percent.toFixed(0) + '%';
-  renderCores(d.per_core);
-  $('ramPercent').textContent = d.ram.percent.toFixed(0) + '%';
-  $('ramUsed').textContent = d.ram.used_gb; $('ramTotal').textContent = d.ram.total_gb;
-  $('swapPercent').textContent = d.swap.percent.toFixed(0);
-  $('diskFree').textContent = d.disk.free_gb;
-  setBar('ramBar', d.ram.percent); setBar('swapBar', d.swap.percent);
-  setBar('diskBar', 100 - d.disk.percent);
-  $('downMbps').textContent = d.net.down_mbps.toFixed(2); $('upMbps').textContent = d.net.up_mbps.toFixed(2);
-  $('netTotal').textContent = (d.net.down_mbps + d.net.up_mbps).toFixed(2);
-  lastTraffic = d.net.down_mbps + d.net.up_mbps;
-  // Batería
-  const batt = d.battery;
-  if (batt.percent == null){
-    $('batteryText').textContent = 'AC'; $('batteryState').textContent = 'SIN BATERÍA';
-    setGauge('batteryGauge', CIRC_BATT, 100);
-  } else {
-    $('batteryText').textContent = batt.percent + '%';
-    $('batteryState').textContent = batt.plugged ? 'ENCHUFADO' : 'EN BATERÍA';
-    setGauge('batteryGauge', CIRC_BATT, batt.percent);
-  }
-  // Salud general
-  setGauge('healthGauge', CIRC_HEALTH, d.health);
-  $('healthText').textContent = d.health.toFixed(0);
-  $('healthNum').textContent = d.health.toFixed(0);
-  $('healthState').textContent = d.health >= 70 ? 'SISTEMAS ESTABLES' : (d.health >= 40 ? 'CARGA ELEVADA' : 'CRÍTICO');
-  // Entorno
-  $('cpuTemp').textContent = d.environment.cpu_temp_c == null ? 'N/D' : d.environment.cpu_temp_c.toFixed(1) + ' °C';
-  $('cpuFreq').textContent = d.cpu_freq_mhz == null ? 'N/D' : Math.round(d.cpu_freq_mhz) + ' MHz';
-  $('cpuModel').textContent = d.cpu_model || 'N/D';
-  // Núcleo central
-  $('procVal').textContent = d.processes;
-  renderUptime(d.uptime_seconds);
-  const ops = $('opsBox');
-  ops.textContent = d.all_systems_operational ? 'ALL SYSTEMS OPERATIONAL' : 'CARGA ALTA — SUPERVISANDO';
-  ops.classList.toggle('warn', !d.all_systems_operational);
-  $('reactorWrap').style.filter = `drop-shadow(0 0 ${8 + d.cpu_percent * 0.45}px rgba(0,240,255,${0.4 + d.cpu_percent * 0.006}))`;
-  document.querySelector('.ring-a').style.animationDuration = (14 - d.cpu_percent * 0.09).toFixed(2) + 's';
-  document.querySelector('.ring-c').style.animationDuration = (9 - d.cpu_percent * 0.06).toFixed(2) + 's';
-  // Módulos y arquitectura
-  renderModules(d.modules);
-  $('archCores').textContent = d.cpu_count + ' LÓGICOS';
-  $('archFreq').textContent = d.cpu_freq_mhz == null ? 'N/D' : Math.round(d.cpu_freq_mhz) + ' MHz';
-  $('archRam').textContent = d.ram.total_gb + ' GB';
-  $('archDisk').textContent = d.disk.free_gb + ' GB';
+  const now = new Date();
+  setText('timeLine', padTime(now));
+  const health = d.health, cpu = d.cpu_percent;
+  const tone = healthTone(health);
+  // Estado superior derecho (estilo referencia)
+  setText('sysLine', health >= 70 ? 'ALL SYSTEMS NORMAL' : (health >= 40 ? 'SYSTEMS UNDER LOAD' : 'SYSTEM ALERT'));
+  const stateEl = $('stateLine');
+  stateEl.textContent = cpuState(cpu);
+  stateEl.className = 'stateline' + (tone ? ' ' + tone : '');
+  // Diagnósticos top-left
+  const setVal = (id, value, cls) => { const el = $(id); el.textContent = value; el.className = cls || ''; };
+  setVal('dHealth', health.toFixed(0) + '%', health >= 70 ? 'ok' : (health >= 40 ? 'warn' : 'bad'));
+  setVal('dCpu', cpu.toFixed(1) + '%');
+  setVal('dRam', `${d.ram.used_gb}/${d.ram.total_gb} GB · ${d.ram.percent.toFixed(0)}%`);
+  setVal('dSwap', d.swap.percent.toFixed(0) + '%');
+  setVal('dDisk', d.disk.free_gb + ' GB (' + (100 - d.disk.percent).toFixed(0) + '% LIBRE)');
+  setVal('dNet', `${d.net.down_mbps.toFixed(2)}↓ ${d.net.up_mbps.toFixed(2)}↑ Mb/s`);
+  setVal('dPower', d.battery.percent == null ? 'AC · EXTERNA' : `${d.battery.percent}%${d.battery.plugged ? ' · ENCHUFADO' : ' · BATERÍA'}`);
+  setVal('dUptime', fmtUptime(d.uptime_seconds));
+  setVal('dProc', d.processes);
+  // Esquinas inferiores
+  setText('stateLabel', cpuState(cpu));
+  setText('coreLabel', cpu.toFixed(0) + '%');
+  setText('modeLabel', health >= 40 ? 'AUTO' : 'ALERT');
+  setText('dataFlowLabel', pollHz.toFixed(1) + 'Hz');
+  setText('tempLabel', d.environment.cpu_temp_c == null ? 'N/D' : d.environment.cpu_temp_c.toFixed(1) + '°C');
+  // Arco de salud + reacción del núcleo a la carga
+  const arc = $('healthArc');
+  arc.style.strokeDashoffset = String(HEALTH_CIRC * (1 - Math.max(0, Math.min(100, health)) / 100));
+  arc.style.stroke = health >= 70 ? '#46ffb1' : (health >= 40 ? '#ffc84d' : '#ff5c5c');
+  $('reactorWrap').style.filter = `drop-shadow(0 0 ${10 + cpu * 0.42}px rgba(0,240,255,${0.42 + Math.min(0.4, cpu * 0.006)}))`;
+  const ringA = document.querySelector('.ring-a');
+  if (ringA) ringA.style.animationDuration = (16 - Math.min(10, cpu * 0.1)).toFixed(2) + 's';
 }
 function offline(){
-  document.querySelector('.status').innerHTML = '<span class="dot" style="background:#ff5c5c; box-shadow:0 0 12px #ff5c5c"></span>OFFLINE';
-  $('dateLine').textContent = 'SIN CONEXIÓN CON EL HUD';
+  setText('sysLine', 'LINK LOST');
+  const stateEl = $('stateLine'); stateEl.textContent = 'OFFLINE'; stateEl.className = 'stateline bad';
 }
 async function tick(){
+  const started = performance.now();
   try {
     const response = await fetch('/api/stats', {cache: 'no-store'});
     if (!response.ok) throw new Error('bad status');
-    render(await response.json());
+    const data = await response.json();
+    if (lastTickAt){ pollHz = 1000 / (started - lastTickAt); pollHz = Math.min(9.9, Math.max(0.1, pollHz)); }
+    lastTickAt = started;
+    render(data);
   } catch (error) { offline(); }
 }
-// Onda de red (canvas animado)
-const canvas = $('netWave'); const ctx = canvas.getContext('2d');
-let phase = 0;
-function drawWave(){
-  const width = canvas.width, height = canvas.height;
-  ctx.clearRect(0, 0, width, height);
-  const amplitude = Math.min(20, 3 + lastTraffic * 1.6);
-  const layers = [ ['rgba(0,240,255,.9)', 1.0, 0], ['rgba(47,123,255,.55)', 2.1, 1.8] ];
-  ctx.lineWidth = 1.6;
-  for (const [color, freqMul, phaseOff] of layers){
-    ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 6;
-    ctx.beginPath();
-    for (let x = 0; x <= width; x += 3){
-      const y = height / 2
-        + Math.sin((x / 26) * freqMul + phase + phaseOff) * amplitude * Math.sin(x / width * Math.PI)
-        + Math.sin((x / 9) + phase * 1.7 + phaseOff) * (amplitude / 3.2);
-      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-  phase += 0.055;
-  requestAnimationFrame(drawWave);
+// Módo F.O.C.U.S. (el núcleo sobrevive a todo lo demás)
+function setFocus(on){
+  document.body.classList.toggle('focus', on);
+  $('exprFocus').classList.toggle('active', on);
+  $('exprJarvis').classList.toggle('active', !on);
 }
-drawWave();
+$('exprFocus').addEventListener('click', () => setFocus(true));
+$('exprJarvis').addEventListener('click', () => setFocus(false));
+$('exprFocus').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); setFocus(true);} });
+$('exprJarvis').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); setFocus(false);} });
+
 setInterval(tick, 1000);
 tick();
 </script>

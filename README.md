@@ -276,7 +276,7 @@ El nombre por defecto es `prueba.` + la extensión; el contenido es un documento
 
 ## HUD futurista (panel local, estilo JARVIS)
 
-[`hud/app.py`](hud/app.py) es un panel de control estilo Iron Man que muestra **datos reales de tu equipo** en tiempo real (sin nube, sin telemetría): fondo negro, neón cyan, Orbitron, 3 columnas (diagnósticos, núcleo ARC + potencia/uptime, módulos/arquitectura/radar).
+[`hud/app.py`](hud/app.py) es un HUD estilo Iron Man (pantalla completa: retícula casi negra, núcleo ARC central brillante con anillos animados, «estado» y caja «EXPRESSION» como en la referencia de JARVIS) que muestra **datos reales de tu equipo** en tiempo real (sin nube, sin telemetría). La velocidad y el brillo del núcleo reaccionan a la carga de CPU, un arco fino muestra la salud general y el modo F.O.C.U.S. atenúa todo excepto el núcleo (clic en «F.O.C.U.S.»).
 
 ```bash
 pip install -r requirements.txt   # o: pip install flask psutil
@@ -285,7 +285,7 @@ python hud/app.py --host 0.0.0.0  # visible desde la LAN (sin autenticación: ú
 ```
 
 - La API local es `GET /api/stats` (JSON: CPU total y por núcleo, RAM + SWAP, disco, red up/down en Mb/s calculada por delta entre muestras, batería real, uptime, procesos, «salud» heurística, temperatura si el hardware expone sensores).
-- El frontend (`templates/index.html`) actualiza todo cada **1 s** con `fetch` + `setInterval`, sin recargar; la velocidad de la animación del núcleo reacciona a la carga de CPU.
+- El frontend (`templates/index.html`) actualiza todo cada **1 s** con `fetch` + `setInterval`, sin recargar; la velocidad de la animación del núcleo reacciona a la carga de CPU. Arriba a la izquierda verás diagnóstico compacto (salud, CPU, RAM, SWAP, disco libre, red ↓/↑, energía, uptime, procesos); las esquinas inferiores muestran `STATE`/`PANELS`/`CORE` y `MODE`/`DATA FLOW`/`TEMP`.
 - **Límites honestos:** en equipos sin batería (sobremesa) el panel muestra «AC / SIN BATERÍA»; sin sensores, «N/D» en temperatura; los Mb/s de red son el delta entre dos lecturas, no un contador acumulado; el número de barras de CPU es el de núcleos reales de tu máquina; «ACTIVE MODULES» indica disponibilidad de voz/visión/red/memoria local, no es una certificación oficial. Es un HUD decorativo con datos reales, no una herramienta de diagnóstico profesional.
 
 ## Arquitectura autónoma (paquete `agent/`)
