@@ -42,6 +42,7 @@ UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
 
 class VoiceSignals(QObject):
     activity = pyqtSignal(bool)
+    voice_level = pyqtSignal(object)
     briefing_ready = pyqtSignal(str)
     scheduled_email_result = pyqtSignal(object)
     weather_event = pyqtSignal(str, object)
@@ -61,6 +62,11 @@ class CoreAnimation(QWidget):
         self.mode = 'idle'
         self.variant = 0
         self.phase = 0.0
+        self.think_mix = 0.0
+        self.speak_mix = 0.0
+        self.approval_mix = 0.0
+        self.voice_level = None
+        self.smoothed_level = 0.0
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self.advance)
@@ -77,6 +83,9 @@ class CoreAnimation(QWidget):
         self.set_compact_display(self.compact_display)
         self.set_mode(self.mode)
 
+    def set_voice_level(self, level):
+        self.voice_level = max(0.0, min(1.0, float(level))) if isinstance(level, (int, float)) and math.isfinite(level) else None
+
     def set_weather_searching(self, searching):
         self.weather_searching = searching
         self.update()
@@ -90,6 +99,13 @@ class CoreAnimation(QWidget):
     def advance(self):
         speed = 0.09 if self.weather_searching else 0.075 if self.mode == 'speaking' else 0.045 if self.mode == 'thinking' else 0.025
         self.phase += speed * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
+        # Blend state changes instead of snapping between two unrelated shapes.
+        thinking = (self.weather_searching or self.mode == 'thinking') and self.mode != 'approval'
+        self.think_mix += ((1.0 if thinking else 0.0) - self.think_mix) * .14
+        self.speak_mix += ((1.0 if self.mode == 'speaking' and not thinking else 0.0) - self.speak_mix) * .14
+        self.approval_mix += ((1.0 if self.mode == 'approval' else 0.0) - self.approval_mix) * .14
+        target = self.voice_level if self.voice_level is not None else .35 + .2 * math.sin(self.phase * 2.1)
+        self.smoothed_level += (target - self.smoothed_level) * (.5 if target > self.smoothed_level else .3)
         self.update()
 
     def paintEvent(self, event):
@@ -98,7 +114,7 @@ class CoreAnimation(QWidget):
         painter.translate(self.width() / 2, self.height() / 2)
         scale = SCALES[self.preferences['size']] * (0.38 if self.compact_display else 1.0)
         painter.scale(scale, scale)
-        radius = 109.0
+        radius = 100.0
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
         if self.mode == 'approval':
@@ -120,12 +136,10 @@ class CoreAnimation(QWidget):
         reduced = self.preferences['animation'] == 'reducida'
         strength = .4 if reduced else 1.0
         variant = self.variant
-        if self.weather_searching or self.mode == 'thinking':
-            stretch = 1 + strength * (0.11 + variant * .025) * math.sin(self.phase * (.7 + variant * .22))
-        elif self.mode == 'speaking':
-            stretch = 1 + strength * .035 * math.sin(self.phase * (1.4 + variant * .25))
-        else:
-            stretch = 1
+        thinking = self.think_mix
+        speaking = self.speak_mix
+        stretch = 1 + strength * (thinking * (0.11 + variant * .025) * math.sin(self.phase * (.7 + variant * .22))
+                                  + speaking * .035 * self.smoothed_level * math.sin(self.phase * (1.4 + variant * .25)))
         for latitude in range(1, 41):
             theta = math.pi * latitude / 41
             sin_theta, cos_theta = math.sin(theta), math.cos(theta)
@@ -139,28 +153,32 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.weather_searching or self.mode == 'thinking':
-                    # Varied waves deform the same dotted sphere, not a separate icon.
-                    pulse += strength * (0.10 * math.sin(self.phase * (1.7 + variant * .3) + theta * (3 + variant) + angle * 2)
-                                         + .035 * math.sin(angle * (3 + variant) - self.phase * 2.3))
-                elif self.mode == 'speaking':
-                    # Animated speech state, not a measurement of audio amplitude.
-                    pulse += strength * (0.055 * math.sin(self.phase * (2.1 + variant * .4))
-                                         + 0.035 * math.sin(theta * (6 + variant) + self.phase * 3 + angle * (2 + variant)))
+                pulse += strength * thinking * (0.10 * math.sin(self.phase * (1.7 + variant * .3) + theta * (3 + variant) + angle * 2)
+                                               + .035 * math.sin(angle * (3 + variant) - self.phase * 2.3))
+                # Edge playback drives this from actual audio RMS; local speech
+                # falls back to a gentle procedural movement when unavailable.
+                pulse += strength * speaking * self.smoothed_level * (0.15 + .055 * math.sin(theta * (6 + variant) + self.phase * 3 + angle * (2 + variant)))
                 px, py = radius * x * pulse * stretch, -radius * screen_y * pulse / stretch
-                alpha = int(105 + 110 * (z + 1) / 2)
-                dot = 0.65 + 0.35 * (z + 1) / 2
+                # Narrow luminous currents sweep across the particle layers.
+                current = max(0.0, math.sin(angle * 2 + theta * 3 - self.phase * 2.6)) ** 5
+                alpha = min(255, int(95 + 100 * (z + 1) / 2 + thinking * current * 60
+                                     + speaking * self.smoothed_level * 35))
+                dot = 0.65 + 0.35 * (z + 1) / 2 + thinking * current * .35
                 points.append((z, px, py, dot, alpha))
 
-        state_palettes = {'approval': ((255, 140, 32), (255, 195, 100)),
-                          'thinking': PALETTES['violeta'], 'speaking': PALETTES['cian']}
-        dim_color, bright_color = (PALETTES['cian'] if self.weather_searching else state_palettes.get(self.mode, PALETTES[self.preferences['color']]))
+        # Smoothly interpolate the palette alongside the deformation.
+        def blend(a, b, amount):
+            return tuple(round(x + (y - x) * max(0.0, min(1.0, amount))) for x, y in zip(a, b))
+        dim_color, bright_color = PALETTES[self.preferences['color']]
+        for palette, amount in ((PALETTES['violeta'], thinking), (PALETTES['cian'], speaking),
+                                (((255, 140, 32), (255, 195, 100)), self.approval_mix)):
+            dim_color, bright_color = blend(dim_color, palette[0], amount), blend(bright_color, palette[1], amount)
         for _, x, y, dot, alpha in sorted(points):
             painter.setBrush(QColor(*dim_color, max(20, alpha // 5)))
             painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
             painter.setBrush(QColor(*bright_color, alpha))
             painter.drawEllipse(QPointF(x, y), dot, dot)
-        if self.weather_searching or self.mode == 'thinking':
+        if thinking > .02:
             # Moving sparks and brief highlights emerge from the same dots.
             for i in range(10):
                 angle = i * math.tau / 10 + self.phase * .38
@@ -171,7 +189,7 @@ class CoreAnimation(QWidget):
                 x, y = distance * math.cos(angle), distance * math.sin(angle) * .78
                 reduced = self.preferences['animation'] == 'reducida'
                 size = 3 + intensity * (4 if reduced else 10)
-                painter.setPen(QPen(QColor(163, 245, 255, int((85 if reduced else 210) * intensity)), 1.4))
+                painter.setPen(QPen(QColor(163, 245, 255, int((85 if reduced else 210) * intensity * thinking)), 1.4))
                 painter.drawLine(QPointF(x - size, y), QPointF(x + size, y))
                 painter.drawLine(QPointF(x, y - size), QPointF(x, y + size))
             painter.setPen(Qt.PenStyle.NoPen)
@@ -550,6 +568,7 @@ class JarvisWindow(QMainWindow):
         self.voice_signals = VoiceSignals(self)
         self.core_state = CoreState()
         self.voice_signals.activity.connect(self.on_voice_activity)
+        self.voice_signals.voice_level.connect(self.core.set_voice_level)
         self.voice_signals.briefing_ready.connect(self.on_briefing_ready)
         self.voice_signals.scheduled_email_result.connect(self.on_scheduled_email_result)
         self.voice_signals.weather_event.connect(self.on_weather_event)
@@ -569,6 +588,7 @@ class JarvisWindow(QMainWindow):
                 pass
         self.brain.weather_event = relay_weather
         self.voice.on_activity = self.voice_signals.activity.emit
+        self.voice.on_level = self.voice_signals.voice_level.emit
 
         self.status = QLabel('Micrófono apagado')
         self.status.setObjectName('statusBadge')
@@ -1083,6 +1103,7 @@ class JarvisWindow(QMainWindow):
                 self.weather_sound_dir.cleanup()
             self.email_scheduler.stop()
             self.voice.on_activity = None
+            self.voice.on_level = None
             event.accept()
 
 

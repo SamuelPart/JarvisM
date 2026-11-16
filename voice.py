@@ -18,6 +18,7 @@ class Voice:
         self.thread = None
         self.lock = threading.Lock()
         self.on_activity = None
+        self.on_level = None
 
     def speak(self, text):
         self._enqueue(text, None)
@@ -79,6 +80,28 @@ class Voice:
             except Exception:
                 pass  # Visual feedback must never interrupt audio.
 
+    def _level(self, value):
+        if self.on_level:
+            try:
+                self.on_level(value)
+            except Exception:
+                pass  # The visualizer must never interrupt speech.
+
+    def _envelope(self, pygame, path):
+        if not self.on_level:
+            return None
+        try:
+            from audio_envelope import pcm_envelope
+            frequency, sample_format, channels = pygame.mixer.get_init()
+            if sample_format != -16 or path.stat().st_size > 512_000:
+                return None
+            raw = pygame.mixer.Sound(str(path)).get_raw()
+            if len(raw) > 32_000_000:
+                return None
+            return pcm_envelope(raw, frequency, channels)
+        except Exception:
+            return None  # Decoding for visualization must never break playback.
+
     def _neural(self, text):
         import edge_tts
         voice = os.getenv('JARVIS_TTS_VOICE', 'es-MX-JorgeNeural')
@@ -93,12 +116,18 @@ class Voice:
         import pygame
         pygame.mixer.init()
         try:
+            envelope = self._envelope(pygame, path)
             pygame.mixer.music.load(str(path))
+            self._level(None if envelope is None else 0.0)
             pygame.mixer.music.play()
             self._activity(True)
             while pygame.mixer.music.get_busy():
-                time.sleep(0.1)
+                if envelope is not None:
+                    from audio_envelope import level_at
+                    self._level(level_at(envelope, pygame.mixer.music.get_pos()))
+                time.sleep(0.05)
         finally:
+            self._level(None)
             self._activity(False)
             pygame.mixer.music.stop()
             pygame.mixer.music.unload()
@@ -109,6 +138,7 @@ class Voice:
         engine = pyttsx3.init()
         try:
             engine.say(text)
+            self._level(None)  # Local TTS does not expose its playback samples.
             self._activity(True)
             engine.runAndWait()
         finally:

@@ -71,7 +71,7 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central es la esfera clásica azul de puntos dibujada por Qt, creada por código, sin GIF. Se mueve continuamente; al pensar se deforma, produce destellos y emite sonidos electrónicos breves que varían entre solicitudes. Al hablar utiliza movimientos distintos que también varían. La animación de voz representa el estado de habla, pero no mide el audio ni sigue sus palabras o volumen.
+El núcleo central es la esfera clásica azul de puntos dibujada por Qt, creada por código, sin GIF. Se mueve continuamente; al pensar se deforma, produce destellos y emite sonidos electrónicos breves que varían entre solicitudes. Al hablar utiliza movimientos distintos que también varían. Con la voz Edge, la esfera responde al volumen del audio reproducido (envolvente calculada localmente), no al significado de las palabras. Si no se puede analizar el audio o se usa la voz local, utiliza un movimiento alternativo sin sincronización real.
 
 La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
@@ -113,7 +113,7 @@ No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JAR
 
 ### Núcleo expresivo
 
-La esfera clásica indica el estado mediante color y movimiento: paleta elegida en espera, violeta al procesar, cian al hablar y ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. La animación de voz es decorativa, no sigue el volumen real.
+La esfera clásica indica el estado mediante color y movimiento: paleta elegida en espera, violeta al procesar, cian al hablar y ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. Con Edge la animación usa el volumen del audio cuando es posible; con voz local o si falla el análisis recurre a una animación decorativa.
 
 ### Modo compacto flotante
 

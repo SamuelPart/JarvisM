@@ -2110,3 +2110,41 @@ def test_thinking_and_weather_cues_vary_without_changing_duration(tmp_path):
                 assert sound.getnframes() / sound.getframerate() == pytest.approx(.78, abs=.001)
                 sounds.append(sound.readframes(sound.getnframes()))
     assert len(set(sounds)) == 6
+
+
+def test_pcm_voice_envelope_tracks_audio_and_silence():
+    import math
+    from array import array
+    from audio_envelope import pcm_envelope, level_at
+    rate = 8000
+    silence = [0] * 400
+    loud = [int(14000 * math.sin(2 * math.pi * 440 * i / rate)) for i in range(400)]
+    raw = array('h', silence + loud + silence).tobytes()
+    levels = pcm_envelope(raw, rate, 1)
+    assert len(levels) == 3 and levels[0] == 0 and levels[1] > .8 and levels[2] == 0
+    assert level_at(levels, 55) == levels[1] and level_at(levels, 250) == 0
+    with pytest.raises(ValueError):
+        pcm_envelope(b'\x00', rate, 1)
+
+
+def test_voice_envelope_failure_does_not_interrupt_audio(tmp_path):
+    from voice import Voice
+    voice = Voice()
+    voice.on_level = lambda level: None
+    audio = tmp_path / 'voice.mp3'
+    audio.write_bytes(b'fake')
+    mixer = SimpleNamespace(get_init=lambda: (22050, -16, 2), Sound=lambda path: (_ for _ in ()).throw(ValueError('decode failure')))
+    assert voice._envelope(SimpleNamespace(mixer=mixer), audio) is None
+
+
+def test_voice_local_fallback_reports_no_measured_audio(monkeypatch):
+    import sys
+    from voice import Voice
+    events = []
+    engine = SimpleNamespace(say=lambda text: None, runAndWait=lambda: None, stop=lambda: None)
+    monkeypatch.setitem(sys.modules, 'pyttsx3', SimpleNamespace(init=lambda: engine))
+    voice = Voice()
+    voice.on_activity = lambda active: events.append(('activity', active))
+    voice.on_level = lambda level: events.append(('level', level))
+    voice._local('Hola')
+    assert events == [('level', None), ('activity', True), ('activity', False)]
