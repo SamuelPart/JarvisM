@@ -2059,3 +2059,21 @@ def test_country_service_outage_is_not_reported_as_missing_location(monkeypatch)
     monkeypatch.setattr(weather, '_geocode', missing)
     with pytest.raises(weather.WeatherError, match='servicio de países'):
         weather.get_weather('Perú')
+
+
+def test_weather_animation_delays_fast_success_not_errors_or_slow_requests():
+    from weather_timing import WeatherLoadingTiming
+    now, waits = [10.0], []
+    timing = WeatherLoadingTiming(clock=lambda: now[0], sleep=waits.append)
+    timing.wait_for_event('loading')
+    now[0] = 11.2
+    timing.wait_for_event('result')
+    assert waits == [pytest.approx(1.8)]
+    timing.wait_for_event('loading')
+    now[0] = 16
+    timing.wait_for_event('result')
+    assert len(waits) == 1
+    timing.wait_for_event('loading')
+    timing.wait_for_event('error')
+    timing.wait_for_event('result')
+    assert len(waits) == 1

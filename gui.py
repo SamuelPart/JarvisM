@@ -9,8 +9,8 @@ import threading
 from datetime import datetime
 
 from dotenv import load_dotenv
-from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient
+from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QPen
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -29,6 +29,7 @@ from approval import is_approved
 import startup_briefing
 import scheduled_emails
 from weather_view import WeatherView
+from weather_timing import WeatherLoadingTiming
 from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
@@ -50,6 +51,7 @@ class CoreAnimation(QWidget):
         super().__init__()
         self.preferences = preferences.copy()
         self.compact_display = False
+        self.weather_searching = False
         scale = SCALES[self.preferences['size']]
         self.setFixedSize(round(300 * scale), round(260 * scale))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -69,6 +71,10 @@ class CoreAnimation(QWidget):
         self.set_compact_display(self.compact_display)
         self.set_mode(self.mode)
 
+    def set_weather_searching(self, searching):
+        self.weather_searching = searching
+        self.update()
+
     def set_compact_display(self, compact):
         self.compact_display = compact
         scale = SCALES[self.preferences['size']] * (0.38 if compact else 1.0)
@@ -76,7 +82,7 @@ class CoreAnimation(QWidget):
         self.update()
 
     def advance(self):
-        speed = 0.075 if self.mode == 'speaking' else 0.045 if self.mode == 'thinking' else 0.025
+        speed = 0.09 if self.weather_searching else 0.075 if self.mode == 'speaking' else 0.045 if self.mode == 'thinking' else 0.025
         self.phase += speed * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
         self.update()
 
@@ -87,6 +93,18 @@ class CoreAnimation(QWidget):
         scale = SCALES[self.preferences['size']] * (0.38 if self.compact_display else 1.0)
         painter.scale(scale, scale)
         radius = 109.0
+        if self.weather_searching:
+            # A scanning radar wraps the familiar dotted sphere, without GIFs.
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(46, 163, 255, 75), 1.2))
+            painter.drawEllipse(QPointF(0, 0), 117, 117)
+            pulse = 112 + 10 * (0.5 + 0.5 * math.sin(self.phase * 1.5))
+            painter.setPen(QPen(QColor(61, 231, 255, 65), 1.4))
+            painter.drawEllipse(QPointF(0, 0), pulse, pulse)
+            painter.setPen(QPen(QColor(99, 242, 255, 220), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawArc(QRectF(-117, -117, 234, 234), int(self.phase * 150) % 5760, 110 * 16)
+            painter.setPen(QPen(QColor(107, 130, 255, 160), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawArc(QRectF(-124, -124, 248, 248), int(-self.phase * 110) % 5760, 58 * 16)
 
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
@@ -119,7 +137,9 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.mode == 'speaking':
+                if self.weather_searching:
+                    pulse += 0.035 * math.sin(theta * 5 + self.phase * 2.5)
+                elif self.mode == 'speaking':
                     pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
                 px, py = radius * x * pulse, -radius * screen_y * pulse
                 alpha = int(105 + 110 * (z + 1) / 2)
@@ -514,7 +534,11 @@ class JarvisWindow(QMainWindow):
         self.weather_refresh_timer.setInterval(10 * 60 * 1000)
         self.weather_refresh_timer.timeout.connect(self.refresh_weather)
         signals_for_weather = self.voice_signals
+        weather_timing = WeatherLoadingTiming()
         def relay_weather(event, payload):
+            # This callback is invoked in the chat/voice worker, not the UI thread.
+            # Delaying success keeps spoken and visual results synchronized.
+            weather_timing.wait_for_event(event)
             try:
                 signals_for_weather.weather_event.emit(event, payload)
             except RuntimeError:
@@ -587,6 +611,7 @@ class JarvisWindow(QMainWindow):
         self.weather_refresh_timer.stop()
         self.weather_view.hide()
         self.weather_loading.hide()
+        self.core.set_weather_searching(False)
         self.core.set_compact_display(False)
         self.root_layout.setAlignment(self.core, Qt.AlignmentFlag.AlignHCenter)
         if not self.compact:
@@ -602,10 +627,12 @@ class JarvisWindow(QMainWindow):
             location = str(data.get('location', ''))[:150] if isinstance(data, dict) else ''
             self.weather_loading.setText('Buscando el clima de ' + location + '…' if location else 'Buscando el clima…')
             self.weather_loading.show()
+            self.core.set_weather_searching(True)
             self.status.setText('Buscando datos del clima…')
             self.set_task_state('thinking')
         elif event == 'result' and isinstance(data, dict) and data.get('ok') is True:
             self.weather_loading.hide()
+            self.core.set_weather_searching(False)
             try:
                 self.weather_view.show_data(data)
                 self.weather_query = data.get('requested')
