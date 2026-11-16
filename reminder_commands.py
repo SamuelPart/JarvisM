@@ -31,3 +31,45 @@ def parse_relative_reminder(text, now=None):
         raise ValueError('Se requiere hora local con zona.')
     when = datetime.fromtimestamp(now.timestamp() + seconds).astimezone()
     return {'title': title.strip(), 'when': when.isoformat(timespec='seconds')}
+
+
+def parse_delete_request(text):
+    """Return the requested reminder name, or '' if a name is missing."""
+    text = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I)
+    text = re.sub(r'\s*[,;]?\s*por favor[.!?]*\s*$', '', text, flags=re.I).strip(' .!¡?¿')
+    match = re.fullmatch(r'(?:elimina|eliminar|borra|borrar|quita|quitar|cancela|cancelar)\s+(?:(?:el|un|mi|este|ese)\s+)?recordatorio(?:\s+(?:(?:de|sobre|para|que dice)\s+)?(.+))?', text, re.I)
+    if not match:
+        return None
+    name = (match.group(1) or '').strip(' "\'.,!¡?¿')
+    # Relative references, dates and bulk commands need an explicit clarification.
+    if name.casefold() in ('todos', 'todo', 'ese', 'este', 'último', 'ultimo'):
+        return ''
+    return name
+
+
+def find_matching_reminders(name, reminders):
+    import unicodedata
+    def normalize(value):
+        value = unicodedata.normalize('NFKD', value.casefold())
+        return ' '.join(''.join(c for c in value if not unicodedata.combining(c)).split())
+    needle = normalize(name)
+    if not needle:
+        return []
+    valid = [r for r in reminders if isinstance(r, dict) and type(r.get('id')) is int and isinstance(r.get('title'), str)]
+    date = re.fullmatch(r'(.+?)\s+(?:del|de)\s+(\d{1,2})/(\d{1,2})/(\d{4})\s+a las\s+(\d{1,2}):(\d{2})', needle)
+    if date:
+        needle = date.group(1).strip()
+        day, month, year, hour, minute = map(int, date.groups()[1:])
+        filtered = []
+        for reminder in valid:
+            try:
+                when = datetime.fromisoformat(reminder['when'])
+                if (when.day, when.month, when.year, when.hour, when.minute) == (day, month, year, hour, minute):
+                    filtered.append(reminder)
+            except (KeyError, TypeError, ValueError):
+                continue
+        valid = filtered
+    exact = [r for r in valid if normalize(r['title']) == needle]
+    if exact:
+        return exact
+    return [r for r in valid if len(needle) >= 3 and needle in normalize(r['title'])]

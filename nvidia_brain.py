@@ -2,7 +2,7 @@
 import json
 import requests
 from brain import INSTRUCTIONS, TOOLS
-from permissions import preapproved
+from permissions import authorize_tool
 
 NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 DEFAULT_MODEL = 'nvidia/nemotron-3.5-bolt-e4b'
@@ -74,7 +74,7 @@ class NvidiaBrain:
                     args = json.loads(call.get('function', {}).get('arguments', '{}'))
                     if name not in self.allowed or not isinstance(args, dict):
                         raise ValueError('Herramienta o argumentos no válidos.')
-                    if not preapproved(name) and not self.approve(name, args):
+                    if not authorize_tool(name, args, self.approve):
                         result = {'error': 'El usuario rechazó la acción.'}
                     else:
                         result = getattr(self.controller, name)(**args)

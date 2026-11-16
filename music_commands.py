@@ -42,7 +42,7 @@ class MusicTrace:
 
     def __getattr__(self, name):
         target = getattr(self.controller, name)
-        if name not in ('play_music', 'stop_music', 'whatsapp_prepare'):
+        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder'):
             return target
         def tracked(*args, **kwargs):
             try:
@@ -60,7 +60,7 @@ class MusicTrace:
                         reason = 'No se pudo iniciar el navegador.'
                     self.results.append((name, {'error': reason or 'Ocurrió un error al preparar WhatsApp; no conozco la causa.'}))
                 else:
-                    self.results.append((name, {'error': 'La herramienta de música falló.'}))
+                    self.results.append((name, {'error': 'La herramienta falló.'}))
                 raise
             self.results.append((name, result))
             return result

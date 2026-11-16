@@ -44,6 +44,12 @@ class Agenda:
         with closing(self._connect()) as db, db:
             return db.execute('DELETE FROM reminders WHERE id = ?', (reminder_id,)).rowcount > 0
 
+    def delete_matching(self, reminder_id, title, due):
+        """Delete only if the reminder is still the one the user selected."""
+        with closing(self._connect()) as db, db:
+            return db.execute('DELETE FROM reminders WHERE id = ? AND title = ? AND due = ?',
+                              (reminder_id, title, due)).rowcount > 0
+
     def claim_due(self, now=None, limit=20):
         now = time.time() if now is None else now
         with closing(self._connect()) as db:

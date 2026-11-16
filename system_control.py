@@ -68,6 +68,15 @@ class SystemController:
     def list_calendar_events(self, start: str, end: str) -> dict:
         return calendar_access.list_events(start, end)
 
+    def delete_reminder(self, reminder_id: int, title: str, when: str) -> dict:
+        """Delete a single, exactly identified local reminder, not a calendar event."""
+        if type(reminder_id) is not int or reminder_id <= 0 or not isinstance(title, str) or not title:
+            raise ValueError('Los datos del recordatorio no son válidos.')
+        due = int(timestamp_from_iso(when))
+        deleted = Agenda().delete_matching(reminder_id, title, due)
+        return {'deleted': deleted, 'reminder_id': reminder_id,
+                'note': 'Recordatorio local eliminado.' if deleted else 'El recordatorio cambió o ya no existe.'}
+
     def create_reminder(self, title: str, when: str) -> dict:
         """Create a one-shot local reminder after explicit user authorization."""
         due = timestamp_from_iso(when)

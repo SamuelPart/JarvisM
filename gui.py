@@ -27,7 +27,7 @@ from core_state import CoreState
 from agenda import Agenda
 from approval import is_approved
 import startup_briefing
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -277,6 +277,10 @@ class VisualSettingsDialog(QDialog):
         self.agenda_permission.setChecked(read_state().get('agenda_read_accepted') is True)
         self.agenda_permission.setToolTip('Incluye hora, recordatorios y eventos de Google Calendar. Los datos pueden enviarse al proveedor de IA; crear recordatorios requiere permiso aparte.')
         layout.addWidget(self.agenda_permission)
+        self.agenda_delete_permission = QCheckBox('Eliminar recordatorios locales sin preguntar cada vez')
+        self.agenda_delete_permission.setChecked(read_state().get('agenda_delete_accepted') is True)
+        self.agenda_delete_permission.setToolTip('Permite eliminar recordatorios locales al pedirlo. No elimina eventos de Google Calendar.')
+        layout.addWidget(self.agenda_delete_permission)
         self.briefing_permission = QCheckBox('Resumen automático al iniciar')
         self.briefing_permission.setChecked(read_state().get('startup_briefing_accepted') is True)
         self.briefing_permission.setToolTip('Consulta recordatorios, calendario configurado, estado del equipo y cantidad de errores recientes en los registros. La voz puede enviarse a un servicio externo; los detalles de registros solicitados pueden enviarse al proveedor de IA.')
@@ -581,7 +585,8 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('approval')
         self.status.setText('Esperando tu autorización en el chat…')
         self.approval_pending = True
-        privacy = ('\nSe abrirá un borrador de WhatsApp; no se enviará automáticamente. Revisa el número y el texto y pulsa Enviar en WhatsApp.'
+        privacy = ('\nAl autorizar, permites eliminar recordatorios locales cuando lo pidas sin volver a preguntar. Puedes revocarlo en Ajustes. Se eliminará el recordatorio solicitado.'
+                   if name == 'delete_reminder_permission' else '\nSe abrirá un borrador de WhatsApp; no se enviará automáticamente. Revisa el número y el texto y pulsa Enviar en WhatsApp.'
                    if name == 'whatsapp_prepare' else '\nSe capturará la pantalla completa y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_screen' else '\nLa imagen se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_image' else '\nSe buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
@@ -715,6 +720,7 @@ class JarvisWindow(QMainWindow):
             set_network_permission(dialog.network_permission.isChecked())
             set_gmail_permission(dialog.gmail_permission.isChecked())
             set_agenda_permission(dialog.agenda_permission.isChecked())
+            set_agenda_delete_permission(dialog.agenda_delete_permission.isChecked())
             set_briefing_permission(dialog.briefing_permission.isChecked())
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')

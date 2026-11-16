@@ -1396,3 +1396,106 @@ def test_project_move_request_does_not_ask_for_known_path_or_claim_success(tmp_p
     answer = agent.ask('quiero que jarvis prueba esté fuera de m3u_converter y lo pongas en la carpeta personal makao')
     assert 'carpeta personal' in answer and 'no puedo moverla' in answer.lower()
     assert 'ruta exacta' not in answer.lower()
+
+
+def test_delete_reminder_permission_is_single_persistent_and_revocable(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_automation_permission(True)
+    assert not permissions.preapproved('delete_reminder')
+    calls = []
+    approve = lambda name, args: calls.append(name) or True
+    assert permissions.authorize_tool('delete_reminder', {'reminder_id': 1}, approve)
+    assert permissions.authorize_tool('delete_reminder', {'reminder_id': 2}, approve)
+    assert calls == ['delete_reminder_permission']
+    permissions.set_agenda_delete_permission(False)
+    assert not permissions.preapproved('delete_reminder')
+    assert not permissions.authorize_tool('delete_reminder', {'reminder_id': 2}, lambda *_: False)
+
+
+def test_delete_reminder_requires_matching_exact_snapshot(tmp_path, monkeypatch):
+    import os
+    from datetime import datetime
+    import time
+    from agenda import Agenda
+    from system_control import SystemController
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.sqlite3'))
+    agenda = Agenda()
+    due = int(time.time()) + 1000
+    reminder_id = agenda.add('Tomar agua', due)
+    when = datetime.fromtimestamp(due).astimezone().isoformat(timespec='seconds')
+    controller = SystemController()
+    assert not controller.delete_reminder(reminder_id, 'Otro', when)['deleted']
+    assert agenda.list()
+    assert controller.delete_reminder(reminder_id, 'Tomar agua', when)['deleted']
+    assert not controller.delete_reminder(reminder_id, 'Tomar agua', when)['deleted']
+    assert not agenda.list()
+    with pytest.raises(ValueError): controller.delete_reminder(True, 'Tomar agua', when)
+
+
+def test_remove_reminder_by_natural_language_honors_consent_and_ambiguity(tmp_path, monkeypatch):
+    import permissions
+    from agenda import Agenda
+    from system_control import SystemController
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    import time
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.sqlite3'))
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    db = Agenda()
+    db.add('Tomar agua', int(time.time()) + 300)
+    controller = SystemController()
+    prompts = []
+    brain = NvidiaBrain('fake', controller, lambda name, args: prompts.append(name) or True,
+                        post=lambda **_: pytest.fail('No se necesita el modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    assert 'eliminé el recordatorio' in agent.ask('Jarvis, elimina el recordatorio de tomar agua')
+    assert db.list() == [] and prompts == ['delete_reminder_permission']
+    db.add('Tomar agua', int(time.time()) + 400)
+    assert 'eliminé' in agent.ask('borra mi recordatorio de tomar agua')
+    assert prompts == ['delete_reminder_permission']
+    db.add('Llamar a Ana', int(time.time()) + 500)
+    db.add('Llamar a Ana', int(time.time()) + 600)
+    assert 'varios' in agent.ask('elimina el recordatorio de llamar a Ana')
+    assert len(db.list()) == 2
+    assert 'no encontré' in agent.ask('borra el recordatorio de pasear al perro').lower()
+    assert len(db.list()) == 2
+
+
+def test_delete_reminder_refusal_does_not_modify_database(tmp_path, monkeypatch):
+    import permissions
+    from agenda import Agenda
+    from system_control import SystemController
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    import time
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.sqlite3'))
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    db = Agenda()
+    db.add('Agua', int(time.time()) + 300)
+    brain = NvidiaBrain('fake', SystemController(), lambda *_: False)
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    assert 'no eliminé' in agent.ask('elimina el recordatorio de agua').lower()
+    assert len(db.list()) == 1 and not permissions.preapproved('delete_reminder')
+
+
+def test_delete_reminder_voice_says_permission_is_persistent():
+    from voice_session import VoiceSession
+    spoken = []
+    voice = SimpleNamespace(speak_wait=lambda text: spoken.append(text) or True)
+    session = VoiceSession(None, voice, lambda: 'autorizo')
+    assert session.approve('delete_reminder_permission', {'reminder_id': 1})
+    assert 'una sola vez' in spoken[0] and 'Ajustes' in spoken[0]
+
+
+def test_duplicate_reminders_can_be_selected_by_date_and_time():
+    from reminder_commands import find_matching_reminders
+    reminders = [
+        {'id': 1, 'title': 'Tomar agua', 'when': '2026-11-15T14:30:00-05:00'},
+        {'id': 2, 'title': 'Tomar agua', 'when': '2026-11-16T14:30:00-05:00'},
+    ]
+    assert len(find_matching_reminders('tomar agua', reminders)) == 2
+    assert [r['id'] for r in find_matching_reminders('tomar agua del 16/11/2026 a las 14:30', reminders)] == [2]
+    assert find_matching_reminders('tomar agua del 16/11/2026 a las 15:30', reminders) == []

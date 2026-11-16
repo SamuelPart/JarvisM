@@ -50,6 +50,17 @@ class VoiceSession:
             return False
         self.status('Esperando autorización por voz')
         try:
+            if name == 'delete_reminder_permission':
+                prompt = ('¿Autoriza una sola vez que elimine recordatorios locales cuando me lo pida, '
+                          'sin preguntar cada vez? Eliminaré el recordatorio solicitado. '
+                          'Puede desactivar este permiso en Ajustes. Diga autorizo para aceptar.')
+                if not self.voice.speak_wait(prompt) or self.stop_event.is_set():
+                    return False
+                try:
+                    answer = self.listen()
+                except Exception:
+                    return False
+                return not self.stop_event.is_set() and is_approval(answer)
             if name == 'whatsapp_prepare':
                 phone, message = args.get('phone'), args.get('message')
                 if not isinstance(phone, str) or not isinstance(message, str) or len(message) > 700:

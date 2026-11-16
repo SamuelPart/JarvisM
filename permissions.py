@@ -70,6 +70,23 @@ def set_agenda_permission(granted):
     _set_permission('agenda_read', granted)
 
 
+def set_agenda_delete_permission(granted):
+    _set_permission('agenda_delete', granted)
+
+
+def authorize_tool(name, args, approve):
+    if preapproved(name):
+        return True
+    if name != 'delete_reminder':
+        return approve(name, args)
+    if not approve('delete_reminder_permission', args):
+        return False
+    try:
+        set_agenda_delete_permission(True)
+    except OSError:
+        return False  # Never silently claim that persistent consent was saved.
+    return True
+
 def set_briefing_permission(granted):
     _set_permission('startup_briefing', granted)
 
@@ -79,5 +96,6 @@ def preapproved(name):
     return ((name in AUTOMATION_TOOLS and state.get('automation_accepted') is True) or
             (name in PREAPPROVED_TOOLS and state.get('network_actions_accepted') is True) or
             (name in GMAIL_TOOLS and state.get('gmail_actions_accepted') is True) or
+            (name == 'delete_reminder' and state.get('agenda_delete_accepted') is True) or
             (name in AGENDA_TOOLS and state.get('agenda_read_accepted') is True) or
             (name == 'review_startup_logs' and state.get('startup_briefing_accepted') is True))

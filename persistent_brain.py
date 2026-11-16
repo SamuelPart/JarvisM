@@ -5,9 +5,9 @@ from datetime import datetime
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
-from permissions import preapproved
+from permissions import preapproved, authorize_tool
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
-from reminder_commands import parse_relative_reminder
+from reminder_commands import parse_relative_reminder, parse_delete_request, find_matching_reminders
 
 
 def natural_time(value):
@@ -77,6 +77,40 @@ class PersistentBrain:
             except (sqlite3.Error, OSError):
                 return answer + '\n\nAviso: no se pudo guardar esta conversación en la memoria local.'
             return answer
+        delete_name = parse_delete_request(clean)
+        if delete_name is not None:
+            try:
+                if not delete_name:
+                    answer = '¿Qué recordatorio quieres eliminar?'
+                else:
+                    matches = find_matching_reminders(delete_name, self.brain.controller.list_reminders().get('reminders', []))
+                    if not matches:
+                        answer = 'No encontré ese recordatorio en la agenda local.'
+                    elif len(matches) > 1:
+                        options = []
+                        for item in matches[:5]:
+                            try:
+                                when = datetime.fromisoformat(item['when']).strftime('%d/%m/%Y a las %H:%M')
+                                options.append(f"{item['title']}, del {when}")
+                            except (KeyError, TypeError, ValueError):
+                                pass
+                        answer = ('Hay varios recordatorios: ' + '; '.join(options) + '. Dime el título, fecha y hora del que quieres eliminar.'
+                                  if options else 'Hay varios recordatorios que coinciden. Dime cuál quieres eliminar.')
+                    else:
+                        args = {'reminder_id': matches[0]['id'], 'title': matches[0]['title'], 'when': matches[0]['when']}
+                        if not authorize_tool('delete_reminder', args, self.approve):
+                            answer = 'No eliminé el recordatorio; no se autorizó la acción o no se pudo guardar el permiso.'
+                        else:
+                            result = self.brain.controller.delete_reminder(**args)
+                            answer = ('Listo, eliminé el recordatorio.' if result.get('deleted') is True
+                                      else 'No encontré ese recordatorio; puede que ya se haya eliminado.')
+            except Exception:
+                answer = 'No pude eliminar el recordatorio; revisa la agenda local.'
+            try:
+                self.memory.add_turn(text, answer)
+            except (sqlite3.Error, OSError):
+                return answer + '\n\nAviso: no se pudo guardar esta conversación en la memoria local.'
+            return answer
         app = re.fullmatch(r'abre\s+(?:la aplicaci[oó]n\s+)?(google chrome|chrome|firefox|whatsapp|archivos)', clean, re.I)
         routine = re.fullmatch(r'(?:buenos d[ií]as|(?:ejecuta|inicia|activa) (?:la )?rutina(?: de buenos d[ií]as)?)', clean, re.I)
         time_request = is_local_time_request(clean)
@@ -131,7 +165,10 @@ class PersistentBrain:
                 self.brain.controller = original
             if trace.results:
                 name, result = trace.results[-1]
-                if name == 'whatsapp_prepare':
+                if name == 'delete_reminder':
+                    answer = ('Listo, eliminé el recordatorio.' if isinstance(result, dict) and result.get('deleted') is True
+                              else 'No pude eliminar el recordatorio; puede que ya no exista.')
+                elif name == 'whatsapp_prepare':
                     if not isinstance(result, dict):
                         answer = 'No pude preparar el borrador de WhatsApp; no conozco la causa.'
                     elif result.get('error'):
@@ -142,6 +179,9 @@ class PersistentBrain:
                         answer = 'No pude abrir el borrador: el navegador no aceptó la solicitud.'
                 else:
                     answer = format_result(name, result)
+            elif (re.search(r'\b(?:elimina|eliminar|borra|borrar|quita|quitar|cancela|cancelar)\b', clean, re.I)
+                  and re.search(r'\brecordatorios?\b', clean, re.I)):
+                answer = 'No eliminé ningún recordatorio. Dime cuál quieres eliminar.'
             elif is_music_action_request(text):
                 answer = 'No llegué a iniciar la música, señor. Pídame «pon la canción» y su nombre.'
 
