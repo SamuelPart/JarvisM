@@ -284,6 +284,8 @@ python hud/app.py                 # abre http://127.0.0.1:5050
 python hud/app.py --host 0.0.0.0  # visible desde la LAN (sin autenticación: úsalo solo en red de confianza)
 ```
 
+**Desde el escritorio:** tras `git pull --ff-only`, hay un botón **«HUD»** en la barra superior de JARVIS que arranca el panel y lo abre en tu navegador (o lo reutiliza si ya está en marcha). La ventana clásica de JARVIS no cambia de diseño; el HUD es esta pantalla en el navegador.
+
 - La API local es `GET /api/stats` (JSON: CPU total y por núcleo, RAM + SWAP, disco, red up/down en Mb/s calculada por delta entre muestras, batería real, uptime, procesos, «salud» heurística, temperatura si el hardware expone sensores).
 - El frontend (`templates/index.html`) actualiza todo cada **1 s** con `fetch` + `setInterval`, sin recargar; la velocidad de la animación del núcleo reacciona a la carga de CPU. Arriba a la izquierda verás diagnóstico compacto (salud, CPU, RAM, SWAP, disco libre, red ↓/↑, energía, uptime, procesos); las esquinas inferiores muestran `STATE`/`PANELS`/`CORE` y `MODE`/`DATA FLOW`/`TEMP`.
 - **Límites honestos:** en equipos sin batería (sobremesa) el panel muestra «AC / SIN BATERÍA»; sin sensores, «N/D» en temperatura; los Mb/s de red son el delta entre dos lecturas, no un contador acumulado; el número de barras de CPU es el de núcleos reales de tu máquina; «ACTIVE MODULES» indica disponibilidad de voz/visión/red/memoria local, no es una certificación oficial. Es un HUD decorativo con datos reales, no una herramienta de diagnóstico profesional.

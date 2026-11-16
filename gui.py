@@ -4,7 +4,9 @@ import faulthandler
 import json
 import math
 import os
+import socket
 import sqlite3
+import subprocess
 import sys
 import threading
 import tempfile
@@ -828,6 +830,11 @@ class JarvisWindow(QMainWindow):
         self.compact_toggle = QPushButton('Modo compacto')
         self.compact_toggle.clicked.connect(self.toggle_compact)
         top.addWidget(self.compact_toggle)
+        self.hud_button = QPushButton('HUD')
+        self.hud_button.setToolTip('Abre el HUD futurista (datos reales) en el navegador')
+        self.hud_button.setAccessibleName('Abrir HUD')
+        self.hud_button.clicked.connect(self.open_hud)
+        top.addWidget(self.hud_button)
         layout.addLayout(top)
 
         self.heading = QLabel('Tu asistente, listo para ayudarte.')
@@ -1187,6 +1194,38 @@ class JarvisWindow(QMainWindow):
             self.set_task_state('thinking')
         else:
             self.set_task_state('idle')
+
+    def open_hud(self):
+        """Abre el HUD futurista (panel local) en el navegador.
+
+        Arranca `hud/app.py` en un proceso aparte si aún no está en marcha;
+        si algo falla, lo dice en vez de fingir que abrió.
+        """
+        url = 'http://127.0.0.1:5050'
+        running = False
+        try:
+            with socket.create_connection(('127.0.0.1', 5050), timeout=0.25):
+                running = True
+        except OSError:
+            running = False
+        if not running:
+            try:
+                import flask  # noqa: F401
+                import psutil  # noqa: F401
+            except ImportError:
+                QMessageBox.warning(self, 'JARVIS',
+                                    'El HUD necesita Flask y psutil.\n\nInstálalos con:\n\npip install flask psutil')
+                return
+            try:
+                subprocess.Popen([sys.executable, str(ROOT / 'hud' / 'app.py')],
+                                 cwd=str(ROOT),
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError as exc:
+                QMessageBox.warning(self, 'JARVIS', f'No pude iniciar el HUD: {exc}')
+                return
+            time.sleep(1.2)  # un respiro para que el servidor ligue el puerto
+        QDesktopServices.openUrl(QUrl(url))
+        self.status.setText('HUD abierto en el navegador.')
 
     def open_phone(self):
         if self.thread is not None:
