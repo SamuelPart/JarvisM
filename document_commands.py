@@ -106,23 +106,27 @@ def parse_delete(clean):
     rest = match.group(1).strip(' .!¡?¿')
     provenance = re.search(r'\bque\s+(cre\w+|hiciste)\b', rest, re.I)
     pruebaish = re.search(r'\b(prueba|test)\b', rest, re.I)
-    fileish = re.search(r'\b(archivos?|pdfs?|documentos?|word|excel|presentaciones?|hojas?)\b', rest, re.I)
-    if not (provenance or (pruebaish and fileish)):
+    filenames = re.findall(r'[\w\-]+\.(?:pdf|docx|xlsx|pptx|csv|json|txt|md|rtf)', rest, re.I)
+    fileish = re.search(r'\b(archivos?|pdfs?|documentos?|word|excel|presentaciones?|hojas?)\b', rest, re.I) or filenames
+    if not (provenance or (pruebaish and fileish) or filenames):
         return None
     plural = bool(re.search(r'\b(los|las|todos|todas)\b', rest.lower()))
     return {'format': _format_filter_of(rest), 'plural': plural,
-            'prueba': 'prueba' in rest.lower()}
+            'prueba': bool(pruebaish), 'filenames': [name.lower() for name in filenames]}
 
 
 def delete_candidates(command):
     """Unique existing files recorded in the ledger as created by JARVIS."""
     out = []
+    names = command.get('filenames') or []
     for entry in action_log.entries(200):
         path = (entry.get('detail') or {}).get('created') if isinstance(entry, dict) else None
         if not path:
             continue
         candidate = Path(path)
         if candidate in out or not candidate.is_file():
+            continue
+        if names and candidate.name.lower() not in names:
             continue
         if command['format'] and candidate.suffix.lower().lstrip('.') != command['format']:
             continue

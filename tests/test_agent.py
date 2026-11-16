@@ -6,6 +6,7 @@ import urllib.request
 import pytest
 
 import action_log
+from pathlib import Path
 from agent import memory as agent_memory
 from agent import reflex
 from agent import tools as agent_tools
@@ -291,3 +292,24 @@ def test_planifica_shortcut(tmp_path, monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', '')  # sin clave → descomposición honesta de un paso
     answer = brain.ask('planifica: revisar el estado de las pruebas')
     assert 'Plan' in answer and 'revisar el estado' in answer and '¿Necesitas algo más?' in answer
+
+
+def test_controller_delete_created_file_bounded(tmp_path, monkeypatch):
+    import action_log
+    import system_control
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    controller = system_control.SystemController()
+    created = tmp_path / 'prueba.pdf'
+    created.write_bytes(b'%PDF-1.4 test')
+    action_log.record('create_document', {'format': 'pdf', 'path': str(created)}, {'created': str(created), 'bytes': 13})
+    out = controller.delete_created_file(str(created))
+    assert out.get('deleted') == str(created) and not created.exists()
+    stranger = tmp_path / 'mio.pdf'
+    stranger.write_bytes(b'not mine')
+    out = controller.delete_created_file(str(stranger))
+    assert out['error'].startswith('No consta') and stranger.exists()
+    # dentro de la carpeta de JARVIS: rechazado aunque conste como creado
+    inside = Path(__file__).resolve().parent.parent / 'borrame-no.pdf'
+    action_log.record('create_document', {'format': 'pdf', 'path': str(inside)}, {'created': str(inside)})
+    out = controller.delete_created_file(str(inside))
+    assert 'carpeta de JARVIS' in out['error']

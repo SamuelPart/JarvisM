@@ -284,6 +284,39 @@ class SystemController:
         """Return untrusted search snippets for the model to summarize with citations."""
         return search(query)
 
+    def delete_created_file(self, path: str = '') -> dict:
+        """Borra exactamente un archivo creado por JARVIS según su registro local.
+
+        Nunca borra archivos del usuario ni nada dentro de la carpeta de JARVIS.
+        """
+        import action_log
+        target = Path(path).expanduser()
+        known = set()
+        for entry in action_log.entries(200):
+            created = (entry.get('detail') or {}).get('created') if isinstance(entry, dict) else None
+            if created:
+                try:
+                    known.add(str(Path(created).resolve()))
+                except OSError:
+                    known.add(str(created))
+        try:
+            resolved = str(target.resolve())
+        except OSError:
+            resolved = str(target)
+        if str(target) not in known and resolved not in known:
+            return {'error': 'No consta en mi registro que yo creara ese archivo; no lo borro. Pide confirmación o usa el borrado normal tras verificar la ruta.'}
+        root = Path(__file__).resolve().parent
+        try:
+            target.resolve().relative_to(root)
+            return {'error': f'No borro nada dentro de la carpeta de JARVIS: {target}'}
+        except ValueError:
+            pass
+        if not target.is_file():
+            return {'error': f'Ya no existe: {target}'}
+        target.unlink()
+        action_log.record('delete_created_file', {'path': str(target)}, {'deleted': str(target)})
+        return {'deleted': str(target)}
+
     def create_document(self, format: str, path: str, body: str = '', rows_json: str = '',
                         header: bool = False, title: str = '', overwrite: bool = False) -> dict:
         """Create a txt, md, csv, json, rtf, pdf, docx, xlsx or pptx file locally."""

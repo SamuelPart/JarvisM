@@ -2691,3 +2691,22 @@ def test_persistent_brain_deterministic_create_delete(tmp_path, monkeypatch):
     assert (desktop / 'prueba.pdf').is_file()
     answer = brain.ask('elimina el archivo de prueba que creaste')
     assert 'Eliminé' in answer and not (desktop / 'prueba.pdf').exists()
+
+
+def test_delete_created_file_natural_phrasing(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    document_commands.handle_create(document_commands.parse_create('créame un archivo pdf de prueba en escritorio'))
+    command = document_commands.parse_delete('elimina el archivo prueba.pdf que creaste')
+    assert command and command['filenames'] == ['prueba.pdf']
+    targets, question = document_commands.select_delete(command)
+    assert targets == [desktop / 'prueba.pdf'] and question is None
+    command = document_commands.parse_delete('elimina el archivo que creaste')
+    assert command and command['filenames'] == []
+    targets, question = document_commands.select_delete(command)
+    assert targets == [desktop / 'prueba.pdf']
