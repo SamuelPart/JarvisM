@@ -10,7 +10,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QPen
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QLinearGradient, QPainterPath, QPen
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -86,6 +86,43 @@ class CoreAnimation(QWidget):
         self.phase += speed * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
         self.update()
 
+    def paint_weather_search(self, painter):
+        # A cloud-shaped hologram replaces the sphere while the search runs.
+        # Its falling lights are decorative, not a forecast of rain.
+        lift = 4 * math.sin(self.phase * .65)
+        cloud = QPainterPath()
+        cloud.moveTo(-72, 30 + lift)
+        cloud.cubicTo(-108, 29 + lift, -108, -26 + lift, -71, -30 + lift)
+        cloud.cubicTo(-61, -68 + lift, -14, -77 + lift, 8, -47 + lift)
+        cloud.cubicTo(39, -66 + lift, 75, -41 + lift, 73, -19 + lift)
+        cloud.cubicTo(107, -14 + lift, 105, 30 + lift, 70, 30 + lift)
+        cloud.closeSubpath()
+        fill = QLinearGradient(0, -75 + lift, 0, 35 + lift)
+        fill.setColorAt(0, QColor(49, 211, 255, 70))
+        fill.setColorAt(1, QColor(37, 72, 193, 35))
+        painter.setBrush(fill)
+        painter.setPen(QPen(QColor(93, 224, 255, 55), 10, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.drawPath(cloud)
+        painter.setPen(QPen(QColor(127, 237, 255, 230), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.drawPath(cloud)
+        # A moving horizontal sweep is clipped to the cloud, so the outline
+        # remains recognizable rather than reverting to the old sphere.
+        painter.save()
+        painter.setClipPath(cloud)
+        y = -72 + (self.phase * 12 % 108) + lift
+        painter.setPen(QPen(QColor(158, 248, 255, 45), 9))
+        painter.drawLine(QPointF(-110, y), QPointF(110, y))
+        painter.setPen(QPen(QColor(194, 253, 255, 210), 1.5))
+        painter.drawLine(QPointF(-110, y), QPointF(110, y))
+        painter.restore()
+        painter.setPen(Qt.PenStyle.NoPen)
+        for column, x in enumerate((-60, -30, 0, 30, 60)):
+            for row in range(2):
+                travel = (self.phase * 15 + column * 11 + row * 30) % 60
+                alpha = int(190 * (1 - travel / 60))
+                painter.setBrush(QColor(104, 223, 255, alpha))
+                painter.drawRoundedRect(QRectF(x, 39 + lift + travel, 3, 11), 1.5, 1.5)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -94,17 +131,9 @@ class CoreAnimation(QWidget):
         painter.scale(scale, scale)
         radius = 109.0
         if self.weather_searching:
-            # A scanning radar wraps the familiar dotted sphere, without GIFs.
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(46, 163, 255, 75), 1.2))
-            painter.drawEllipse(QPointF(0, 0), 117, 117)
-            pulse = 112 + 10 * (0.5 + 0.5 * math.sin(self.phase * 1.5))
-            painter.setPen(QPen(QColor(61, 231, 255, 65), 1.4))
-            painter.drawEllipse(QPointF(0, 0), pulse, pulse)
-            painter.setPen(QPen(QColor(99, 242, 255, 220), 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            painter.drawArc(QRectF(-117, -117, 234, 234), int(self.phase * 150) % 5760, 110 * 16)
-            painter.setPen(QPen(QColor(107, 130, 255, 160), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            painter.drawArc(QRectF(-124, -124, 248, 248), int(-self.phase * 110) % 5760, 58 * 16)
+            self.paint_weather_search(painter)
+            painter.end()
+            return  # Replace the sphere entirely while looking up weather.
 
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
@@ -137,9 +166,7 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.weather_searching:
-                    pulse += 0.035 * math.sin(theta * 5 + self.phase * 2.5)
-                elif self.mode == 'speaking':
+                if self.mode == 'speaking':
                     pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
                 px, py = radius * x * pulse, -radius * screen_y * pulse
                 alpha = int(105 + 110 * (z + 1) / 2)
