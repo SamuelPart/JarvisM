@@ -13,7 +13,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QPainterPath, QPen
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPixmap, QPainter, QRadialGradient, QPainterPath, QPen
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -35,7 +35,7 @@ from weather_view import WeatherView
 from weather_timing import WeatherLoadingTiming
 from weather_sound import write_search_cue
 from orb_motion import approach
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission, set_phone_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -540,6 +540,230 @@ class AgendaDialog(QDialog):
             QMessageBox.warning(self, 'Agenda', 'No se pudo eliminar el recordatorio.')
 
 
+class PhoneWorker(QThread):
+    outcome = pyqtSignal(object)
+
+    def __init__(self, operation, parent=None):
+        super().__init__(parent)
+        self.operation = operation
+
+    def run(self):
+        try:
+            self.outcome.emit(self.operation())
+        except Exception as exc:
+            from android_phone import PhoneError
+            self.outcome.emit({'error': str(exc) if isinstance(exc, PhoneError) else 'No se pudo completar la operación del teléfono.'})
+        finally:
+            self.operation = None
+
+
+class PhoneScreenLabel(QLabel):
+    def __init__(self, tap_callback):
+        super().__init__()
+        self.tap_callback = tap_callback
+        self.original_size = None
+        self.setMinimumSize(250, 360)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setText('Cargando pantalla…')
+
+    def mousePressEvent(self, event):
+        pixmap = self.pixmap()
+        if event.button() != Qt.MouseButton.LeftButton or pixmap is None or pixmap.isNull() or self.original_size is None:
+            return
+        left = (self.width() - pixmap.width()) / 2
+        top = (self.height() - pixmap.height()) / 2
+        x, y = event.position().x() - left, event.position().y() - top
+        if 0 <= x < pixmap.width() and 0 <= y < pixmap.height():
+            self.tap_callback(int(x * self.original_size.width() / pixmap.width()),
+                              int(y * self.original_size.height() / pixmap.height()))
+
+
+class PhoneScreenDialog(QDialog):
+    def __init__(self, phone, parent=None):
+        super().__init__(parent)
+        self.phone, self.worker = phone, None
+        self.setWindowTitle('Pantalla de Android')
+        self.resize(420, 700)
+        layout = QVBoxLayout(self)
+        info = QLabel('Captura local: pulsa Actualizar para ver la pantalla actual. Algunas aplicaciones protegidas pueden aparecer en negro.')
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        self.image = PhoneScreenLabel(self.tap)
+        layout.addWidget(self.image, 1)
+        self.allow_taps = QCheckBox('Permitir toques en esta sesión')
+        layout.addWidget(self.allow_taps)
+        self.status = QLabel('')
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        self.refresh_button = QPushButton('Actualizar pantalla')
+        self.refresh_button.clicked.connect(self.refresh)
+        layout.addWidget(self.refresh_button)
+        QTimer.singleShot(0, self.refresh)
+
+    def run_operation(self, operation):
+        if self.worker is not None:
+            return
+        self.refresh_button.setEnabled(False)
+        self.worker = PhoneWorker(operation, self)
+        self.worker.outcome.connect(self.on_result)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker.finished.connect(self.on_finished)
+        self.worker.start()
+
+    def refresh(self):
+        self.status.setText('Solicitando captura al teléfono…')
+        self.run_operation(lambda: {'image': self.phone.screenshot()})
+
+    def tap(self, x, y):
+        if not self.allow_taps.isChecked():
+            self.status.setText('Activa “Permitir toques” para controlar la pantalla.')
+            return
+        self.status.setText('Enviando toque…')
+        self.run_operation(lambda: self.phone.action('tocar', x, y))
+
+    @pyqtSlot(object)
+    def on_result(self, result):
+        if result.get('error'):
+            self.status.setText(result['error'])
+        elif 'image' in result:
+            image = QPixmap()
+            if not image.loadFromData(result['image'], 'PNG'):
+                self.status.setText('No se pudo mostrar la captura del teléfono.')
+                return
+            self.image.original_size = image.size()
+            self.image.setPixmap(image.scaled(self.image.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.status.setText('Captura local. Actualiza para ver cambios.')
+        else:
+            self.status.setText('Toque enviado. Actualiza para comprobar el resultado.')
+
+    @pyqtSlot()
+    def on_finished(self):
+        self.worker = None
+        self.refresh_button.setEnabled(True)
+
+    def reject(self):
+        if self.worker is None:
+            super().reject()
+
+    def closeEvent(self, event):
+        if self.worker is not None:
+            event.ignore()
+        else:
+            event.accept()
+
+
+class PhoneDialog(QDialog):
+    def __init__(self, phone, parent=None):
+        super().__init__(parent)
+        self.phone = phone
+        self.worker = None
+        self.setWindowTitle('Conectar Android')
+        self.resize(560, 480)
+        layout = QVBoxLayout(self)
+        heading = QLabel('Tu teléfono Android')
+        heading.setObjectName('dialogTitle')
+        layout.addWidget(heading)
+        note = QLabel('En Android 11 o posterior, activa Opciones de desarrollador y Depuración inalámbrica. '
+                      'En “Emparejar dispositivo con código” aparecen la dirección de emparejamiento y el código. '
+                      'Después, usa la dirección principal de Depuración inalámbrica para conectar: normalmente el puerto es distinto. '
+                      'La conexión es por red local; el teléfono debe autorizarla. No escribas el código en el chat.')
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        form = QFormLayout()
+        self.pair_address = QLineEdit()
+        self.pair_address.setPlaceholderText('Dirección y puerto de emparejamiento')
+        self.code = QLineEdit()
+        self.code.setPlaceholderText('Código temporal de seis dígitos')
+        self.code.setEchoMode(QLineEdit.EchoMode.Password)
+        self.code.setMaxLength(6)
+        self.address = QLineEdit()
+        self.address.setPlaceholderText('Dirección y puerto de conexión')
+        form.addRow('Para emparejar', self.pair_address)
+        form.addRow('Código de Android', self.code)
+        form.addRow('Para conectar', self.address)
+        layout.addLayout(form)
+        self.permission = QCheckBox('Permitir batería, navegación y apertura de apps compatibles sin preguntar cada vez')
+        self.permission.setChecked(read_state().get('phone_basic_accepted') is True)
+        self.permission.setToolTip('La captura de pantalla y tocar coordenadas siguen pidiendo autorización individual. Puedes desactivar esta casilla aquí.')
+        self.permission.toggled.connect(self.change_permission)
+        layout.addWidget(self.permission)
+        self.message = QLabel('Usa el botón Emparejar una vez y después Conectar. Si ya estaba emparejado, puedes conectar directamente.')
+        self.message.setWordWrap(True)
+        layout.addWidget(self.message)
+        row = QHBoxLayout()
+        self.pair_button = QPushButton('Emparejar')
+        self.pair_button.clicked.connect(self.pair)
+        self.connect_button = QPushButton('Conectar')
+        self.connect_button.clicked.connect(self.connect_phone)
+        self.screen_button = QPushButton('Ver pantalla')
+        self.screen_button.clicked.connect(self.open_screen)
+        self.disconnect_button = QPushButton('Desconectar')
+        self.disconnect_button.clicked.connect(lambda: self.start_operation(self.phone.disconnect))
+        self.close_button = QPushButton('Cerrar')
+        self.close_button.clicked.connect(self.accept)
+        for button in (self.pair_button, self.connect_button, self.screen_button, self.disconnect_button, self.close_button):
+            row.addWidget(button)
+        layout.addLayout(row)
+
+    def change_permission(self, checked):
+        try:
+            set_phone_permission(checked)
+        except OSError:
+            self.permission.blockSignals(True)
+            self.permission.setChecked(not checked)
+            self.permission.blockSignals(False)
+            self.message.setText('No se pudo guardar el permiso del teléfono.')
+
+    def pair(self):
+        endpoint, code = self.pair_address.text().strip(), self.code.text()
+        self.code.clear()
+        self.start_operation(lambda: self.phone.pair(endpoint, code))
+
+    def open_screen(self):
+        if not self.phone.serial:
+            self.message.setText('Primero conecta el teléfono.')
+            return
+        PhoneScreenDialog(self.phone, self).exec()
+
+    def connect_phone(self):
+        endpoint = self.address.text().strip()
+        self.start_operation(lambda: self.phone.connect(endpoint))
+
+    def start_operation(self, operation):
+        if self.worker is not None:
+            return
+        for button in (self.pair_button, self.connect_button, self.screen_button, self.disconnect_button, self.close_button):
+            button.setEnabled(False)
+        self.message.setText('Conectando con Android…')
+        self.worker = PhoneWorker(operation, self)
+        self.worker.outcome.connect(self.finish_operation)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker.finished.connect(self.worker_finished)
+        self.worker.start()
+
+    @pyqtSlot(object)
+    def finish_operation(self, result):
+        self.message.setText(result.get('error') or ('Emparejado. Ahora introduce la dirección de conexión y pulsa Conectar.' if result.get('paired') else
+                             'Teléfono conectado. Puedes cerrar esta ventana.' if result.get('connected') else
+                             'Teléfono desconectado de esta sesión.'))
+
+    @pyqtSlot()
+    def worker_finished(self):
+        self.worker = None
+        for button in (self.pair_button, self.connect_button, self.screen_button, self.disconnect_button, self.close_button):
+            button.setEnabled(True)
+
+    def reject(self):
+        if self.worker is None:
+            super().reject()
+
+    def closeEvent(self, event):
+        if self.worker is not None:
+            event.ignore()
+        else:
+            event.accept()
+
+
 class JarvisWindow(QMainWindow):
     def __init__(self, brain, voice):
         super().__init__()
@@ -578,6 +802,9 @@ class JarvisWindow(QMainWindow):
         self.pin = QCheckBox('Siempre visible')
         self.pin.toggled.connect(self.toggle_pin)
         top.addWidget(self.pin)
+        self.phone_button = QPushButton('Teléfono')
+        self.phone_button.clicked.connect(self.open_phone)
+        top.addWidget(self.phone_button)
         self.agenda_button = QPushButton('Agenda')
         self.agenda_button.clicked.connect(self.open_agenda)
         top.addWidget(self.agenda_button)
@@ -859,8 +1086,9 @@ class JarvisWindow(QMainWindow):
                    if name == 'schedule_email_permission' else '\nAl autorizar, permites eliminar recordatorios locales cuando lo pidas sin volver a preguntar. Puedes revocarlo en Ajustes. Se eliminará el recordatorio solicitado.'
                    if name == 'delete_reminder_permission' else '\nSe abrirá un borrador de WhatsApp; no se enviará automáticamente. Revisa el número y el texto y pulsa Enviar en WhatsApp.'
                    if name == 'whatsapp_prepare' else '\nSe capturará la pantalla completa y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
-                   if name == 'inspect_screen' else '\nLa imagen se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
-                   if name == 'inspect_image' else '\nSe buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
+                   if name in ('inspect_screen', 'phone_inspect_screen') else '\nLa imagen se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
+                   if name == 'inspect_image' else '\nLos nombres de archivos del teléfono pueden contener información privada y se enviarán al proveedor del chat.'
+                   if name == 'phone_list_files' else '\nSe buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
                    if name == 'search_gmail' else '\nSe descargará el adjunto de Gmail y se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_gmail_image' else ' El contenido del correo se enviará al proveedor del chat.'
                    if name == 'read_gmail' else ' Se enviará el correo completo al destinatario indicado.'
@@ -927,6 +1155,12 @@ class JarvisWindow(QMainWindow):
             self.set_task_state('thinking')
         else:
             self.set_task_state('idle')
+
+    def open_phone(self):
+        if self.thread is not None:
+            self.status.setText('Espera a que termine la solicitud antes de conectar el teléfono.')
+            return
+        PhoneDialog(self.brain.brain.controller.phone, self).exec()
 
     def open_agenda(self):
         try:
@@ -1047,6 +1281,7 @@ class JarvisWindow(QMainWindow):
             self.expanded_maximized = self.isMaximized()
             self.showNormal()
             self.compact = True
+            self.phone_button.hide()
             self.settings_button.hide()
             self.memory_button.hide()
             self.agenda_button.hide()
@@ -1063,6 +1298,7 @@ class JarvisWindow(QMainWindow):
             self.resize(360, 390)
         else:
             self.compact = False
+            self.phone_button.show()
             self.settings_button.show()
             self.memory_button.show()
             self.agenda_button.show()

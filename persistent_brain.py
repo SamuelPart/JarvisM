@@ -9,6 +9,7 @@ from nvidia_brain import NvidiaBrain
 from permissions import preapproved, authorize_tool
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
 from weather_commands import parse_weather_request, format_weather
+from phone_commands import parse_phone_request, format_phone_result
 from reminder_commands import parse_relative_reminder, parse_delete_request, find_matching_reminders, select_reminders_by_time, select_reminders_by_date, select_reminders_by_period, select_reminders_by_minute
 
 
@@ -164,6 +165,17 @@ class PersistentBrain:
                 self.pending_weather = {'location': None, 'deadline': time.monotonic() + 300}
                 return self._remember_answer(text, '¿De qué ciudad, región o país quieres saber el clima?')
             return self._remember_answer(text, self._ask_weather(weather_query))
+        phone_request = parse_phone_request(clean)
+        if phone_request:
+            name, args = phone_request
+            try:
+                if not authorize_tool(name, args, self.approve):
+                    answer = 'No consulté el teléfono porque no se autorizó la acción.'
+                else:
+                    answer = format_phone_result(name, getattr(self.brain.controller, name)(**args))
+            except Exception:
+                answer = 'No pude comunicarme con el teléfono; no conozco la causa.'
+            return self._remember_answer(text, answer)
         if is_last_sent_request(clean):
             self.pending_reminder_choices = None
             try:
@@ -318,7 +330,9 @@ class PersistentBrain:
                 self.brain.controller = original
             if trace.results:
                 name, result = trace.results[-1]
-                if name == 'get_weather':
+                if name in ('phone_status', 'phone_action'):
+                    answer = format_phone_result(name, result)
+                elif name == 'get_weather':
                     if isinstance(result, dict) and result.get('ambiguous'):
                         self.pending_weather = {'location': result.get('location'), 'deadline': time.monotonic() + 300}
                     answer = format_weather(result)

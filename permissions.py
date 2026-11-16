@@ -58,6 +58,10 @@ def set_automation_permission(granted):
     _write_state(state)
 
 
+def set_phone_permission(granted):
+    _set_permission('phone_basic', granted)
+
+
 def set_network_permission(granted):
     _set_permission('network_actions', granted)
 
@@ -79,6 +83,9 @@ def set_scheduled_email_permission(granted):
 
 
 def authorize_tool(name, args, approve):
+    if read_state().get('phone_basic_accepted') is True:
+        if name == 'phone_status' or (name == 'phone_action' and args.get('action') in {'inicio', 'atras', 'recientes', 'whatsapp', 'chrome', 'youtube', 'ajustes'}):
+            return True
     if preapproved(name):
         return True
     if name == 'schedule_email':

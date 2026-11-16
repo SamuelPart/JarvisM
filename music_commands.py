@@ -46,7 +46,7 @@ class MusicTrace:
         target = getattr(self.controller, name)
         if self.block_immediate_email and name in ('send_gmail', 'reply_gmail'):
             return lambda *args, **kwargs: {'error': 'El usuario pidió un envío futuro; no se enviará ahora. Usa schedule_email si es un correo nuevo.'}
-        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder', 'schedule_email', 'cancel_scheduled_email', 'get_weather'):
+        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder', 'schedule_email', 'cancel_scheduled_email', 'get_weather', 'phone_status', 'phone_action'):
             return target
         def tracked(*args, **kwargs):
             if name == 'get_weather':

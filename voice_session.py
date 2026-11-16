@@ -100,8 +100,9 @@ class VoiceSession:
                 self.voice.speak_wait('La solicitud es demasiado larga para confirmarla por voz. La acción fue rechazada.')
                 return False
             privacy = (' Se capturará la pantalla y se enviará a NVIDIA. La descripción puede enviarse al proveedor del chat.'
-                       if name == 'inspect_screen' else ' La imagen se enviará a NVIDIA y la descripción puede enviarse al proveedor del chat.'
-                       if name == 'inspect_image' else ' Se buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
+                       if name in ('inspect_screen', 'phone_inspect_screen') else ' La imagen se enviará a NVIDIA y la descripción puede enviarse al proveedor del chat.'
+                       if name == 'inspect_image' else ' Se consultarán nombres de archivos del teléfono y se enviarán al proveedor del chat.'
+                       if name == 'phone_list_files' else ' Se buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
                        if name == 'search_gmail' else ' Se descargará el adjunto de Gmail y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
                        if name == 'inspect_gmail_image' else ' El contenido del correo se enviará al proveedor del chat.'
                    if name == 'read_gmail' else ' Se enviará el correo completo al destinatario indicado.'

@@ -2161,3 +2161,110 @@ def test_orb_transition_is_smooth_frame_independent_and_bounded():
     assert 0 < approach(0, 1, 999, .26) < 1
     assert approach(.4, 1, -1, .26) == .4
     assert approach(.4, 1, .04, 0) == 1
+
+
+def test_android_pairing_code_stays_out_of_argv_and_rejects_public_ips():
+    from android_phone import AndroidPhone, PhoneError, local_endpoint
+    calls = []
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout='Successfully paired to 192.168.43.1:37123')
+    phone = AndroidPhone(runner=run, find=lambda name: '/usr/bin/adb')
+    assert phone.pair('192.168.43.1:37123', '123456')['paired']
+    assert '123456' not in calls[0][0] and calls[0][1]['input'] == '123456\n'
+    assert local_endpoint('172.20.10.1:5000') == '172.20.10.1:5000'
+    for address in ('8.8.8.8:55', '127.0.0.1:12', '192.168.1.2:0', 'localhost:5555', '192.168.1.1:5555;whoami'):
+        with pytest.raises(PhoneError):
+            local_endpoint(address)
+    with pytest.raises(PhoneError):
+        phone.pair('192.168.1.4:1234', '111111;rm')
+
+
+def test_android_connection_pins_device_and_failure_clears_previous():
+    from android_phone import AndroidPhone, PhoneError
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[1] == 'connect':
+            return SimpleNamespace(returncode=0, stdout='connected to 192.168.1.8:4000\n')
+        if argv[-1] == 'get-state':
+            return SimpleNamespace(returncode=0, stdout='device\n')
+        return SimpleNamespace(returncode=0, stdout='level: 68\n')
+    phone = AndroidPhone(runner=run, find=lambda name: 'adb')
+    assert phone.connect('192.168.1.8:4000')['connected']
+    assert phone.status()['battery_percent'] == 68
+    assert all(call[1:3] == ['-s', '192.168.1.8:4000'] for call in calls[1:])
+    with pytest.raises(PhoneError):
+        phone.connect('192.168.1.9:4000')
+    assert phone.serial is None
+
+
+def test_android_restricts_actions_and_never_interpolates_shell_commands():
+    from android_phone import AndroidPhone, PhoneError
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout='ok')
+    phone = AndroidPhone(runner=run, find=lambda name: 'adb')
+    phone.serial = '192.168.1.8:4000'
+    assert phone.action('tocar', 50, 70)['requested']
+    assert calls[-1] == ['adb', '-s', phone.serial, 'shell', 'input', 'tap', '50', '70']
+    with pytest.raises(PhoneError):
+        phone.action('tocar', '5;rm', 3)
+    with pytest.raises(PhoneError):
+        phone.action('reboot')
+    with pytest.raises(PhoneError):
+        phone.list_files('../../data')
+    assert len(calls) == 1
+
+
+def test_android_screenshot_validated_before_vision():
+    from android_phone import AndroidPhone, PhoneError
+    phone = AndroidPhone(runner=lambda *a, **kw: SimpleNamespace(returncode=0, stdout=b'not png'), find=lambda name: 'adb')
+    phone.serial = '192.168.1.8:4000'
+    with pytest.raises(PhoneError, match='captura válida'):
+        phone.screenshot()
+
+
+def test_phone_permissions_are_scoped_and_sensitive_capture_always_asks(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    calls = []
+    approve = lambda name, args: calls.append(name) or False
+    assert not permissions.authorize_tool('phone_status', {}, approve)
+    permissions.set_phone_permission(True)
+    assert permissions.authorize_tool('phone_status', {}, approve)
+    assert permissions.authorize_tool('phone_action', {'action': 'whatsapp'}, approve)
+    assert not permissions.authorize_tool('phone_action', {'action': 'tocar', 'x': 3, 'y': 4}, approve)
+    assert not permissions.authorize_tool('phone_inspect_screen', {}, approve)
+    assert not permissions.authorize_tool('phone_list_files', {'folder': 'fotos'}, approve)
+    permissions.set_phone_permission(False)
+    assert not permissions.authorize_tool('phone_status', {}, approve)
+    assert calls == ['phone_status', 'phone_action', 'phone_inspect_screen', 'phone_list_files', 'phone_status']
+
+
+def test_phone_requests_route_only_explicit_phone_and_report_honestly():
+    from phone_commands import parse_phone_request, format_phone_result
+    assert parse_phone_request('Jarvis, abre WhatsApp en mi celular') == ('phone_action', {'action': 'whatsapp'})
+    assert parse_phone_request('¿cuánta batería tiene mi teléfono?') == ('phone_status', {})
+    assert parse_phone_request('abre WhatsApp') is None
+    assert parse_phone_request('no abras WhatsApp en mi celular') is None
+    assert 'no pude comprobar' in format_phone_result('phone_action', {'requested': True}).lower()
+    assert '68 por ciento' in format_phone_result('phone_status', {'connected': True, 'battery_percent': 68})
+
+
+def test_phone_voice_and_chat_route_to_connected_device_without_model(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_phone_permission(True)
+    calls = []
+    controller = SimpleNamespace(phone_status=lambda: {'connected': True, 'battery_percent': 73},
+                                 phone_action=lambda **kwargs: calls.append(kwargs) or {'requested': True})
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: pytest.fail('Acción autorizada'),
+                            post=lambda **_: pytest.fail('No debe recurrir al modelo')), JarvisMemory(tmp_path / 'memory.db'))
+    assert '73 por ciento' in agent.ask('qué batería tiene mi celular')
+    assert 'no pude comprobar' in agent.ask('abre WhatsApp en mi teléfono').lower()
+    assert calls == [{'action': 'whatsapp'}]
