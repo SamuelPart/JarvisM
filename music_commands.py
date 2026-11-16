@@ -47,8 +47,20 @@ class MusicTrace:
         def tracked(*args, **kwargs):
             try:
                 result = target(*args, **kwargs)
-            except Exception:
-                self.results.append((name, {'error': 'La herramienta de música falló.'}))
+            except Exception as exc:
+                if name == 'whatsapp_prepare':
+                    known = {
+                        'Indique el número internacional con código de país y solo dígitos.':
+                            'Necesito el número con código de país y solo dígitos.',
+                        'El mensaje debe tener entre 1 y 4000 caracteres.':
+                            'El mensaje está vacío o supera los 4000 caracteres.',
+                    }
+                    reason = known.get(str(exc)) if isinstance(exc, ValueError) else None
+                    if reason is None and isinstance(exc, OSError):
+                        reason = 'No se pudo iniciar el navegador.'
+                    self.results.append((name, {'error': reason or 'Ocurrió un error al preparar WhatsApp; no conozco la causa.'}))
+                else:
+                    self.results.append((name, {'error': 'La herramienta de música falló.'}))
                 raise
             self.results.append((name, result))
             return result
@@ -62,7 +74,7 @@ def format_result(name, result):
         return 'No pude completar la solicitud: ' + str(result['error'])
     if name == 'play_music':
         if result.get('requested') is True:
-            return 'Solicité abrir la canción en Chrome; no puedo confirmar la reproducción.'
+            return 'Ya pedí abrir la canción en Chrome, señor.'
         if result.get('opened') is True and result.get('playing') is True:
             return 'Listo, señor.'
         if result.get('opened') is True:

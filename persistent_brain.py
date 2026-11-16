@@ -1,11 +1,22 @@
 """Bridge local memory to either provider without persisting tool protocol data."""
 import sqlite3
 import re
+from datetime import datetime
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
+
+
+def natural_time(value):
+    """Format the actual local time without adding seconds or a timezone."""
+    dt = datetime.fromisoformat(value)
+    hour = dt.hour % 12 or 12
+    period = ('de la madrugada' if dt.hour < 6 else 'de la mañana' if dt.hour < 12
+              else 'de la tarde' if dt.hour < 19 else 'de la noche')
+    verb = 'Es la' if hour == 1 else 'Son las'
+    return f'{verb} {hour}:{dt.minute:02d} {period}, señor.'
 
 
 class PersistentBrain:
@@ -44,8 +55,9 @@ class PersistentBrain:
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
         app = re.fullmatch(r'abre\s+(?:la aplicaci[oó]n\s+)?(google chrome|chrome|firefox|whatsapp|archivos)', clean, re.I)
         routine = re.fullmatch(r'(?:buenos d[ií]as|(?:ejecuta|inicia|activa) (?:la )?rutina(?: de buenos d[ií]as)?)', clean, re.I)
-        if app or routine:
-            name = 'open_app' if app else 'run_routine'
+        time_request = re.fullmatch(r'(?:qu[eé] hora es|dime la hora|dame la hora|la hora)', clean, re.I)
+        if app or routine or time_request:
+            name = 'open_app' if app else 'run_routine' if routine else 'current_time'
             args = {'name': app.group(1)} if app else {}
             try:
                 if not preapproved(name) and not self.approve(name, args):
@@ -53,7 +65,9 @@ class PersistentBrain:
                 else:
                     result = getattr(self.brain.controller, name)(**args)
                     if app:
-                        answer = result.get('error') or ('Solicité abrir ' + app.group(1) + '; no puedo confirmar la ventana.')
+                        answer = result.get('error') or ('Ya pedí abrir ' + app.group(1) + ', señor.')
+                    elif time_request:
+                        answer = natural_time(result['local_time'])
                     else:
                         answer = result.get('summary', 'No pude completar la rutina.')
                         errors = [item.get('error') for item in result.get('applications', []) if item.get('error')]
@@ -91,12 +105,14 @@ class PersistentBrain:
             if trace.results:
                 name, result = trace.results[-1]
                 if name == 'whatsapp_prepare':
-                    if not isinstance(result, dict) or result.get('error'):
-                        answer = 'No pude preparar el borrador de WhatsApp.'
+                    if not isinstance(result, dict):
+                        answer = 'No pude preparar el borrador de WhatsApp; no conozco la causa.'
+                    elif result.get('error'):
+                        answer = 'No pude preparar el borrador de WhatsApp: ' + str(result['error'])
                     elif result.get('opened'):
-                        answer = 'Solicité abrir el borrador en WhatsApp. Debes pulsar Enviar; no he enviado el mensaje.'
+                        answer = 'Ya pedí abrir el borrador. Pulsa Enviar en WhatsApp.'
                     else:
-                        answer = 'No pude solicitar la apertura del borrador de WhatsApp; no se envió el mensaje.'
+                        answer = 'No pude abrir el borrador: el navegador no aceptó la solicitud.'
                 else:
                     answer = format_result(name, result)
             elif is_music_action_request(text):

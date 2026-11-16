@@ -1044,7 +1044,7 @@ def test_music_requests_chrome_new_tab_without_claiming_playback(monkeypatch, tm
     result = music_player.MusicPlayer().play('tema')
     assert calls == [['/usr/bin/google-chrome', '--new-tab', 'https://www.youtube.com/watch?v=dfojvebIwJc']]
     assert result['requested'] and not result['playing']
-    assert 'no puedo confirmar' in format_result('play_music', result)
+    assert 'pedí abrir' in format_result('play_music', result)
 
 
 def test_music_missing_chrome_and_pause_are_honest(monkeypatch, tmp_path):
@@ -1124,7 +1124,7 @@ def test_pon_title_routes_directly_to_chrome(monkeypatch, tmp_path):
     agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
     response = agent.ask('pon el sexto sentido')
     assert calls == [['/usr/bin/google-chrome', '--new-tab', 'https://www.youtube.com/watch?v=dfojvebIwJc']]
-    assert 'no puedo confirmar' in response
+    assert 'pedí abrir' in response
 
 
 def test_single_broad_consent_is_scoped_and_remembered(monkeypatch, tmp_path):
@@ -1186,7 +1186,7 @@ def test_direct_app_and_morning_routine_respect_permission(monkeypatch, tmp_path
     assert 'no autorizada' in agent.ask('Abre Chrome')
     assert calls == []
     permissions.set_automation_permission(True)
-    assert 'Solicité abrir Chrome' in agent.ask('Abre Chrome')
+    assert 'pedí abrir Chrome' in agent.ask('Abre Chrome')
     assert calls == ['Chrome']
     assert 'No encontré WhatsApp' in agent.ask('Jarvis, buenos días')
 
@@ -1260,4 +1260,55 @@ def test_whatsapp_tool_does_not_let_model_claim_message_was_sent(tmp_path, monke
     controller = SimpleNamespace(whatsapp_prepare=lambda **kwargs: {'opened': True, 'sent': False})
     agent = PersistentBrain(NvidiaBrain('key', controller, lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
     result = agent.ask('Envía hola por WhatsApp al +51987654321')
-    assert 'no he enviado' in result and 'debes pulsar' in result.lower()
+    assert 'Pulsa Enviar' in result and 'Mensaje enviado' not in result
+
+
+def test_natural_time_drops_seconds_and_timezone():
+    from persistent_brain import natural_time
+    assert natural_time('2026-11-14T19:48:13-05:00') == 'Son las 7:48 de la noche, señor.'
+    assert natural_time('2026-11-14T01:03:13-05:00') == 'Es la 1:03 de la madrugada, señor.'
+    assert natural_time('2026-11-14T12:00:00-05:00') == 'Son las 12:00 de la tarde, señor.'
+
+
+def test_simple_time_request_uses_actual_time_without_model(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_agenda_permission(True)
+    controller = SimpleNamespace(current_time=lambda: {'local_time': '2026-11-14T19:48:13-05:00'})
+    brain = NvidiaBrain('fake', controller, lambda *_: pytest.fail('No requiere permiso'),
+                        post=lambda **_: pytest.fail('No requiere modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    assert agent.ask('Jarvis, ¿qué hora es?') == 'Son las 7:48 de la noche, señor.'
+
+
+def test_whatsapp_error_preserves_known_reason_without_leaking_details():
+    from music_commands import MusicTrace
+    def invalid(**kwargs):
+        raise ValueError('Indique el número internacional con código de país y solo dígitos.')
+    trace = MusicTrace(SimpleNamespace(whatsapp_prepare=invalid))
+    with pytest.raises(ValueError): trace.whatsapp_prepare(phone='123', message='hola')
+    assert 'código de país' in trace.results[0][1]['error']
+    def unknown(**kwargs): raise RuntimeError('token privado')
+    trace = MusicTrace(SimpleNamespace(whatsapp_prepare=unknown))
+    with pytest.raises(RuntimeError): trace.whatsapp_prepare(phone='123', message='hola')
+    assert 'no conozco la causa' in trace.results[0][1]['error']
+    assert 'token privado' not in str(trace.results)
+
+
+def test_whatsapp_reports_validation_failure_not_fake_cause(tmp_path, monkeypatch):
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    from system_control import SystemController
+    calls = []
+    def post(*args, **kwargs):
+        calls.append(True)
+        msg = ({'content': '', 'tool_calls': [{'id': 't1', 'function': {'name': 'whatsapp_prepare', 'arguments': '{"phone":"123","message":"Hola"}'}}]}
+               if len(calls) == 1 else {'content': 'Listo.'})
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': msg}]})
+    agent = PersistentBrain(NvidiaBrain('key', SystemController(), lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
+    result = agent.ask('Envía hola por WhatsApp')
+    assert 'código de país' in result and result != 'Listo.'
