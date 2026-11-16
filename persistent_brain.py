@@ -1,5 +1,6 @@
 """Bridge local memory to either provider without persisting tool protocol data."""
 import sqlite3
+import re
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
@@ -39,6 +40,32 @@ class PersistentBrain:
             raise TypeError('Proveedor de memoria no compatible')
 
     def ask(self, text):
+        # Handle common automation requests without depending on a model to call tools.
+        clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        app = re.fullmatch(r'abre\s+(?:la aplicaci[oó]n\s+)?(google chrome|chrome|firefox|whatsapp|archivos)', clean, re.I)
+        routine = re.fullmatch(r'(?:buenos d[ií]as|(?:ejecuta|inicia|activa) (?:la )?rutina(?: de buenos d[ií]as)?)', clean, re.I)
+        if app or routine:
+            name = 'open_app' if app else 'run_routine'
+            args = {'name': app.group(1)} if app else {}
+            try:
+                if not preapproved(name) and not self.approve(name, args):
+                    answer = 'Acción no autorizada, señor.'
+                else:
+                    result = getattr(self.brain.controller, name)(**args)
+                    if app:
+                        answer = result.get('error') or ('Solicité abrir ' + app.group(1) + '; no puedo confirmar la ventana.')
+                    else:
+                        answer = result.get('summary', 'No pude completar la rutina.')
+                        errors = [item.get('error') for item in result.get('applications', []) if item.get('error')]
+                        if errors:
+                            answer += ' ' + ' '.join(errors)
+            except Exception:
+                answer = 'No pude completar la solicitud, señor.'
+            try:
+                self.memory.add_turn(text, answer)
+            except (sqlite3.Error, OSError):
+                return answer + '\n\nAviso: no se pudo guardar esta conversación en la memoria local.'
+            return answer
         command = parse_music_request(text)
         if command:
             name, args = command

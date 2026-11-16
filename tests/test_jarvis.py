@@ -1125,3 +1125,78 @@ def test_pon_title_routes_directly_to_chrome(monkeypatch, tmp_path):
     response = agent.ask('pon el sexto sentido')
     assert calls == [['/usr/bin/google-chrome', '--new-tab', 'https://www.youtube.com/watch?v=dfojvebIwJc']]
     assert 'no puedo confirmar' in response
+
+
+def test_single_broad_consent_is_scoped_and_remembered(monkeypatch, tmp_path):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_automation_permission(True)
+    for tool in ('web_search', 'play_music', 'send_gmail', 'create_reminder', 'files', 'open_app', 'run_routine', 'volume_brightness'):
+        assert permissions.preapproved(tool), tool
+    for tool in ('terminal', 'gui', 'inspect_screen', 'inspect_image', 'inspect_gmail_image'):
+        assert not permissions.preapproved(tool), tool
+    assert permissions.read_state()['startup_briefing_accepted']
+    permissions.set_automation_permission(False)
+    assert not permissions.preapproved('files')
+    # Existing independent Gmail permission remains controllable separately.
+    assert permissions.preapproved('send_gmail')
+    permissions.set_gmail_permission(False)
+    assert not permissions.preapproved('send_gmail')
+
+
+def test_declining_automation_does_not_revoke_prior_permissions(monkeypatch, tmp_path):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_gmail_permission(True)
+    permissions.set_automation_permission(False)
+    assert permissions.preapproved('read_gmail')
+    assert not permissions.preapproved('files')
+    assert permissions.read_state()['network_actions_asked']
+
+
+def test_routine_configures_only_supported_apps_and_handles_open_failure(monkeypatch, tmp_path):
+    import routines
+    monkeypatch.setattr(routines, 'STATE', tmp_path / 'routine.json')
+    monkeypatch.setattr(routines.shutil, 'which', lambda name: '/usr/bin/google-chrome' if name == 'google-chrome-stable' else None)
+    calls = []
+    monkeypatch.setattr(routines.subprocess, 'Popen', lambda argv, **kwargs: calls.append(argv))
+    monkeypatch.setattr(routines.startup_briefing, 'build', lambda: 'Buenos días.')
+    assert routines.configure('Chrome, WhatsApp')['configured'] == ['chrome', 'whatsapp']
+    result = routines.run()
+    assert calls == [['/usr/bin/google-chrome']]
+    assert result['summary'] == 'Buenos días.'
+    assert result['applications'][0]['requested'] and 'No encontré' in result['applications'][1]['error']
+    with pytest.raises(ValueError):
+        routines.configure('chrome, rm -rf /')
+    assert routines.run()['applications'][0]['application'] == 'chrome'
+    assert not routines.open_app('otro programa')['requested']
+
+
+def test_direct_app_and_morning_routine_respect_permission(monkeypatch, tmp_path):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    calls = []
+    controller = SimpleNamespace(
+        open_app=lambda name: calls.append(name) or {'requested': True},
+        run_routine=lambda: {'summary': 'Buenos días.', 'applications': [{'error': 'No encontré WhatsApp instalado.'}]})
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: False), JarvisMemory(tmp_path / 'memory.db'))
+    assert 'no autorizada' in agent.ask('Abre Chrome')
+    assert calls == []
+    permissions.set_automation_permission(True)
+    assert 'Solicité abrir Chrome' in agent.ask('Abre Chrome')
+    assert calls == ['Chrome']
+    assert 'No encontré WhatsApp' in agent.ask('Jarvis, buenos días')
+
+
+def test_updater_restart_uses_requested_entrypoint(monkeypatch, tmp_path):
+    import updater
+    called = []
+    monkeypatch.setattr(updater, 'ROOT', tmp_path)
+    monkeypatch.setattr(updater.os, 'execv', lambda exe, args: called.append((exe, args)))
+    updater.restart('gui.py')
+    assert called[0][1][1] == str(tmp_path / 'gui.py')
+    with pytest.raises(ValueError):
+        updater.restart('../other.py')

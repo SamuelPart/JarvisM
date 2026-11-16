@@ -23,6 +23,7 @@ from nvidia_vision import read_image, analyze, validate_image, VisionError
 import gmail_access
 import calendar_access
 import startup_briefing
+import routines
 
 
 class SystemController:
@@ -31,6 +32,15 @@ class SystemController:
         if self.system not in ('Windows', 'Linux'):
             raise RuntimeError('Solo Windows y Linux son compatibles.')
         self.music = MusicPlayer()
+
+    def open_app(self, name: str) -> dict:
+        return routines.open_app(name)
+
+    def configure_routine(self, apps: str) -> dict:
+        return routines.configure(apps)
+
+    def run_routine(self) -> dict:
+        return routines.run()
 
     def current_time(self) -> dict:
         return {'local_time': datetime.now().astimezone().isoformat(timespec='seconds')}

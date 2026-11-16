@@ -44,5 +44,7 @@ def update():
     return True
 
 
-def restart():
-    os.execv(sys.executable, [sys.executable, str(ROOT / 'main.py'), *sys.argv[1:]])
+def restart(entrypoint='main.py'):
+    if entrypoint not in ('main.py', 'gui.py'):
+        raise ValueError('Punto de inicio no válido.')
+    os.execv(sys.executable, [sys.executable, str(ROOT / entrypoint), *sys.argv[1:]])

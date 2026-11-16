@@ -27,7 +27,7 @@ from core_state import CoreState
 from agenda import Agenda
 from approval import is_approved
 import startup_briefing
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -261,6 +261,10 @@ class VisualSettingsDialog(QDialog):
             form.addRow(label, combo)
             self.fields[key] = combo
         layout.addLayout(form)
+        self.automation_permission = QCheckBox('Automatización amplia y actualizaciones al iniciar')
+        self.automation_permission.setChecked(read_state().get('automation_accepted') is True)
+        self.automation_permission.setToolTip('Permite abrir aplicaciones y sitios, crear recordatorios y leer, crear, modificar o mover archivos sin preguntar. Activa actualizaciones automáticas de código. Shell, control de pantalla e imágenes requieren permiso aparte. Desactivar esta opción no revoca Gmail, búsquedas, agenda ni resumen: cambia también esas casillas abajo.')
+        layout.addWidget(self.automation_permission)
         self.network_permission = QCheckBox('Permitir búsquedas y música sin preguntar cada vez')
         self.network_permission.setChecked(read_state().get('network_actions_accepted') is True)
         self.network_permission.setToolTip('Las búsquedas y la música usan servicios externos; las acciones críticas siguen pidiendo permiso.')
@@ -702,6 +706,8 @@ class JarvisWindow(QMainWindow):
             return
         try:
             self.preferences = save_ui(UI_SETTINGS_PATH, dialog.values())
+            if dialog.automation_permission.isChecked() != (read_state().get('automation_accepted') is True):
+                set_automation_permission(dialog.automation_permission.isChecked())
             set_network_permission(dialog.network_permission.isChecked())
             set_gmail_permission(dialog.gmail_permission.isChecked())
             set_agenda_permission(dialog.agenda_permission.isChecked())
@@ -850,6 +856,51 @@ QLabel#dialogTitle { font-size: 19px; font-weight: 700; }
 '''
 
 
+
+class UpdateSignals(QObject):
+    done = pyqtSignal(str, bool)
+
+
+def check_gui_updates():
+    """Check in a worker before any conversation, then restart the GUI if updated."""
+    from PyQt6.QtCore import QEventLoop
+    import updater
+    waiting = QDialog()
+    waiting.setWindowTitle('JARVIS')
+    waiting.setWindowFlags(waiting.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)
+    layout = QVBoxLayout(waiting)
+    layout.addWidget(QLabel('Buscando actualizaciones de JARVIS…'))
+    signals = UpdateSignals()
+    loop = QEventLoop()
+    result = {'error': '', 'updated': False}
+    def finished(error, updated):
+        result.update(error=error, updated=updated)
+        loop.quit()
+    signals.done.connect(finished)
+    def work():
+        try:
+            updated = updater.update()
+            signals.done.emit('', updated)
+        except Exception as exc:
+            signals.done.emit(str(exc)[:500], False)
+    waiting.show()
+    threading.Thread(target=work, name='JARVIS actualizaciones', daemon=True).start()
+    loop.exec()
+    waiting.close()
+    if result['error']:
+        message = ('Hay cambios locales; no se actualizó JARVIS.' if 'Hay cambios locales' in result['error']
+                   else 'No se pudo actualizar JARVIS. Comprueba la conexión, el remoto Git y las dependencias.')
+        QMessageBox.warning(None, 'Actualización', message)
+        if 'Código actualizado, pero falló' in result['error']:
+            return True  # Avoid running a partially upgraded environment.
+    if result['updated']:
+        try:
+            updater.restart('gui.py')
+        except OSError:
+            QMessageBox.warning(None, 'Actualización', 'JARVIS se actualizó pero no pudo reiniciarse; ábrelo de nuevo.')
+            return True
+    return False
+
 def main():
     load_dotenv(ROOT / '.env')
     app = QApplication(sys.argv)
@@ -865,54 +916,38 @@ def main():
     voice = Voice()
     print('Activando protocolos de seguridad...', flush=True)
     voice.speak('Activando protocolos de seguridad...')
-    try:
-        state = json.loads(STATE.read_text(encoding='utf-8'))
-        accepted = state.get('initial_accepted') is True
-    except (OSError, ValueError, AttributeError):
-        accepted = False
-    if not accepted:
-        response = QMessageBox.question(None, 'Protocolo de seguridad',
-            'JARVIS puede ejecutar comandos y acceder a archivos con tus permisos. No lo ejecutes como administrador. ¿Autorizas iniciar en esta máquina?',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        if response != QMessageBox.StandardButton.Yes:
+    state = read_state()
+    if not state.get('automation_asked') or not state.get('initial_accepted'):
+        first = state.get('initial_accepted') is not True
+        text = ('JARVIS funcionará con los permisos de tu usuario; no lo ejecutes como administrador.\n\n'
+                '¿Autorizas de forma persistente, sin preguntar cada vez, búsquedas, música, abrir aplicaciones y páginas, '
+                'consultar y crear recordatorios, leer, crear, modificar y mover archivos, controlar volumen y brillo, '
+                'preparar borradores de WhatsApp y buscar, leer, enviar, responder y clasificar Gmail? También activará el resumen inicial y '
+                'las actualizaciones automáticas de código y dependencias desde el remoto Git configurado.\n\n'
+                'Puede cometer errores o seguir contenido malicioso; tus datos pueden enviarse a proveedores externos. '
+                'Los comandos de terminal, control directo del ratón y teclado e imágenes seguirán requiriendo autorización. '
+                'Puedes cambiar los permisos en Ajustes.\n\n'
+                + ('Sí: iniciar con automatización. No: iniciar sin concederla. Cancelar: no iniciar.' if first else
+                   'Sí: activar. No: mantener desactivada. Cancelar: salir.'))
+        answer = QMessageBox.question(None, 'Autorización de JARVIS', text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if answer == QMessageBox.StandardButton.Cancel:
             return 1
         try:
-            STATE.write_text(json.dumps({'initial_accepted': True}), encoding='utf-8')
+            set_automation_permission(answer == QMessageBox.StandardButton.Yes)
+            if first:
+                state = read_state()
+                state['initial_accepted'] = True
+                # Reuse the atomic writer; no code or credentials go in this file.
+                from permissions import _write_state
+                _write_state(state)
         except OSError:
-            QMessageBox.critical(None, 'JARVIS', 'No se pudo guardar la confirmación inicial.')
+            QMessageBox.critical(None, 'JARVIS', 'No se pudo guardar la autorización. No se iniciará.')
             return 1
-    if not read_state().get('network_actions_asked'):
-        answer = QMessageBox.question(None, 'Permiso para búsquedas y música',
-            '¿Permites que JARVIS busque en Internet y reproduzca música sin preguntar cada vez? Las consultas se enviarán a servicios externos. Los comandos, archivos y demás acciones seguirán requiriendo autorización.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        try:
-            set_network_permission(answer == QMessageBox.StandardButton.Yes)
-        except OSError:
-            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar la preferencia. Se pedirá permiso para cada acción.')
-    if not read_state().get('gmail_actions_asked'):
-        answer = QMessageBox.question(None, 'Permiso permanente para Gmail',
-            '¿Permites que JARVIS busque y lea correos, envíe mensajes y los marque como importantes o spam sin pedir permiso cada vez? Los mensajes pueden enviarse al proveedor del chat. JARVIS puede equivocarse o ser influido por contenido malicioso, y podría enviar o clasificar correos incorrectamente. Puedes desactivarlo en Ajustes. Las imágenes enviadas a NVIDIA seguirán requiriendo permiso.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        try:
-            set_gmail_permission(answer == QMessageBox.StandardButton.Yes)
-        except OSError:
-            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de Gmail; se pedirá en cada acción.')
-    if not read_state().get('agenda_read_asked'):
-        answer = QMessageBox.question(None, 'Permiso permanente de agenda',
-            '¿Permites consultar la hora, tus recordatorios locales y eventos de Google Calendar sin preguntar cada vez? Los datos pueden enviarse al proveedor de IA. Puedes desactivarlo en Ajustes. Crear o modificar recordatorios seguirá requiriendo autorización.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        try:
-            set_agenda_permission(answer == QMessageBox.StandardButton.Yes)
-        except OSError:
-            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar el permiso de agenda; se pedirá en cada consulta.')
-    if not read_state().get('startup_briefing_asked'):
-        answer = QMessageBox.question(None, 'Resumen automático al iniciar',
-            '¿Permites que JARVIS revise al iniciar tus recordatorios locales, eventos del Google Calendar conectado, batería, memoria, disco y cantidad de errores recientes del registro del sistema? Guardará una referencia local y podrá leer el resumen en voz alta; el texto hablado puede enviarse al servicio de voz configurado. Si solicitas detalles de los registros, estos pueden contener datos privados y enviarse al proveedor de IA. No vigila el equipo mientras está cerrado. Puedes desactivarlo en Ajustes.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        try:
-            set_briefing_permission(answer == QMessageBox.StandardButton.Yes)
-        except OSError:
-            QMessageBox.warning(None, 'Permisos', 'No se pudo guardar la preferencia; el resumen no se activará.')
+    if read_state().get('automation_accepted') is True or os.getenv('JARVIS_AUTO_UPDATE', '0') == '1':
+        if check_gui_updates():
+            return 1
     try:
         controller = SystemController()
         brain = create_brain(controller, lambda *_: False)

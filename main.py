@@ -8,7 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
 from errors import describe_error
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission
 from text_links import speech_text
 
 ROOT = Path(__file__).resolve().parent
@@ -76,32 +76,14 @@ def main():
     announce('Activando protocolos de seguridad...')
     if not initial_security():
         print('Inicio cancelado.'); return 1
-    if not read_state().get('network_actions_asked'):
-        granted = confirm('¿Autoriza búsquedas web y música sin preguntar cada vez? Se envían consultas a servicios externos; comandos y archivos siguen requiriendo permiso.')
+    if not read_state().get('automation_asked'):
+        granted = confirm('¿Autoriza permanentemente búsquedas, música, abrir sitios y aplicaciones, agenda, leer y modificar archivos, volumen, brillo, borradores de WhatsApp, Gmail (incluyendo envío), resumen inicial y actualizaciones automáticas de código y dependencias? Los datos pueden enviarse a proveedores externos; errores o contenido malicioso pueden causar acciones no deseadas. Terminal, ratón y teclado e imágenes siguen requiriendo autorización. Puede cambiar permisos en Ajustes.')
         try:
-            set_network_permission(granted)
+            set_automation_permission(granted)
         except OSError:
-            print('No se pudo guardar el permiso; se pedirá autorización cada vez.')
-    if not read_state().get('gmail_actions_asked'):
-        granted = confirm('¿Autoriza permanentemente buscar y leer Gmail, enviar correos y marcarlos importantes o spam sin preguntar cada vez? El contenido puede enviarse al proveedor del chat; JARVIS puede equivocarse o ser inducido por mensajes maliciosos. Las imágenes requieren permiso separado.')
-        try:
-            set_gmail_permission(granted)
-        except OSError:
-            print('No se pudo guardar el permiso de Gmail; se pedirá cada vez.')
-    if not read_state().get('agenda_read_asked'):
-        granted = confirm('¿Autoriza consultar la hora, recordatorios locales y Google Calendar sin preguntar cada vez? Sus datos pueden enviarse al proveedor de IA. Crear recordatorios requiere permiso aparte.')
-        try:
-            set_agenda_permission(granted)
-        except OSError:
-            print('No se pudo guardar el permiso de agenda; se pedirá en cada consulta.')
-    if not read_state().get('startup_briefing_asked'):
-        granted = confirm('¿Autoriza el resumen automático al iniciar? Consulta recordatorios locales, Google Calendar configurado, batería, memoria, disco y cantidad de errores de los registros; guarda una referencia local y la voz puede enviarse al servicio configurado; los detalles de registros solicitados pueden contener datos privados y enviarse al proveedor de IA.')
-        try:
-            set_briefing_permission(granted)
-        except OSError:
-            print('No se pudo guardar la preferencia; el resumen no se activará.')
+            print('No se pudo guardar el permiso.'); return 1
     # The explicit environment opt-in acknowledges that updates execute remote code.
-    if os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
+    if read_state().get('automation_accepted') is True or os.getenv('JARVIS_AUTO_UPDATE', '0') == '1': check_updates()
     from provider import create_brain
     from system_control import SystemController
     try:
