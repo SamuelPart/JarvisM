@@ -22,6 +22,8 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.ArrayList;
@@ -71,16 +73,31 @@ public final class MainActivity extends Activity implements RecognitionListener 
     private Button button(String title) { Button button = new Button(this); button.setText(title); button.setAllCaps(false); return button; }
     private void showSettings() {
         LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); form.setPadding(30, 10, 30, 0);
-        TextView notice = text("La clave se guarda cifrada en Android Keystore. Tus preguntas se envían a Gemini; el reconocimiento de voz puede enviarse al proveedor de Android. No compartas la clave en el chat.", 14, Color.DKGRAY);
+        TextView notice = text("La clave se guarda cifrada en Android Keystore. Tus preguntas se envían únicamente al proveedor que elijas; el reconocimiento de voz puede enviarse al proveedor de Android. La clave nunca se imprime ni se incluye en el APK. No la compartas en el chat.", 14, Color.DKGRAY);
         notice.setTextColor(Color.DKGRAY); form.addView(notice);
-        EditText key = new EditText(this); key.setSingleLine(true); key.setHint("Clave Gemini"); key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD); form.addView(key);
+        RadioGroup provider = new RadioGroup(this);
+        RadioButton nvidia = new RadioButton(this); nvidia.setId(1); nvidia.setText("NVIDIA (predeterminado)");
+        RadioButton gemini = new RadioButton(this); gemini.setId(2); gemini.setText("Gemini");
+        provider.addView(nvidia); provider.addView(gemini);
+        boolean useNvidia = Secrets.provider(this).equals("nvidia");
+        provider.check(useNvidia ? 1 : 2); form.addView(provider);
+        EditText key = new EditText(this); key.setSingleLine(true);
+        key.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        key.setHint(useNvidia ? "Clave de NVIDIA (build.nvidia.com)" : "Clave de Gemini (Google AI Studio)");
+        provider.setOnCheckedChangeListener((group, checkedId) -> key.setHint(checkedId == 1 ? "Clave de NVIDIA (build.nvidia.com)" : "Clave de Gemini (Google AI Studio)"));
+        form.addView(key);
         new AlertDialog.Builder(this).setTitle("Configurar JARVIS").setView(form)
           .setPositiveButton("Guardar", (dialog, which) -> {
+              String slot = provider.getCheckedRadioButtonId() == 2 ? "gemini" : "nvidia";
+              Secrets.provider(this, slot);
               String value = key.getText().toString().trim(); key.setText("");
-              if (value.isEmpty()) { status.setText("No se cambió la clave"); return; }
-              try { new Secrets(this).save(value); status.setText("Clave guardada de forma cifrada"); }
+              if (value.isEmpty()) { status.setText("Proveedor cambiado; no se cambió la clave"); return; }
+              try { new Secrets(this).save(slot, value); status.setText("Clave de " + slot.toUpperCase() + " guardada de forma cifrada"); }
               catch (Exception ignored) { status.setText("No se pudo guardar la clave de forma segura"); }
-          }).setNeutralButton("Borrar clave", (dialog, which) -> { key.setText(""); new Secrets(this).clear(); status.setText("Clave eliminada"); })
+          }).setNeutralButton("Borrar clave", (dialog, which) -> {
+              String slot = provider.getCheckedRadioButtonId() == 2 ? "gemini" : "nvidia"; key.setText("");
+              new Secrets(this).clear(slot); status.setText("Clave de " + slot.toUpperCase() + " eliminada");
+          })
           .setNegativeButton("Cancelar", (dialog, which) -> key.setText("")) .show();
     }
     private void discloseWake() {
