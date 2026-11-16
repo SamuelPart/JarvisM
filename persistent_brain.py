@@ -37,6 +37,37 @@ def is_scheduled_email_request(text):
     return bool(email and future)
 
 
+def is_last_sent_request(text):
+    """Handle unfiltered requests for the latest sent email, not future mail."""
+    text = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I)
+    text = re.sub(r'\s*[,;]?\s*por favor[.!?]*\s*$', '', text, flags=re.I).strip(' .!¡?¿')
+    return bool(re.fullmatch(
+        r'(?:(?:cu[aá]l|cu[aá]les) (?:fue|es|ha sido)|(?:dime|mu[eé]strame|revisa|consulta|ver|verifica)(?: cu[aá]l (?:fue|es))?)?\s*(?:el |mi )?[uú]ltim[oa] (?:correo|email|e-mail|mensaje)(?: que (?:envi[eé]|mand[eé]|enviaste|mandaste|he enviado|he mandado)| enviado| que enviamos)',
+        text, re.I))
+
+
+def format_recent_sent(result):
+    """Report Gmail data only, never infer delivery or use chat memory."""
+    if not isinstance(result, dict) or not isinstance(result.get('messages'), list):
+        return 'No pude consultar los correos enviados: Gmail devolvió una respuesta incompleta.'
+    messages = [item for item in result['messages'] if isinstance(item, dict)]
+    if not messages:
+        return 'No encontré correos en Enviados de la cuenta de Gmail consultada.'
+    dated = [item for item in messages if type(item.get('internal_date_ms')) is int and item['internal_date_ms'] >= 0]
+    item = max(dated, key=lambda x: x['internal_date_ms']) if dated else messages[0]
+    def field(value, fallback):
+        return ' '.join(value.split())[:200] if isinstance(value, str) and value.strip() else fallback
+    subject = field(item.get('subject'), 'sin asunto')
+    to = field(item.get('to'), 'destinatario no disponible')
+    when = ''
+    try:
+        if type(item.get('internal_date_ms')) is int:
+            when = ' el ' + datetime.fromtimestamp(item['internal_date_ms'] / 1000).astimezone().strftime('%d/%m/%Y a las %H:%M')
+    except (OverflowError, OSError, ValueError):
+        pass
+    return f'El más reciente que encontré en Enviados es «{subject}», para {to}{when}.'
+
+
 class PersistentBrain:
     def __init__(self, brain, memory):
         self.brain, self.memory = brain, memory
@@ -89,6 +120,21 @@ class PersistentBrain:
     def ask(self, text):
         # Handle common automation requests without depending on a model to call tools.
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        if is_last_sent_request(clean):
+            self.pending_reminder_choices = None
+            try:
+                args = {'query': 'in:sent'}
+                if not authorize_tool('search_gmail', args, self.approve):
+                    answer = 'No consulté Enviados porque no se autorizó el acceso a Gmail.'
+                else:
+                    answer = format_recent_sent(self.brain.controller.search_gmail(**args))
+            except Exception as exc:
+                from gmail_access import GmailError
+                if isinstance(exc, GmailError):
+                    answer = 'No pude consultar Enviados: ' + str(exc)
+                else:
+                    answer = 'No pude consultar Enviados; no conozco la causa.'
+            return self._remember_answer(text, answer)
         if self.pending_reminder_choices:
             if time.monotonic() > self.pending_reminder_deadline:
                 self.pending_reminder_choices = None

@@ -1808,3 +1808,79 @@ def test_schedule_calendar_durations_respect_dst_and_reject_nonexistent_hour(mon
     finally:
         monkeypatch.delenv('TZ', raising=False)
         time.tzset()
+
+
+def test_sent_email_search_returns_actual_recipient_and_gmail_timestamp(monkeypatch):
+    import gmail_access
+    seen = []
+    closed = []
+    class Session:
+        def close(self): closed.append(True)
+    monkeypatch.setattr(gmail_access, 'client', Session)
+    def get(session, path, params=None):
+        seen.append((path, params))
+        if path == 'messages':
+            return {'messages': [{'id': 'abc123'}]}
+        return {'id': 'abc123', 'internalDate': '1700000000000', 'labelIds': ['SENT'],
+                'payload': {'headers': [{'name': 'To', 'value': 'ana@example.com'},
+                                        {'name': 'Subject', 'value': 'Prueba'}]}}
+    monkeypatch.setattr(gmail_access, '_get', get)
+    result = gmail_access.search_messages('in:sent')
+    assert seen[0] == ('messages', {'q': 'in:sent', 'maxResults': 10})
+    assert result['messages'][0]['to'] == 'ana@example.com'
+    assert result['messages'][0]['internal_date_ms'] == 1700000000000
+    assert closed == [True]
+
+
+def test_recent_sent_direct_query_checks_gmail_and_never_uses_chat_memory(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_gmail_permission(True)
+    queries = []
+    controller = SimpleNamespace(search_gmail=lambda query: queries.append(query) or {'messages': [
+        {'subject': 'Viejo', 'to': 'primero@example.com', 'internal_date_ms': 1700000000000},
+        {'subject': 'Actual', 'to': 'segundo@example.com', 'internal_date_ms': 1700001000000}]})
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: pytest.fail('Ya autorizado'),
+                         post=lambda **_: pytest.fail('No debe llamar al modelo')), JarvisMemory(tmp_path / 'memory.db'))
+    answer = agent.ask('Jarvis, ¿cuál fue el último correo que envié?')
+    assert queries == ['in:sent']
+    assert 'Actual' in answer and 'segundo@example.com' in answer
+    assert 'programado' not in answer and 'no tengo acceso' not in answer.lower()
+
+
+def test_recent_sent_denial_and_gmail_failure_are_honest(tmp_path, monkeypatch):
+    import permissions
+    from gmail_access import GmailError
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    calls = []
+    def search(query):
+        calls.append(query)
+        raise GmailError('Gmail no está configurado en JARVIS.')
+    agent = PersistentBrain(NvidiaBrain('fake', SimpleNamespace(search_gmail=search), lambda *_: False), JarvisMemory(tmp_path / 'memory.db'))
+    assert 'no se autorizó' in agent.ask('el último correo enviado').lower() and not calls
+    permissions.set_gmail_permission(True)
+    result = agent.ask('el último correo enviado')
+    assert calls == ['in:sent'] and 'no está configurado' in result
+    assert 'programado' not in result
+
+
+def test_recent_sent_empty_and_incomplete_response():
+    from persistent_brain import format_recent_sent
+    assert 'No encontré' in format_recent_sent({'messages': []})
+    assert 'respuesta incompleta' in format_recent_sent({'error': 'problema'})
+
+
+def test_latest_sent_request_is_distinct_from_scheduled_mail():
+    from persistent_brain import is_last_sent_request
+    for phrase in ('¿Cuál fue el último correo que envié?', 'dime mi último correo enviado',
+                   'último mensaje que mandaste'):
+        assert is_last_sent_request(phrase)
+    for phrase in ('cuál es el último correo programado', 'qué envié a juan',
+                   'último correo enviado a ana@example.com'):
+        assert not is_last_sent_request(phrase)
