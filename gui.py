@@ -1,5 +1,6 @@
 """Interfaz de escritorio de JARVIS. Ejecutar con `python gui.py`."""
 from __future__ import annotations
+import faulthandler
 import json
 import math
 import os
@@ -8,6 +9,7 @@ import sys
 import threading
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from datetime import datetime
 
@@ -307,6 +309,7 @@ class ChatHistory(QScrollArea):
 class VoiceWorker(QObject):
     status = pyqtSignal(str)
     conversation_changed = pyqtSignal(bool)
+    error = pyqtSignal(str)
     finished = pyqtSignal()
 
     def __init__(self, brain, voice, conversation_changed=True):
@@ -318,6 +321,8 @@ class VoiceWorker(QObject):
     def run(self):
         try:
             self.session.run()
+        except Exception as exc:
+            self.error.emit(f'{type(exc).__name__}: {exc}')
         finally:
             self.finished.emit()
 
@@ -1153,6 +1158,14 @@ class JarvisWindow(QMainWindow):
         self.core.set_mode(self.core_state.set_speaking(active))
 
     @pyqtSlot(str)
+    @pyqtSlot(str)
+    def on_voice_error(self, message):
+        self.status.setText('Error de voz: ' + message)
+        self.append_chat('Sistema', 'El micrófono se detuvo por un error: ' + message)
+        QMessageBox.critical(self, 'Micrófono',
+                             'El micrófono se detuvo por un error:\n' + message +
+                             '\n\nTambién puedes abrir JARVIS desde una terminal (venv/bin/python gui.py) para ver más detalles.')
+
     @pyqtSlot(bool)
     def on_conversation_changed(self, enabled):
         self.conversation_enabled = enabled
@@ -1339,11 +1352,26 @@ class JarvisWindow(QMainWindow):
             self.status.setText('Deteniendo micrófono…')
             self.mic.setEnabled(False)
             return
+        try:
+            self.start_voice_thread()
+        except Exception as exc:
+            self.thread = None
+            self.worker = None
+            self.mic.setChecked(False)
+            self.mic.setEnabled(True)
+            self.input.setEnabled(True)
+            self.send.setEnabled(True)
+            self.status.setText('No se pudo activar el micrófono: ' + type(exc).__name__)
+            QMessageBox.critical(self, 'Micrófono',
+                                 'No se pudo activar el micrófono:\n' + f'{type(exc).__name__}: {exc}')
+
+    def start_voice_thread(self):
         self.thread = QThread(self)
         self.worker = VoiceWorker(self.brain, self.voice)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self.on_voice_status)
+        self.worker.error.connect(self.on_voice_error)
         self.worker.conversation_changed.connect(self.on_conversation_changed)
         if self.conversation_enabled:
             self.worker.session.set_conversation_mode(True)
@@ -1489,7 +1517,31 @@ def check_gui_updates():
             return True
     return False
 
+def install_crash_log():
+    """Write unhandled Python errors and fatal native crashes to .jarvis-crash.log."""
+    try:
+        path = ROOT / '.jarvis-crash.log'
+        handle = open(path, 'ab', buffering=0)
+        handle.write(b'== JARVIS crash log started ' + time.strftime('%Y-%m-%d %H:%M:%S').encode() + b' ==\n')
+        try:
+            faulthandler.enable(file=handle, all_threads=True)
+        except Exception:
+            pass
+        def hook(exc_type, exc, tb):
+            try:
+                with open(path, 'a', encoding='utf-8') as log:
+                    log.write('=== unhandled error ===\n')
+                    traceback.print_exception(exc_type, exc, tb, file=log)
+            except OSError:
+                pass
+            sys.__excepthook__(exc_type, exc, tb)
+        sys.excepthook = hook
+    except OSError:
+        pass  # Never block startup because of a log file.
+
+
 def main():
+    install_crash_log()
     load_dotenv(ROOT / '.env')
     app = QApplication(sys.argv)
     # Keep the user's launcher current when the project moves or is updated.
