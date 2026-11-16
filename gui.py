@@ -387,13 +387,15 @@ class ChatHistory(QScrollArea):
 class VoiceWorker(QObject):
     status = pyqtSignal(str)
     conversation_changed = pyqtSignal(bool)
+    answer = pyqtSignal(str)
     error = pyqtSignal(str)
     finished = pyqtSignal()
 
     def __init__(self, brain, voice, conversation_changed=True):
         super().__init__()
         callback = self.conversation_changed.emit if conversation_changed else None
-        self.session = VoiceSession(brain, voice, listen, self.status.emit, conversation_changed=callback)
+        self.session = VoiceSession(brain, voice, listen, self.status.emit, conversation_changed=callback,
+                                    on_answer=self.answer.emit)
 
     @pyqtSlot()
     def run(self):
@@ -965,6 +967,25 @@ class JarvisWindow(QMainWindow):
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
 
+        self.subtitle_label = QLabel('')
+        self.subtitle_label.setObjectName('subtitle')
+        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.hide()
+        self.subtitle_effect = QGraphicsOpacityEffect(self.subtitle_label)
+        self.subtitle_label.setGraphicsEffect(self.subtitle_effect)
+        layout.addWidget(self.subtitle_label)
+        self.subtitle_timer = QTimer(self)
+        self.subtitle_timer.setSingleShot(True)
+        self.subtitle_timer.setInterval(7000)
+        self.subtitle_fade = QPropertyAnimation(self.subtitle_effect, b'opacity', self)
+        self.subtitle_fade.setDuration(900)
+        self.subtitle_fade.setStartValue(1.0)
+        self.subtitle_fade.setEndValue(0.0)
+        self.subtitle_fade.setEasingCurve(QEasingCurve.Type.InCubic)
+        self.subtitle_fade.finished.connect(self.subtitle_label.hide)
+        self.subtitle_timer.timeout.connect(self.subtitle_fade.start)
+
         ghost = QHBoxLayout()
         ghost.addStretch()
         self.mic = QPushButton('MIC')
@@ -974,13 +995,6 @@ class JarvisWindow(QMainWindow):
         self.mic.setAccessibleName('Activar o apagar micrófono')
         self.mic.clicked.connect(self.toggle_microphone)
         ghost.addWidget(self.mic)
-        self.chat_toggle = QPushButton('CHAT')
-        self.chat_toggle.setObjectName('ghostIcon')
-        self.chat_toggle.setCheckable(True)
-        self.chat_toggle.setToolTip('Mostrar u ocultar la conversación')
-        self.chat_toggle.setAccessibleName('Mostrar u ocultar chat')
-        self.chat_toggle.toggled.connect(self.toggle_chat)
-        ghost.addWidget(self.chat_toggle)
         self.phone_button = QPushButton('TEL')
         self.phone_button.setObjectName('ghostIcon')
         self.phone_button.setToolTip('Teléfono Android')
@@ -1010,7 +1024,7 @@ class JarvisWindow(QMainWindow):
         self.ghost_row.setLayout(ghost)
         layout.addWidget(self.ghost_row)
 
-        self.hint = QLabel('di «Jarvis…» o pulsa CHAT para escribir')
+        self.hint = QLabel('la voz está por defecto — o escribe abajo')
         self.hint.setObjectName('hintLabel')
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.hint)
@@ -1034,7 +1048,6 @@ class JarvisWindow(QMainWindow):
         self.chat_audio = QCheckBox('Leer respuestas en voz alta')
         self.chat_audio.setChecked(True)
         chat_layout.addWidget(self.chat_audio)
-        self.chat_panel.hide()
         layout.addWidget(self.chat_panel, 1)
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 2, 0, 0)
@@ -1079,6 +1092,7 @@ class JarvisWindow(QMainWindow):
                 self.heartbeat = None
         if not read_state().get('startup_briefing_accepted'):
             QTimer.singleShot(0, self.check_reminders)
+        QTimer.singleShot(0, self.auto_start_voice)
 
     def play_thinking_sound(self, kind='thinking'):
         if self.preferences.get('weather_sound') != 'activado' or self.core_state.speaking:
@@ -1182,14 +1196,10 @@ class JarvisWindow(QMainWindow):
         else:
             self.weather_view.set_notice('Sin actualizar · datos anteriores')
 
-    @pyqtSlot(bool)
-    def toggle_chat(self, enabled):
-        self.chat_panel.setVisible(enabled)
-        if enabled:
-            self.input.setFocus()
-
     def append_chat(self, author, text):
         self.history.add_message(author, text)
+        if author == 'JARVIS':
+            self.show_subtitle(text)
 
     def submit_chat(self):
         text = self.input.text().strip()
@@ -1261,8 +1271,6 @@ class JarvisWindow(QMainWindow):
             heading = 'Permiso solicitado para: ' + name
         self.append_chat('Sistema', heading + '\n' + details + privacy +
                          '\nEscribe AUTORIZO para aprobar o NO para rechazar.')
-        self.chat_toggle.setChecked(True)
-        self.chat_panel.show()
         self.input.setPlaceholderText('Responde AUTORIZO o NO')
         self.input.setEnabled(True)
         self.send.setEnabled(True)
@@ -1307,6 +1315,10 @@ class JarvisWindow(QMainWindow):
     def on_conversation_changed(self, enabled):
         self.conversation_enabled = enabled
         self.status.setText('Conversando · te escucho' if enabled else 'Esperando que digas Jarvis')
+
+    def on_voice_answer(self, text):
+        self.append_chat('JARVIS', text)
+        self.show_subtitle(text)
 
     def on_voice_status(self, status):
         self.status.setText(status)
@@ -1408,6 +1420,31 @@ class JarvisWindow(QMainWindow):
             return
         self.core.configure(self.preferences)
 
+    def show_subtitle(self, text):
+        clean = speech_text(text).strip()
+        if not clean:
+            return
+        self.subtitle_fade.stop()
+        self.subtitle_timer.stop()
+        if len(clean) > 200:
+            clean = clean[:197].rstrip() + '…'
+        self.subtitle_label.setText(clean)
+        self.subtitle_effect.setOpacity(1.0)
+        self.subtitle_label.show()
+        self.subtitle_timer.start()
+
+    def auto_start_voice(self):
+        """La voz es el modo por defecto: intenta activar el micrófono al abrir."""
+        if self.thread is not None:
+            return
+        try:
+            self.start_voice_thread()
+            self.status.setText('Modo voz — di «Jarvis…»')
+        except Exception as exc:
+            self.mic.setChecked(False)
+            self.mic.setEnabled(True)
+            self.status.setText(f'El micrófono no está disponible ({type(exc).__name__}). Pulsa MIC para reintentar.')
+
     def update_hud(self):
         try:
             cpu = psutil.cpu_percent(interval=None)
@@ -1486,7 +1523,8 @@ class JarvisWindow(QMainWindow):
     def set_focus(self, enabled):
         if enabled and (self.weather_view.isVisible() or self.weather_loading.isVisible()):
             self.dismiss_weather()
-        for widget in (self.hud_diag, self.ghost_row, self.hint, self.chat_panel, self.chat_toggle):
+        for widget in (self.hud_diag, self.ghost_row, self.hint, self.chat_panel,
+                       self.hud_left, self.hud_right, self.status):
             widget.setVisible(not enabled)
         self.root_layout.setContentsMargins(16, 16, 16, 16) if enabled else self.root_layout.setContentsMargins(30, 24, 30, 24)
 
@@ -1521,6 +1559,7 @@ class JarvisWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self.on_voice_status)
         self.worker.error.connect(self.on_voice_error)
+        self.worker.answer.connect(self.on_voice_answer)
         self.worker.conversation_changed.connect(self.on_conversation_changed)
         if self.conversation_enabled:
             self.worker.session.set_conversation_mode(True)
@@ -1529,8 +1568,6 @@ class JarvisWindow(QMainWindow):
         self.thread.finished.connect(self.cleanup)
         self.mic.setChecked(True)
         self.mic.setToolTip('Apagar micrófono')
-        self.input.setEnabled(False)
-        self.send.setEnabled(False)
         self.thread.start()
 
     @pyqtSlot()
@@ -1592,6 +1629,7 @@ QLabel#hudDiag { font-family: "Consolas", monospace; font-size: 9px; letter-spac
 QLabel#hudTiny { font-family: "Consolas", monospace; font-size: 8px; letter-spacing: 3px; color: #2f6070; }
 QLabel#hintLabel { font-family: "Consolas", monospace; font-size: 8px; letter-spacing: 3px; color: #24434f; }
 QLabel#statusBadge { color: #46ffb1; font-size: 10px; letter-spacing: 2px; font-family: "Consolas", monospace; }
+QLabel#subtitle { color: #eafcff; font-size: 12px; letter-spacing: 1px; padding: 0 26px; }
 QLabel#weatherLoading { color: #8de8ff; font-size: 15px; font-weight: 700; }
 QLabel#messageText { color: #edf4fa; font-size: 13px; background: transparent; font-family: "Consolas", monospace; }
 QFrame#exprBox { background: rgba(3,10,14,.82); border: 1px solid rgba(0,240,255,.35); }

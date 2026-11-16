@@ -36,13 +36,22 @@ CONVERSATION_OFF = frozenset({
 
 
 class VoiceSession:
-    def __init__(self, brain, voice, listen, status=lambda _: None, connection=lambda _: None, conversation_changed=None):
+    def __init__(self, brain, voice, listen, status=lambda _: None, connection=lambda _: None, conversation_changed=None, on_answer=None):
         self.brain, self.voice, self.listen, self.status = brain, voice, listen, status
+        self.on_answer = on_answer or (lambda _: None)
         self.connection = connection
         self.conversation_changed = conversation_changed
         self.conversation_mode = False
         self.stop_event = threading.Event()
         self.reminders = queue.Queue()
+
+    def _say(self, spoken_text):
+        """Speak and mirror to the GUI subtitle («lo que dice JARVIS»)."""
+        try:
+            self.on_answer(spoken_text)
+        except Exception:
+            pass  # el subtítulo nunca debe romper la voz
+        return self.speak(spoken_text)
 
     def stop(self):
         self.stop_event.set()
@@ -73,7 +82,7 @@ class VoiceSession:
                 message = self.reminders.get_nowait()
             except queue.Empty:
                 break
-            self.speak(message)
+            self._say(message)
 
     def speak(self, text):
         self.status('Hablando')
@@ -157,7 +166,7 @@ class VoiceSession:
 
     def run(self):
         self.brain.approve = self.approve
-        if not self.speak('Señor, micrófono activado. Diga Jarvis para hablar conmigo; cuando termine, diga eso es todo.'):
+        if not self._say('Señor, micrófono activado. Diga Jarvis para hablar conmigo; cuando termine, diga eso es todo.'):
             self.status('Error: voz no disponible; micrófono apagado')
             return
         while not self.stop_event.is_set():
@@ -173,10 +182,10 @@ class VoiceSession:
                     norm = _normalize_phrase(request)
                     if _is_conversation_off(request):
                         self.set_conversation_mode(False)
-                        self.speak('Hasta luego, señor.')
+                        self._say('Hasta luego, señor.')
                         continue
                     if stripped == '':
-                        self.speak('Le escucho, señor.')
+                        self._say('Le escucho, señor.')
                         continue
                     if not norm:
                         continue
@@ -187,14 +196,14 @@ class VoiceSession:
                     # Any wake-word interaction opens free conversation until «eso es todo».
                     self.set_conversation_mode(True)
                     if not request:
-                        if not self.speak('Le escucho, señor.') or self.stop_event.is_set():
+                        if not self._say('Le escucho, señor.') or self.stop_event.is_set():
                             break
                         continue
             except TimeoutError:
                 continue
             except Exception as exc:
                 if not self.stop_event.is_set():
-                    self.speak('No puedo usar el micrófono o el reconocimiento de voz. He detenido la escucha.')
+                    self._say('No puedo usar el micrófono o el reconocimiento de voz. He detenido la escucha.')
                     self.status(f'Error de micrófono o conexión: {type(exc).__name__}')
                 return
             if self.stop_event.is_set():
@@ -209,5 +218,5 @@ class VoiceSession:
                 self.connection('Error al consultar')
                 answer = 'Señor, ' + describe_error(exc)
             if not self.stop_event.is_set():
-                self.speak(speech_text(answer))
+                self._say(speech_text(answer))
         self.status('Micrófono apagado')

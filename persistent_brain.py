@@ -7,6 +7,7 @@ import learning
 import documents
 import action_log
 import document_commands
+import input_correction
 try:
     from agent.memory import PersistentMemory
 except Exception:
@@ -198,7 +199,8 @@ class PersistentBrain:
 
     def ask(self, text):
         # Handle common automation requests without depending on a model to call tools.
-        clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        clean = input_correction.correct(
+            re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿'))
         remember = learning.explicit_fact(clean)
         if remember:
             try:
