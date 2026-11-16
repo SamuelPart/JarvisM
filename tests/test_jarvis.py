@@ -1312,3 +1312,21 @@ def test_whatsapp_reports_validation_failure_not_fake_cause(tmp_path, monkeypatc
     agent = PersistentBrain(NvidiaBrain('key', SystemController(), lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
     result = agent.ask('Envía hola por WhatsApp')
     assert 'código de país' in result and result != 'Listo.'
+
+
+def test_local_time_varied_requests_are_fresh_and_do_not_reuse_history(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain, is_local_time_request
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_agenda_permission(True)
+    values = iter(['2026-11-14T19:50:03-05:00', '2026-11-14T20:42:00-05:00'])
+    controller = SimpleNamespace(current_time=lambda: {'local_time': next(values)})
+    brain = NvidiaBrain('fake', controller, lambda *_: pytest.fail('No requiere permiso'),
+                        post=lambda **_: pytest.fail('No se debe consultar el modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    assert agent.ask('Jarvis, dime la hora actual') == 'Son las 7:50 de la noche, señor.'
+    assert agent.ask('¿Me puedes decir qué hora es ahora?') == 'Son las 8:42 de la noche, señor.'
+    for text in ('¿qué hora es en Madrid?', '¿qué hora es mañana?', '¿a qué hora es la reunión?'):
+        assert not is_local_time_request(text)

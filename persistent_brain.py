@@ -19,6 +19,15 @@ def natural_time(value):
     return f'{verb} {hour}:{dt.minute:02d} {period}, señor.'
 
 
+def is_local_time_request(text):
+    """Match standalone requests for the current local time, not other zones or dates."""
+    text = re.sub(r'\s*[,;]?\s*por favor\s*$', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+    polite = r'(?:(?:me\s+)?(?:puedes|podr[ií]as|puede)\s+decir(?:me)?\s+|(?:dime|dame|indica(?:me)?|d[ií]game|me dices)\s+)?'
+    question = r'(?:qu[eé]\s+hora\s+(?:es|tienes|tenemos)|(?:la\s+)?hora)'
+    suffix = r'(?:\s+(?:actual|ahora|ahora mismo|en este momento))?'
+    return bool(re.fullmatch(polite + question + suffix, text, re.I))
+
+
 class PersistentBrain:
     def __init__(self, brain, memory):
         self.brain, self.memory = brain, memory
@@ -55,7 +64,7 @@ class PersistentBrain:
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
         app = re.fullmatch(r'abre\s+(?:la aplicaci[oó]n\s+)?(google chrome|chrome|firefox|whatsapp|archivos)', clean, re.I)
         routine = re.fullmatch(r'(?:buenos d[ií]as|(?:ejecuta|inicia|activa) (?:la )?rutina(?: de buenos d[ií]as)?)', clean, re.I)
-        time_request = re.fullmatch(r'(?:qu[eé] hora es|dime la hora|dame la hora|la hora)', clean, re.I)
+        time_request = is_local_time_request(clean)
         if app or routine or time_request:
             name = 'open_app' if app else 'run_routine' if routine else 'current_time'
             args = {'name': app.group(1)} if app else {}
