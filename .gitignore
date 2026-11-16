@@ -28,3 +28,8 @@ gmail-credentials.json
 .jarvis-routine.json
 
 .jarvis-scheduled-email.sqlite3*
+
+# Native Android app build outputs and local SDK settings
+android-app/.gradle/
+android-app/local.properties
+android-app/app/build/
