@@ -113,7 +113,9 @@ class WeatherView(QFrame):
         self.body.setSpacing(14)
         self.scroll.setWidget(self.content)
         outer.addWidget(self.scroll, 1)
-        self.setMinimumHeight(330)
+        # Keep the dashboard a compact panel; its contents scroll on small windows.
+        self.setMinimumHeight(180)
+        self.setMaximumSize(600, 420)
         self.setStyleSheet('''
             QFrame#weatherSurface { background: #dcecf4; border: 1px solid #a4c2d2; border-radius: 22px; }
             QWidget#weatherContent, QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }

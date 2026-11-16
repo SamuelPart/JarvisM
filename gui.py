@@ -500,7 +500,7 @@ class JarvisWindow(QMainWindow):
         layout.addWidget(self.weather_loading)
         self.weather_view = WeatherView(self.dismiss_weather)
         self.weather_view.hide()
-        layout.addWidget(self.weather_view, 1)
+        layout.addWidget(self.weather_view, 1, Qt.AlignmentFlag.AlignHCenter)
         self.core = CoreAnimation(self.preferences)
         layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
         self.voice_signals = VoiceSignals(self)
