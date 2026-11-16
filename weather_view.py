@@ -89,12 +89,13 @@ class WeatherView(QFrame):
         super().__init__()
         self.setObjectName('weatherSurface')
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(4, 2, 4, 2)
+        outer.setContentsMargins(18, 16, 18, 14)
+        outer.setSpacing(10)
         header = QHBoxLayout()
         self.heading = label('EL CLIMA', 'weatherHeading')
         header.addWidget(self.heading)
         header.addStretch()
-        self.live_status = label('', 'weatherSmall')
+        self.live_status = label('', 'weatherHeaderStatus')
         header.addWidget(self.live_status)
         close = QPushButton('Volver')
         close.setToolTip('Cerrar la vista del clima')
@@ -108,23 +109,33 @@ class WeatherView(QFrame):
         self.content = QWidget()
         self.content.setObjectName('weatherContent')
         self.body = QVBoxLayout(self.content)
-        self.body.setContentsMargins(12, 8, 12, 14)
+        self.body.setContentsMargins(10, 10, 10, 14)
         self.body.setSpacing(14)
         self.scroll.setWidget(self.content)
         outer.addWidget(self.scroll, 1)
         self.setMinimumHeight(330)
         self.setStyleSheet('''
-            QFrame#weatherSurface, QWidget#weatherContent, QScrollArea { background: transparent; border: none; }
+            QFrame#weatherSurface { background: #dcecf4; border: 1px solid #a4c2d2; border-radius: 22px; }
+            QWidget#weatherContent, QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }
+            QScrollArea { border: none; }
+            QPushButton { color: #1e5480; background: #f5fbff; border: 1px solid #a9cadb; border-radius: 10px; padding: 7px 14px; font-weight: 700; }
+            QPushButton:hover { background: #ffffff; }
             QLabel { background: transparent; border: none; color: #f6fbff; }
-            QLabel#weatherHeading { color: #8de8ff; font-size: 13px; font-weight: 800; letter-spacing: 2px; }
+            QLabel#weatherHeading { color: #24547b; font-size: 13px; font-weight: 800; letter-spacing: 2px; }
             QLabel#weatherPlace { font-size: 20px; font-weight: 800; }
             QLabel#weatherDegrees { font-size: 52px; font-weight: 800; }
             QLabel#weatherCondition { font-size: 17px; font-weight: 700; }
             QLabel#weatherSmall { color: #c7e4f0; font-size: 11px; }
             QLabel#weatherMetric { font-size: 19px; font-weight: 700; }
-            QLabel#weatherCaption { color: #c2e1ef; font-size: 11px; }
-            QFrame#weatherHero { border-radius: 20px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #257cc1, stop:0.55 #147cb6, stop:1 #1965a9); }
-            QFrame#weatherCard { border-radius: 15px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #294f79, stop:1 #183c62); }
+            QLabel#weatherCaption { color: #d8edf8; font-size: 11px; font-weight: 700; }
+            QLabel#weatherSource { color: #46677d; font-size: 11px; }
+            QLabel#weatherHeaderStatus { color: #46677d; font-size: 11px; }
+            QFrame#weatherHero { border-radius: 18px; border: 1px solid #57c4f2; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #29b6ef, stop:0.55 #048fe0, stop:1 #0875be); }
+            QFrame#weatherSun { border-radius: 16px; border: 1px solid #62ddd3; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #35cfc6, stop:1 #16a8b1); }
+            QFrame#weatherCloud { border-radius: 16px; border: 1px solid #91b7df; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #6e96c7, stop:1 #4977ac); }
+            QFrame#weatherRain { border-radius: 16px; border: 1px solid #509bd3; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2375b4, stop:1 #15518b); }
+            QFrame#weatherStorm { border-radius: 16px; border: 1px solid #bd99e1; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #a276c8, stop:1 #7650a1); }
+            QFrame#weatherCard { border-radius: 15px; border: 1px solid #75a8cb; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #528bb9, stop:1 #326692); }
             QFrame#weatherForecast { border-radius: 15px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #335984, stop:1 #263e6c); }
         ''')
 
@@ -152,8 +163,9 @@ class WeatherView(QFrame):
         hero_text.addWidget(label(number(current.get('temperature'), '°'), 'weatherDegrees'))
         hero_text.addWidget(label(current.get('description', 'Clima no disponible'), 'weatherCondition'))
         hero_text.addWidget(label('Sensación ' + number(current.get('feels_like'), '°') + ' · Hora local: ' + current.get('time', '').replace('T', ' '), 'weatherSmall'))
-        box.addLayout(hero_text, 1)
         box.addWidget(WeatherIcon(current.get('icon', 'cloud'), current.get('is_day', True), 126))
+        box.addSpacing(12)
+        box.addLayout(hero_text, 1)
         self.body.addWidget(hero)
         metrics_widget = QWidget()
         metrics_widget.setObjectName('weatherContent')
@@ -183,17 +195,24 @@ class WeatherView(QFrame):
             inner.addWidget(label(value, 'weatherMetric'))
             metrics.addWidget(frame, index // 2, index % 2)
         self.body.addWidget(metrics_widget)
-        self.body.addWidget(label('PRÓXIMOS DÍAS', 'weatherHeading'))
+        self.body.addWidget(label('PRONÓSTICO', 'weatherHeading'))
         forecasts = QWidget()
         forecasts.setObjectName('weatherContent')
-        row = QHBoxLayout(forecasts)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
+        grid = QGridLayout(forecasts)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
         days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+        styles = {'sun': 'weatherSun', 'partly': 'weatherHero', 'cloud': 'weatherCloud',
+                  'rain': 'weatherRain', 'storm': 'weatherStorm', 'snow': 'weatherCloud'}
         for index, day in enumerate(data.get('daily', [])):
-            frame = card('weatherForecast')
-            column = QVBoxLayout(frame)
-            column.setContentsMargins(12, 10, 12, 10)
+            frame = card(styles.get(day.get('icon'), 'weatherCloud'))
+            row = QHBoxLayout(frame)
+            row.setContentsMargins(12, 10, 16, 10)
+            row.setSpacing(10)
+            row.addWidget(WeatherIcon(day.get('icon', 'cloud'), size=80))
+            column = QVBoxLayout()
+            column.setSpacing(2)
             try:
                 date = datetime.fromisoformat(day['date'])
                 title = 'Hoy' if index == 0 else days[date.weekday()]
@@ -201,13 +220,13 @@ class WeatherView(QFrame):
             except (KeyError, TypeError, ValueError):
                 title = 'Pronóstico'
             column.addWidget(label(title, 'weatherCaption'))
-            column.addWidget(WeatherIcon(day.get('icon', 'cloud'), size=60))
             column.addWidget(label(number(day.get('max'), '°') + ' / ' + number(day.get('min'), '°'), 'weatherMetric'))
-            column.addWidget(label(day.get('description', '—'), 'weatherSmall'))
+            column.addWidget(label(day.get('description', '—'), 'weatherCondition'))
             column.addWidget(label('Lluvia ' + number(day.get('precipitation_probability'), '%'), 'weatherSmall'))
-            row.addWidget(frame, 1)
+            row.addLayout(column, 1)
+            grid.addWidget(frame, index // 2, index % 2)
         self.body.addWidget(forecasts)
-        self.body.addWidget(label('Open-Meteo · datos modelados más recientes · © OpenStreetMap contributors', 'weatherSmall'))
+        self.body.addWidget(label('Open-Meteo · datos modelados más recientes · © OpenStreetMap contributors', 'weatherSource'))
         self.body.addStretch()
         self.scroll.verticalScrollBar().setValue(0)
 
