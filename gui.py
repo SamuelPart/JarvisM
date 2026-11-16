@@ -788,6 +788,7 @@ class JarvisWindow(QMainWindow):
         self.weather_sound_dir = None
         self.sound_variant = 0
         self.preferences = load_ui(UI_SETTINGS_PATH)
+        self.conversation_enabled = False
         self.thread = None
         self.worker = None
         self.approval_pending = False
