@@ -28,6 +28,7 @@ from agenda import Agenda
 from approval import is_approved
 import startup_briefing
 import scheduled_emails
+from weather_view import WeatherView
 from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
@@ -39,6 +40,8 @@ class VoiceSignals(QObject):
     activity = pyqtSignal(bool)
     briefing_ready = pyqtSignal(str)
     scheduled_email_result = pyqtSignal(object)
+    weather_event = pyqtSignal(str, object)
+    weather_refresh = pyqtSignal(int, object)
 
 
 class CoreAnimation(QWidget):
@@ -46,6 +49,7 @@ class CoreAnimation(QWidget):
     def __init__(self, preferences):
         super().__init__()
         self.preferences = preferences.copy()
+        self.compact_display = False
         scale = SCALES[self.preferences['size']]
         self.setFixedSize(round(300 * scale), round(260 * scale))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -62,9 +66,14 @@ class CoreAnimation(QWidget):
 
     def configure(self, preferences):
         self.preferences = preferences.copy()
-        scale = SCALES[self.preferences['size']]
-        self.setFixedSize(round(300 * scale), round(260 * scale))
+        self.set_compact_display(self.compact_display)
         self.set_mode(self.mode)
+
+    def set_compact_display(self, compact):
+        self.compact_display = compact
+        scale = SCALES[self.preferences['size']] * (0.38 if compact else 1.0)
+        self.setFixedSize(round(300 * scale), round(260 * scale))
+        self.update()
 
     def advance(self):
         speed = 0.075 if self.mode == 'speaking' else 0.045 if self.mode == 'thinking' else 0.025
@@ -75,7 +84,7 @@ class CoreAnimation(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.translate(self.width() / 2, self.height() / 2)
-        scale = SCALES[self.preferences['size']]
+        scale = SCALES[self.preferences['size']] * (0.38 if self.compact_display else 1.0)
         painter.scale(scale, scale)
         radius = 109.0
 
@@ -267,9 +276,9 @@ class VisualSettingsDialog(QDialog):
         self.automation_permission.setChecked(read_state().get('automation_accepted') is True)
         self.automation_permission.setToolTip('Permite abrir aplicaciones y sitios, crear recordatorios y leer, crear, modificar o mover archivos sin preguntar. Activa actualizaciones automáticas de código. Shell, control de pantalla e imágenes requieren permiso aparte. Desactivar esta opción no revoca Gmail, búsquedas, agenda ni resumen: cambia también esas casillas abajo.')
         layout.addWidget(self.automation_permission)
-        self.network_permission = QCheckBox('Permitir búsquedas y música sin preguntar cada vez')
+        self.network_permission = QCheckBox('Permitir búsquedas, clima y música sin preguntar cada vez')
         self.network_permission.setChecked(read_state().get('network_actions_accepted') is True)
-        self.network_permission.setToolTip('Las búsquedas y la música usan servicios externos; las acciones críticas siguen pidiendo permiso.')
+        self.network_permission.setToolTip('Las búsquedas, el clima y la música usan servicios externos; las acciones críticas siguen pidiendo permiso.')
         layout.addWidget(self.network_permission)
         self.gmail_permission = QCheckBox('Permitir Gmail sin preguntar cada vez')
         self.gmail_permission.setChecked(read_state().get('gmail_actions_accepted') is True)
@@ -433,6 +442,9 @@ class JarvisWindow(QMainWindow):
         self.brain, self.voice = brain, voice
         self.agenda = Agenda()
         self.reminder_windows = {}
+        self.weather_query = None
+        self.weather_generation = 0
+        self.weather_refresh_in_flight = False
         self.preferences = load_ui(UI_SETTINGS_PATH)
         self.thread = None
         self.worker = None
@@ -480,6 +492,15 @@ class JarvisWindow(QMainWindow):
         self.subtitle.setObjectName('muted')
         layout.addWidget(self.subtitle)
 
+        self.weather_loading = QLabel('Buscando el clima…')
+        self.weather_loading.setTextFormat(Qt.TextFormat.PlainText)
+        self.weather_loading.setObjectName('weatherLoading')
+        self.weather_loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.weather_loading.hide()
+        layout.addWidget(self.weather_loading)
+        self.weather_view = WeatherView(self.dismiss_weather)
+        self.weather_view.hide()
+        layout.addWidget(self.weather_view, 1)
         self.core = CoreAnimation(self.preferences)
         layout.addWidget(self.core, 0, Qt.AlignmentFlag.AlignHCenter)
         self.voice_signals = VoiceSignals(self)
@@ -487,6 +508,18 @@ class JarvisWindow(QMainWindow):
         self.voice_signals.activity.connect(self.on_voice_activity)
         self.voice_signals.briefing_ready.connect(self.on_briefing_ready)
         self.voice_signals.scheduled_email_result.connect(self.on_scheduled_email_result)
+        self.voice_signals.weather_event.connect(self.on_weather_event)
+        self.voice_signals.weather_refresh.connect(self.on_weather_refresh)
+        self.weather_refresh_timer = QTimer(self)
+        self.weather_refresh_timer.setInterval(10 * 60 * 1000)
+        self.weather_refresh_timer.timeout.connect(self.refresh_weather)
+        signals_for_weather = self.voice_signals
+        def relay_weather(event, payload):
+            try:
+                signals_for_weather.weather_event.emit(event, payload)
+            except RuntimeError:
+                pass
+        self.brain.weather_event = relay_weather
         self.voice.on_activity = self.voice_signals.activity.emit
 
         self.status = QLabel('Micrófono apagado')
@@ -547,6 +580,84 @@ class JarvisWindow(QMainWindow):
         self.email_scheduler.start()
         if not read_state().get('startup_briefing_accepted'):
             QTimer.singleShot(0, self.check_reminders)
+
+    def dismiss_weather(self):
+        self.weather_generation += 1
+        self.weather_query = None
+        self.weather_refresh_timer.stop()
+        self.weather_view.hide()
+        self.weather_loading.hide()
+        self.core.set_compact_display(False)
+        self.root_layout.setAlignment(self.core, Qt.AlignmentFlag.AlignHCenter)
+        if not self.compact:
+            self.heading.show()
+            self.subtitle.show()
+
+    @pyqtSlot(str, object)
+    def on_weather_event(self, event, data):
+        if event == 'loading':
+            if self.compact:
+                self.toggle_compact()
+            self.dismiss_weather()
+            location = str(data.get('location', ''))[:150] if isinstance(data, dict) else ''
+            self.weather_loading.setText('Buscando el clima de ' + location + '…' if location else 'Buscando el clima…')
+            self.weather_loading.show()
+            self.status.setText('Buscando datos del clima…')
+            self.set_task_state('thinking')
+        elif event == 'result' and isinstance(data, dict) and data.get('ok') is True:
+            self.weather_loading.hide()
+            try:
+                self.weather_view.show_data(data)
+                self.weather_query = data.get('requested')
+                if read_state().get('network_actions_accepted') is True:
+                    self.weather_refresh_timer.start()
+                self.heading.hide()
+                self.subtitle.hide()
+                self.weather_view.show()
+                self.core.set_compact_display(True)
+                self.root_layout.setAlignment(self.core, Qt.AlignmentFlag.AlignLeft)
+                self.status.setText('Clima actualizado')
+            except (KeyError, TypeError, ValueError):
+                self.dismiss_weather()
+                self.status.setText('No se pudo mostrar la vista del clima.')
+        elif event == 'error':
+            self.dismiss_weather()
+            message = data.get('error') if isinstance(data, dict) else None
+            self.status.setText(str(message or 'Necesito que indiques la ubicación del clima.'))
+
+    @pyqtSlot()
+    def refresh_weather(self):
+        if (not self.weather_query or not self.weather_view.isVisible() or self.weather_refresh_in_flight
+                or read_state().get('network_actions_accepted') is not True):
+            return
+        self.weather_refresh_in_flight = True
+        token, query, signals = self.weather_generation, self.weather_query, self.voice_signals
+        self.weather_view.set_notice('Actualizando…')
+        def work():
+            try:
+                import weather
+                result = weather.get_weather(query)
+            except Exception:
+                result = {'error': 'No se pudo actualizar el clima.'}
+            try:
+                signals.weather_refresh.emit(token, result)
+            except RuntimeError:
+                pass
+        threading.Thread(target=work, name='JARVIS clima', daemon=True).start()
+
+    @pyqtSlot(int, object)
+    def on_weather_refresh(self, token, data):
+        self.weather_refresh_in_flight = False
+        if token != self.weather_generation or not self.weather_view.isVisible():
+            return
+        if isinstance(data, dict) and data.get('ok') is True:
+            try:
+                self.weather_view.show_data(data)
+                self.status.setText('Clima actualizado')
+            except (KeyError, ValueError, TypeError):
+                self.weather_view.set_notice('No se pudo actualizar')
+        else:
+            self.weather_view.set_notice('Sin actualizar · datos anteriores')
 
     @pyqtSlot(bool)
     def toggle_chat(self, enabled):
@@ -779,6 +890,8 @@ class JarvisWindow(QMainWindow):
 
     def toggle_compact(self):
         if not self.compact:
+            if self.weather_view.isVisible() or self.weather_loading.isVisible():
+                self.dismiss_weather()
             self.expanded_geometry = self.geometry()
             self.expanded_maximized = self.isMaximized()
             self.showNormal()
@@ -902,6 +1015,7 @@ QFrame#bubble_system { background-color: rgba(61, 42, 25, 220); border: 1px soli
 QLabel#sender_user { color: #80ddea; font-size: 10px; font-weight: 800; }
 QLabel#sender_jarvis { color: #a8b2ff; font-size: 10px; font-weight: 800; }
 QLabel#sender_system { color: #f0bd7c; font-size: 10px; font-weight: 800; }
+QLabel#weatherLoading { color: #8de8ff; font-size: 15px; font-weight: 700; }
 QLabel#messageText { color: #edf4fa; font-size: 13px; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 7px; margin: 4px; }
 QScrollBar::handle:vertical { background: #34566b; min-height: 25px; border-radius: 3px; }
@@ -984,7 +1098,7 @@ def main():
     if not state.get('automation_asked') or not state.get('initial_accepted'):
         first = state.get('initial_accepted') is not True
         text = ('JARVIS funcionará con los permisos de tu usuario; no lo ejecutes como administrador.\n\n'
-                '¿Autorizas de forma persistente, sin preguntar cada vez, búsquedas, música, abrir aplicaciones y páginas, '
+                '¿Autorizas de forma persistente, sin preguntar cada vez, búsquedas, clima, música, abrir aplicaciones y páginas, '
                 'consultar y crear recordatorios, leer, crear, modificar y mover archivos, controlar volumen y brillo, '
                 'buscar, leer, enviar, responder y clasificar Gmail? También activará el resumen inicial y '
                 'las actualizaciones automáticas de código y dependencias desde el remoto Git configurado.\n\n'

@@ -36,21 +36,28 @@ def is_music_action_request(text):
 
 class MusicTrace:
     """Record only real music tool calls, not LLM claims."""
-    def __init__(self, controller, block_immediate_email=False):
+    def __init__(self, controller, block_immediate_email=False, weather_event=None):
         self.controller = controller
         self.block_immediate_email = block_immediate_email
+        self.weather_event = weather_event or (lambda *_: None)
         self.results = []
 
     def __getattr__(self, name):
         target = getattr(self.controller, name)
         if self.block_immediate_email and name in ('send_gmail', 'reply_gmail'):
             return lambda *args, **kwargs: {'error': 'El usuario pidió un envío futuro; no se enviará ahora. Usa schedule_email si es un correo nuevo.'}
-        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder', 'schedule_email', 'cancel_scheduled_email'):
+        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder', 'schedule_email', 'cancel_scheduled_email', 'get_weather'):
             return target
         def tracked(*args, **kwargs):
+            if name == 'get_weather':
+                self.weather_event('loading', {'location': kwargs.get('location', args[0] if args else '')})
             try:
                 result = target(*args, **kwargs)
+                if name == 'get_weather':
+                    self.weather_event('result' if isinstance(result, dict) and result.get('ok') is True else 'error', result)
             except Exception as exc:
+                if name == 'get_weather':
+                    self.weather_event('error', {'error': 'No pude obtener el clima.'})
                 if name == 'schedule_email':
                     allowed = ('Necesito saber cuándo quieres enviarlo.',
                                'No entendí cuándo enviarlo. Dime, por ejemplo, dentro de diez minutos o una fecha y hora.',

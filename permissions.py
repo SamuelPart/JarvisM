@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 STATE = Path(__file__).resolve().parent / '.jarvis-state.json'
-PREAPPROVED_TOOLS = frozenset({'web_search', 'music_search', 'play_music', 'stop_music'})
+PREAPPROVED_TOOLS = frozenset({'web_search', 'music_search', 'play_music', 'stop_music', 'get_weather'})
 GMAIL_TOOLS = frozenset({'search_gmail', 'read_gmail', 'send_gmail', 'reply_gmail', 'classify_gmail'})
 AGENDA_TOOLS = frozenset({'current_time', 'list_reminders', 'list_calendar_events'})
 # No blanket approval for arbitrary shell, GUI automation, or sending images.

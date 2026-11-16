@@ -8,6 +8,7 @@ from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved, authorize_tool
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
+from weather_commands import parse_weather_request, format_weather
 from reminder_commands import parse_relative_reminder, parse_delete_request, find_matching_reminders, select_reminders_by_time, select_reminders_by_date, select_reminders_by_period, select_reminders_by_minute
 
 
@@ -73,6 +74,8 @@ class PersistentBrain:
         self.brain, self.memory = brain, memory
         self.model = brain.model
         self.pending_reminder_choices = None
+        self.pending_weather = None
+        self.weather_event = lambda *_: None
         self.pending_reminder_deadline = 0
         self.pending_reminder_question = None
         self.base_instruction = (brain.instructions if isinstance(brain, Brain)
@@ -102,6 +105,27 @@ class PersistentBrain:
         else:
             raise TypeError('Proveedor de memoria no compatible')
 
+    def _emit_weather(self, event, payload):
+        try:
+            self.weather_event(event, payload)
+        except Exception:
+            pass  # Display failures must not change the tool result.
+
+    def _ask_weather(self, location):
+        args = {'location': location}
+        if not authorize_tool('get_weather', args, self.approve):
+            self._emit_weather('error', {'error': 'No se autorizó la búsqueda del clima.'})
+            return 'No consulté el clima porque no se autorizó la búsqueda.'
+        self._emit_weather('loading', args)
+        try:
+            result = self.brain.controller.get_weather(**args)
+        except Exception:
+            result = {'error': 'No pude consultar el clima; no conozco la causa.'}
+        if isinstance(result, dict) and result.get('ambiguous'):
+            self.pending_weather = {'location': location, 'deadline': time.monotonic() + 300}
+        self._emit_weather('result' if isinstance(result, dict) and result.get('ok') is True else 'error', result)
+        return format_weather(result)
+
     def _delete_selected_reminder(self, reminder):
         args = {'reminder_id': reminder['id'], 'title': reminder['title'], 'when': reminder['when']}
         if not authorize_tool('delete_reminder', args, self.approve):
@@ -120,6 +144,26 @@ class PersistentBrain:
     def ask(self, text):
         # Handle common automation requests without depending on a model to call tools.
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        weather_query = parse_weather_request(clean)
+        if self.pending_weather and time.monotonic() > self.pending_weather['deadline']:
+            self.pending_weather = None
+        if self.pending_weather and weather_query is None:
+            if re.fullmatch(r'(?:cancelar|cancela|no|olvida(?:lo|r)?)', clean, re.I):
+                self.pending_weather = None
+                return self._remember_answer(text, 'De acuerdo, cancelé la búsqueda del clima.')
+            if (len(clean) <= 100 and not re.search(r'\b(?:abre|pon|recu[eé]rdame|elimina|borra|correo|hora|busca)\b', clean, re.I)):
+                old = self.pending_weather.get('location')
+                self.pending_weather = None
+                query = (old + ', ' + clean) if old else clean
+                return self._remember_answer(text, self._ask_weather(query))
+            self.pending_weather = None
+        if weather_query is not None:
+            self.pending_weather = None
+            if not weather_query:
+                self._emit_weather('error', {'error': 'Indica una ciudad, región o país para consultar el clima.'})
+                self.pending_weather = {'location': None, 'deadline': time.monotonic() + 300}
+                return self._remember_answer(text, '¿De qué ciudad, región o país quieres saber el clima?')
+            return self._remember_answer(text, self._ask_weather(weather_query))
         if is_last_sent_request(clean):
             self.pending_reminder_choices = None
             try:
@@ -266,7 +310,7 @@ class PersistentBrain:
         else:
             self.refresh_context()
             original = self.brain.controller
-            trace = MusicTrace(original, block_immediate_email=is_scheduled_email_request(clean))
+            trace = MusicTrace(original, block_immediate_email=is_scheduled_email_request(clean), weather_event=self._emit_weather)
             self.brain.controller = trace
             try:
                 answer = self.brain.ask(text)
@@ -274,7 +318,11 @@ class PersistentBrain:
                 self.brain.controller = original
             if trace.results:
                 name, result = trace.results[-1]
-                if name == 'schedule_email':
+                if name == 'get_weather':
+                    if isinstance(result, dict) and result.get('ambiguous'):
+                        self.pending_weather = {'location': result.get('location'), 'deadline': time.monotonic() + 300}
+                    answer = format_weather(result)
+                elif name == 'schedule_email':
                     if isinstance(result, dict) and result.get('scheduled') is True:
                         try:
                             when = datetime.fromisoformat(result['when']).strftime('%d/%m/%Y a las %H:%M')
@@ -324,5 +372,6 @@ class PersistentBrain:
 
     def clear_memory(self):
         self.pending_reminder_choices = None
+        self.pending_weather = None
         self.memory.clear()
         self.refresh_context()

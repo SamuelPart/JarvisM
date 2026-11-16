@@ -85,6 +85,12 @@ Pida a JARVIS que prepare el mensaje e indique el número con código de país. 
 
 Si aparece un error Gemini, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.
 
+## Clima visual
+
+Pide por voz o chat «dime el clima en Trujillo, Perú» o «clima en Perú». JARVIS muestra una señal de búsqueda y, al obtener datos, reduce la esfera hacia la parte inferior izquierda de su ventana y muestra tarjetas del clima; **Volver** restaura la vista habitual. La pantalla muestra temperatura, sensación, condiciones, humedad, viento, precipitación, probabilidad de lluvia, máxima, mínima, UV, amanecer, atardecer y el pronóstico de tres días cuando el proveedor los incluye. La hora en la tarjeta es la hora local del dato del proveedor. No todos los datos están disponibles en todas las ubicaciones.
+
+Las consultas envían la ubicación indicada a REST Countries (para resolver países y capitales), OpenStreetMap Nominatim (geolocalización) y Open-Meteo (coordenadas para el pronóstico). Se usa el permiso persistente de búsquedas y música, o se pide autorización individual. Si se indicó solo un país se muestra el clima de su capital y se señala explícitamente; no representa todo el país. Si hay ubicaciones ambiguas se solicita aclaración. Con el permiso persistente y la vista abierta, se intenta actualizar cada diez minutos; si falla, se conservan los datos anteriores marcados como tales. Open-Meteo proporciona datos modelados recientes, no garantiza observaciones instantáneas ni exactitud en toda la región. Requiere Internet.
+
 ## Correos programados con Gmail
 
 Pide por voz o chat, por ejemplo: «Programa un correo para [dirección], asunto [asunto], mensaje [texto], dentro de diez minutos». También admite horas, días, semanas, meses y años o una fecha y hora concretas. JARVIS debe pedir los datos que falten y no enviar el mensaje en el momento de programarlo. Las duraciones de meses y años usan calendario, no meses de treinta días; si la fecha no existe o la hora es ambigua por cambio horario, pide otra fecha.

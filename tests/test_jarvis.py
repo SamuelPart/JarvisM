@@ -1884,3 +1884,157 @@ def test_latest_sent_request_is_distinct_from_scheduled_mail():
     for phrase in ('cuál es el último correo programado', 'qué envié a juan',
                    'último correo enviado a ana@example.com'):
         assert not is_last_sent_request(phrase)
+
+
+def test_weather_queries_keep_region_and_country_and_do_not_hijack_email():
+    from weather_commands import parse_weather_request
+    assert parse_weather_request('Jarvis, dime el clima en Perú por favor') == 'Perú'
+    assert parse_weather_request('¿Cómo está el clima en La Libertad de Perú?') == 'La Libertad de Perú'
+    assert parse_weather_request('clima de hoy en Lima, Perú') == 'Lima, Perú'
+    assert parse_weather_request('¿qué temperatura hace?') == ''
+    assert parse_weather_request('envía un correo sobre el clima de Perú') is None
+
+
+def test_weather_country_uses_real_capital_and_forecast_values(monkeypatch):
+    import weather
+    calls = []
+    def fetch(url, params):
+        calls.append((url, params))
+        if 'restcountries' in url:
+            return [{'name': {'common': 'Peru'}, 'translations': {'spa': {'common': 'Perú'}}, 'capital': ['Lima'], 'cca2': 'PE', 'cca3': 'PER'}]
+        if 'nominatim' in url:
+            return [{'lat': '-12.04', 'lon': '-77.03', 'display_name': 'Lima, Perú', 'importance': .7,
+                     'address': {'city': 'Lima', 'country': 'Perú', 'country_code': 'pe'}}]
+        return {'timezone': 'America/Lima', 'current': {'time': '2026-11-14T17:30', 'temperature_2m': 23.2,
+                    'apparent_temperature': 25.1, 'relative_humidity_2m': 67, 'precipitation': 0,
+                    'weather_code': 2, 'wind_speed_10m': 11.0, 'is_day': 1},
+                'daily': {'time': ['2026-11-14'], 'weather_code': [2], 'temperature_2m_max': [26],
+                          'temperature_2m_min': [17], 'precipitation_probability_max': [8], 'uv_index_max': [6.5],
+                          'sunrise': ['2026-11-14T05:30'], 'sunset': ['2026-11-14T18:00']}}
+    monkeypatch.setattr(weather, '_fetch', fetch)
+    result = weather.get_weather('Perú')
+    assert result['ok'] and result['is_capital'] and result['location']['place'] == 'Lima'
+    assert result['current']['temperature'] == 23.2 and result['current']['humidity'] == 67
+    assert result['current']['time'] == '2026-11-14T17:30' and result['daily'][0]['max'] == 26
+    assert calls[-1][1]['latitude'] == -12.04 and calls[-1][1]['timezone'] == 'auto'
+
+
+def test_weather_does_not_guess_between_homonyms(monkeypatch):
+    import weather
+    def fetch(url, params):
+        if 'restcountries' in url:
+            return None
+        assert 'nominatim' in url
+        return [
+            {'lat': '-8', 'lon': '-79', 'display_name': 'Trujillo, Perú', 'importance': .3, 'address': {'country': 'Perú'}},
+            {'lat': '9', 'lon': '-70', 'display_name': 'Trujillo, Venezuela', 'importance': .25, 'address': {'country': 'Venezuela'}}]
+    monkeypatch.setattr(weather, '_fetch', fetch)
+    result = weather.get_weather('Trujillo')
+    assert result['ambiguous'] and len(result['options']) == 2
+
+
+def test_weather_error_never_returns_fake_values(monkeypatch):
+    import weather
+    monkeypatch.setattr(weather, '_country', lambda name: None)
+    monkeypatch.setattr(weather, '_geocode', lambda *args, **kwargs: {'latitude': 1, 'longitude': 2, 'place': 'Lugar'})
+    monkeypatch.setattr(weather, '_fetch', lambda *args, **kwargs: {'current': {'temperature_2m': None}})
+    with pytest.raises(weather.WeatherError, match='incompletos'):
+        weather.get_weather('Lugar')
+
+
+def test_weather_voice_and_text_use_same_tool_and_events(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    events, calls = [], []
+    result = {'ok': True, 'requested': 'Perú', 'is_capital': True, 'location': {'place': 'Lima'},
+              'current': {'temperature': 21.4, 'description': 'Nublado'}, 'daily': []}
+    controller = SimpleNamespace(get_weather=lambda location: calls.append(location) or result)
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: pytest.fail('Ya autorizado'),
+                            post=lambda **_: pytest.fail('No necesita modelo')), JarvisMemory(tmp_path / 'memory.db'))
+    agent.weather_event = lambda event, data: events.append((event, data))
+    answer = agent.ask('dime el clima en Perú')
+    assert calls == ['Perú'] and 'capital de Perú' in answer and '21 grados' in answer
+    assert [e[0] for e in events] == ['loading', 'result'] and events[-1][1] == result
+
+
+def test_weather_followup_uses_country_without_guessing(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    calls = []
+    def get_weather(location):
+        calls.append(location)
+        if len(calls) == 1:
+            return {'ambiguous': True, 'location': location, 'options': ['Trujillo, Perú', 'Trujillo, Venezuela']}
+        return {'ok': True, 'is_capital': False, 'location': {'place': 'Trujillo'},
+                'current': {'temperature': 20, 'description': 'Despejado'}}
+    agent = PersistentBrain(NvidiaBrain('fake', SimpleNamespace(get_weather=get_weather), lambda *_: True), JarvisMemory(tmp_path / 'memory.db'))
+    assert 'varios' in agent.ask('clima en Trujillo')
+    assert 'Trujillo' in agent.ask('Perú')
+    assert calls == ['Trujillo', 'Trujillo, Perú']
+
+
+def test_weather_spanish_region_country_qualifier_is_not_lost(monkeypatch):
+    import weather
+    countries = []
+    geocodes = []
+    def lookup(name):
+        countries.append(name)
+        return {'cca2': 'PE'} if name == 'Perú' else None
+    def geocode(name, forced_country=None, allow_top=False):
+        geocodes.append((name, forced_country))
+        return {'ambiguous': True, 'options': ['La Libertad, Perú', 'Otra región']}
+    monkeypatch.setattr(weather, '_country', lookup)
+    monkeypatch.setattr(weather, '_geocode', geocode)
+    result = weather.get_weather('La Libertad de Perú')
+    assert result['ambiguous']
+    assert geocodes == [('La Libertad, Perú', 'PE')]
+
+
+def test_weather_permission_denied_does_not_call_network(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    events = []
+    controller = SimpleNamespace(get_weather=lambda **kwargs: pytest.fail('No debe acceder a la red'))
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: False), JarvisMemory(tmp_path / 'memory.db'))
+    agent.weather_event = lambda name, data: events.append(name)
+    assert 'no se autorizó' in agent.ask('dime el clima en Perú').lower()
+    assert events == ['error']
+
+
+def test_weather_http_failures_are_not_disguised_as_weather(monkeypatch):
+    import requests
+    import weather
+    def timeout(*args, **kwargs):
+        assert kwargs['allow_redirects'] is False
+        raise requests.Timeout('private internals')
+    monkeypatch.setattr(weather.requests, 'get', timeout)
+    with pytest.raises(weather.WeatherError) as error:
+        weather._fetch('https://api.open-meteo.com/v1/forecast', {})
+    assert 'conectar' in str(error.value) and 'private internals' not in str(error.value)
+
+
+def test_weather_failure_shows_no_fabricated_values(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_network_permission(True)
+    events = []
+    controller = SimpleNamespace(get_weather=lambda **kwargs: {'error': 'No pude conectar con el servicio del clima.'})
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: True), JarvisMemory(tmp_path / 'memory.db'))
+    agent.weather_event = lambda name, data: events.append((name, data))
+    answer = agent.ask('¿Cómo está el clima en Lima?')
+    assert 'No pude conectar' in answer and 'grados' not in answer
+    assert [e[0] for e in events] == ['loading', 'error']

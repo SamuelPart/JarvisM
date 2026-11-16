@@ -26,6 +26,7 @@ import startup_briefing
 import routines
 import privileged_tasks
 import scheduled_emails
+import weather
 
 
 class SystemController:
@@ -40,6 +41,12 @@ class SystemController:
 
     def update_system(self) -> dict:
         return privileged_tasks.update_system()
+
+    def get_weather(self, location: str) -> dict:
+        try:
+            return weather.get_weather(location)
+        except weather.WeatherError as exc:
+            return {'error': str(exc)}
 
     def open_app(self, name: str) -> dict:
         return routines.open_app(name)
