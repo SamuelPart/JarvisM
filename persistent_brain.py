@@ -6,6 +6,7 @@ from datetime import datetime
 import learning
 import documents
 import action_log
+import document_commands
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
@@ -89,6 +90,7 @@ class PersistentBrain:
         self.weather_event = lambda *_: None
         self.pending_reminder_deadline = 0
         self.pending_reminder_question = None
+        self.pending_delete_created = None
         self.base_instruction = (brain.instructions if isinstance(brain, Brain)
                                  else brain.history[0]['content'])
 
@@ -169,6 +171,35 @@ class PersistentBrain:
                 answer = 'Hecho, señor. Lo recordaré.'
             except (sqlite3.Error, OSError, ValueError):
                 answer = 'No pude guardar eso en la memoria local.'
+            return self._remember_answer(text, answer)
+        if self.pending_delete_created and time.monotonic() > self.pending_delete_created['deadline']:
+            self.pending_delete_created = None
+        elif self.pending_delete_created:
+            candidates = self.pending_delete_created['files']
+            picked = document_commands.resolve_delete_choice(clean, candidates)
+            if picked is not None:
+                self.pending_delete_created = None
+                if not picked:
+                    answer = 'De acuerdo, no eliminé ningún archivo.'
+                else:
+                    answer = document_commands.delete_paths(picked)
+                return self._remember_answer(text, answer)
+            self.pending_delete_created = None  # abandon and let the model handle the reply
+        create_cmd = document_commands.parse_create(clean)
+        if create_cmd:
+            try:
+                answer = document_commands.handle_create(create_cmd)
+            except Exception:
+                answer = 'No pude crear el archivo de prueba; no conozco la causa.'
+            return self._remember_answer(text, answer)
+        delete_cmd = document_commands.parse_delete(clean)
+        if delete_cmd:
+            targets, question = document_commands.select_delete(delete_cmd)
+            if question:
+                self.pending_delete_created = {'files': targets, 'deadline': time.monotonic() + 300}
+                answer = question
+            else:
+                answer = document_commands.delete_paths(targets)
             return self._remember_answer(text, answer)
         weather_query = parse_weather_request(clean)
         if self.pending_weather and time.monotonic() > self.pending_weather['deadline']:
@@ -422,6 +453,7 @@ class PersistentBrain:
     def clear_memory(self):
         self.pending_reminder_choices = None
         self.pending_weather = None
+        self.pending_delete_created = None
         self.memory.clear()
         action_log.clear()
         self.refresh_context()

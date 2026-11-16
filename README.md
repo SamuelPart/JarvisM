@@ -264,6 +264,16 @@ JARVIS puede crear archivos locales por voz o por chat con el formato que pidas:
 - **PDF** es de texto, con fuentes básicas: no está maquetado con HTML/CSS, ni lleva imágenes insertadas ni formularios ni contraseña. **RTF** es mínimo (Word lo abre bien). **.doc binario antiguo** y **.xls** no: se entrega docx/xlsx, que Word y Excel modernos abren. Google Docs/Drive no están soportados (sin OAuth de Drive ni creación de documentos en la nube).
 - **docx, xlsx, pptx y pdf** usan librerías adicionales incluidas en `requirements.txt` (python-docx, openpyxl, python-pptx, fpdf2): si actualizas JARVIS desde el autoactualizador de la app, se instalan solas; en instalaciones manuales ejecuta `pip install -r requirements.txt`. Si alguna falta, JARVIS te dirá exactamente cuál falta en vez de fingir.
 
+## Crear y eliminar archivos de prueba sin tecnicismos
+
+No hace falta saber rutas. Ejemplos:
+
+- **«Créame un archivo pdf de prueba en escritorio»** crea `prueba.pdf` en la carpeta real del escritorio (`xdg-user-dir`); si existe, usa `prueba-2.pdf`, `prueba-3.pdf`… sin sobrescribir nada. Vale igual para Word, Excel, PowerPoint, csv, json, md, txt, rtf y «documentos» (→ **~/Documentos**). Sin ubicación, entiende el escritorio.
+- **«Créame 3 archivos pdf de prueba en escritorio»** crea `prueba.pdf`, `prueba-2.pdf` y `prueba-3.pdf`.
+- **«Elimina el archivo de prueba que creaste»** borra solo archivos que **constan en el registro local** (`.jarvis-actions.jsonl`) como creados por JARVIS. No borra tus archivos personales, no toca la carpeta del proyecto JARVIS y si no consta ninguno lo dice en vez de tocar nada. Si hay varios coinciden por nombre, pregunta cuáles («todos», «el primero», «el segundo»…).
+
+El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia.
+
 ## Registro de acciones (memoria de hechos)
 
 JARVIS guarda un **registro local de acciones ejecutadas** en `.jarvis-actions.jsonl` (excluido de Git): nombre de la herramienta, argumentos abreviados y resultado real (OK/FALLO), con hora. Lo rotan a las últimas 200 entradas. Se escriben en él tanto las acciones del chat (las que el modelo pide tras autorización) como los comandos locales directos (música, clima, rutinas, recordatorios, teléfono, Enviados).

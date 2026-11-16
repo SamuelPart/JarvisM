@@ -2551,3 +2551,143 @@ def test_action_log_never_breaks_tools(tmp_path, monkeypatch):
     import action_log
     monkeypatch.setattr(action_log, 'STATE', tmp_path)  # a directory, unwritable as a file
     assert action_log.record('files', {}, {'ok': True}) is None
+
+
+def test_document_commands_create_defaults(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    command = document_commands.parse_create('créame un archivo pdf de prueba en escritorio')
+    assert command == {'count': 1, 'format': 'pdf', 'dest': 'desktop'}
+    answer = document_commands.handle_create(command)
+    assert str(desktop / 'prueba.pdf') in answer and (desktop / 'prueba.pdf').is_file()
+    answer = document_commands.handle_create(command)
+    assert str(desktop / 'prueba-2.pdf') in answer  # never overwrites silently
+    assert (desktop / 'prueba.pdf').read_bytes().startswith(b'%PDF')
+
+
+def test_document_commands_create_count(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    command = document_commands.parse_create('créame 3 archivos pdf de prueba en el escritorio')
+    assert command['count'] == 3 and command['format'] == 'pdf' and command['dest'] == 'desktop'
+    answer = document_commands.handle_create(command)
+    for index in (1, 2, 3):
+        name = 'prueba.pdf' if index == 1 else f'prueba-{index}.pdf'
+        assert (desktop / name).is_file()
+    assert 'prueba-2.pdf' in answer and 'prueba-3.pdf' in answer
+
+
+def test_document_commands_require_testish(tmp_path):
+    import document_commands
+    assert document_commands.parse_create('créame un informe anual para la empresa') is None
+    assert document_commands.parse_create('crea un archivo pdf importante') is None
+
+
+def test_document_commands_delete_only_ledger(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    state = tmp_path / 'actions.jsonl'
+    monkeypatch.setattr(action_log, 'STATE', state)
+    command = document_commands.parse_create('créame un archivo pdf de prueba en escritorio')
+    document_commands.handle_create(command)
+    user_file = desktop / 'prueba.pdf'
+    note = desktop / 'mío.pdf'
+    note.write_bytes(b'not mine')  # same name pattern, but not in the ledger
+    # ledger holds only the created one; deleting must not touch the unknown file
+    action_log.STATE = state
+    candidates = document_commands.delete_candidates({'format': 'pdf', 'plural': True, 'prueba': True})
+    assert user_file in candidates and note not in candidates
+    targets, question = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
+    assert question is None and user_file in targets
+    answer = document_commands.delete_paths(targets)
+    assert not user_file.exists() and note.exists()
+    assert 'Eliminé' in answer
+
+
+def test_document_commands_delete_ambiguous_and_choice(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    document_commands.handle_create(document_commands.parse_create('créame 3 archivos pdf de prueba en escritorio'))
+    files = document_commands.delete_candidates({'format': 'pdf', 'plural': False, 'prueba': True})
+    assert len(files) == 3
+    targets, question = document_commands.select_delete({'format': 'pdf', 'plural': False, 'prueba': True})
+    assert question and '¿Cuáles elimino' in question
+    picked = document_commands.resolve_delete_choice('todos', files)
+    assert picked == files
+    picked = document_commands.resolve_delete_choice('el primero', files)
+    assert picked == files[:1]
+    picked = document_commands.resolve_delete_choice('cancela', files)
+    assert picked == []
+    assert document_commands.resolve_delete_choice('algo incomprensible que no cuadra', files) is None
+
+
+def test_document_commands_delete_refuses_outside_ledger(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    state = tmp_path / 'actions.jsonl'
+    monkeypatch.setattr(action_log, 'STATE', state)
+    stranger = tmp_path / 'test.pdf'
+    stranger.write_bytes(b'x')
+    answer = document_commands.delete_paths([stranger])
+    # delete_paths itself only unlinks what it is handed (caller filters by ledger);
+    # the stranger is still refused at selection time
+    targets, question = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
+    assert targets == [] and 'no borro archivos que no creé' in question
+
+
+def test_persistent_brain_deterministic_create_delete(tmp_path, monkeypatch):
+    import document_commands
+    import action_log
+    import documents
+    import memory
+    import persistent_brain
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    state = tmp_path / 'actions.jsonl'
+    monkeypatch.setattr(action_log, 'STATE', state)
+    db = tmp_path / 'memory.sqlite3'
+    mem = memory.JarvisMemory(db)
+    class FakeBrain:
+        model = 'fake'
+        instructions = 'fake instructions'
+        history = []
+        class client:
+            pass
+    brain = persistent_brain.PersistentBrain.__new__(persistent_brain.PersistentBrain)
+    from types import SimpleNamespace
+    brain.brain = FakeBrain()
+    brain.memory = mem
+    brain.model = 'fake'
+    brain.pending_reminder_choices = None
+    brain.pending_weather = None
+    brain.pending_delete_created = None
+    brain.weather_event = lambda *_: None
+    brain.pending_reminder_deadline = 0
+    brain.pending_reminder_question = None
+    brain.base_instruction = 'fake'
+    brain.approve = lambda *_, **__: False
+    answer = brain.ask('créame un archivo pdf de prueba en escritorio')
+    assert str(desktop / 'prueba.pdf') in answer
+    assert (desktop / 'prueba.pdf').is_file()
+    answer = brain.ask('elimina el archivo de prueba que creaste')
+    assert 'Eliminé' in answer and not (desktop / 'prueba.pdf').exists()
