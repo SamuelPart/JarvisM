@@ -303,7 +303,21 @@ class CoreAnimation(QWidget):
                 painter.setPen(QPen(QColor(163, 245, 255, int((85 if reduced else 210) * intensity * thinking)), 1.4))
                 painter.drawLine(QPointF(x - size, y), QPointF(x + size, y))
                 painter.drawLine(QPointF(x, y - size), QPointF(x, y + size))
-            painter.setPen(Qt.PenStyle.NoPen)
+            # Núcleo central (referencia): disco oscuro + marca «J.A.R.V.I.S».
+        disc = QRadialGradient(QPointF(0, 0), 44)
+        disc.setColorAt(0.0, QColor(2, 10, 16, 240))
+        disc.setColorAt(0.78, QColor(2, 10, 16, 215))
+        disc.setColorAt(1.0, QColor(2, 10, 16, 0))
+        painter.setBrush(disc)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(0, 0), 44, 44)
+        core_font = QFont('Orbitron', 10, QFont.Weight.Bold)
+        core_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 5.0)
+        painter.setFont(core_font)
+        painter.setPen(QColor(0, 240, 255, 70))
+        painter.drawText(QRectF(-80, -9, 160, 18), Qt.AlignmentFlag.AlignCenter, 'J.A.R.V.I.S')
+        painter.setPen(QColor(217, 251, 255, 240))
+        painter.drawText(QRectF(-80, -10, 160, 18), Qt.AlignmentFlag.AlignCenter, 'J.A.R.V.I.S')
         painter.end()
 
 
@@ -856,9 +870,6 @@ class JarvisWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self.approval_pending = False
-        self.compact = False
-        self.expanded_geometry = None
-        self.expanded_maximized = False
         self.setWindowTitle('JARVIS')
         self.resize(860, 800)
         self.setMinimumSize(560, 520)
@@ -870,33 +881,12 @@ class JarvisWindow(QMainWindow):
         layout.setContentsMargins(30, 24, 30, 24)
         layout.setSpacing(18)
 
-        top = QHBoxLayout()
-        logo = QLabel('J  /  JARVIS')
-        logo.setObjectName('brand')
-        top.addWidget(logo)
-        top.addStretch()
-        self.pin = QCheckBox('Siempre visible')
-        self.pin.toggled.connect(self.toggle_pin)
-        top.addWidget(self.pin)
-        self.phone_button = QPushButton('Teléfono')
-        self.phone_button.clicked.connect(self.open_phone)
-        top.addWidget(self.phone_button)
-        self.agenda_button = QPushButton('Agenda')
-        self.agenda_button.clicked.connect(self.open_agenda)
-        top.addWidget(self.agenda_button)
-        self.memory_button = QPushButton('Memoria')
-        self.memory_button.clicked.connect(self.open_memory)
-        top.addWidget(self.memory_button)
-        self.settings_button = QPushButton('Ajustes')
-        self.settings_button.clicked.connect(self.open_visual_settings)
-        top.addWidget(self.settings_button)
-        self.compact_toggle = QPushButton('Modo compacto')
-        self.compact_toggle.clicked.connect(self.toggle_compact)
-        top.addWidget(self.compact_toggle)
-        layout.addLayout(top)
-
-        clock_row = QHBoxLayout()
-        clock_row.addStretch()
+        # ── HUD superior (referencia): diagnósticos a la izquierda · EXPRESSION a la derecha
+        hud_top = QHBoxLayout()
+        self.hud_diag = QLabel('SYSTEM // DIAGNOSTICS')
+        self.hud_diag.setObjectName('hudDiag')
+        hud_top.addWidget(self.hud_diag, 0, Qt.AlignmentFlag.AlignTop)
+        hud_top.addStretch(1)
         clock_box = QVBoxLayout()
         clock_box.setSpacing(2)
         self.clock_label = QLabel('--:--:--')
@@ -907,27 +897,33 @@ class JarvisWindow(QMainWindow):
         self.state_line.setObjectName('stateLine')
         self.state_line.setAlignment(Qt.AlignmentFlag.AlignRight)
         clock_box.addWidget(self.state_line)
-        self.focus_button = QPushButton('F.O.C.U.S.')
-        self.focus_button.setObjectName('focusButton')
-        self.focus_button.setCheckable(True)
-        self.focus_button.setToolTip('Modo F.O.C.U.S.: oculta la interfaz y deja solo el núcleo. Esc para salir')
-        self.focus_button.setAccessibleName('Modo F.O.C.U.S.')
-        self.focus_button.toggled.connect(self.toggle_focus)
-        focus_holder = QHBoxLayout()
-        focus_holder.addStretch()
-        focus_holder.addWidget(self.focus_button)
-        clock_box.addLayout(focus_holder)
-        clock_row.addLayout(clock_box)
-        layout.addLayout(clock_row)
+        expr = QFrame()
+        expr.setObjectName('exprBox')
+        expr_layout = QVBoxLayout(expr)
+        expr_layout.setContentsMargins(0, 0, 0, 0)
+        expr_layout.setSpacing(0)
+        expr_title = QLabel('EXPRESSION')
+        expr_title.setObjectName('exprTitle')
+        expr_layout.addWidget(expr_title)
+        self.expr_jarvis = QPushButton('J.A.R.V.I.S')
+        self.expr_jarvis.setObjectName('exprButton')
+        self.expr_jarvis.setCheckable(True)
+        self.expr_jarvis.setChecked(True)
+        self.expr_jarvis.setAccessibleName('Modo normal JARVIS')
+        self.expr_jarvis.toggled.connect(self.set_expression_normal)
+        expr_layout.addWidget(self.expr_jarvis)
+        self.expr_focus = QPushButton('F.O.C.U.S.')
+        self.expr_focus.setObjectName('exprButton')
+        self.expr_focus.setCheckable(True)
+        self.expr_focus.setAccessibleName('Modo F.O.C.U.S.')
+        self.expr_focus.setToolTip('Oculta la interfaz; Esc para volver')
+        self.expr_focus.toggled.connect(self.set_expression_focus)
+        expr_layout.addWidget(self.expr_focus)
+        clock_box.addWidget(expr)
+        hud_top.addLayout(clock_box)
+        layout.addLayout(hud_top)
         self.escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self.escape_shortcut.activated.connect(self.exit_focus)
-
-        self.heading = QLabel('Tu asistente, listo para ayudarte.')
-        self.heading.setObjectName('heading')
-        layout.addWidget(self.heading)
-        self.subtitle = QLabel('Conversa, consulta y controla tu equipo con tu autorización.')
-        self.subtitle.setObjectName('muted')
-        layout.addWidget(self.subtitle)
 
         self.weather_loading = QLabel('Buscando el clima…')
         self.weather_loading.setTextFormat(Qt.TextFormat.PlainText)
@@ -968,24 +964,56 @@ class JarvisWindow(QMainWindow):
         self.status.setObjectName('statusBadge')
         self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
-        controls = QHBoxLayout()
-        controls.addStretch()
-        self.chat_toggle = QPushButton('💬')
-        self.chat_toggle.setObjectName('modeIcon')
-        self.chat_toggle.setCheckable(True)
-        self.chat_toggle.setToolTip('Mostrar u ocultar chat')
-        self.chat_toggle.setAccessibleName('Mostrar u ocultar chat')
-        self.chat_toggle.toggled.connect(self.toggle_chat)
-        controls.addWidget(self.chat_toggle)
-        self.mic = QPushButton('🎙')
-        self.mic.setObjectName('modeIcon')
+
+        ghost = QHBoxLayout()
+        ghost.addStretch()
+        self.mic = QPushButton('MIC')
+        self.mic.setObjectName('ghostIcon')
         self.mic.setCheckable(True)
-        self.mic.setToolTip('Activar micrófono')
+        self.mic.setToolTip('Activar o apagar micrófono')
         self.mic.setAccessibleName('Activar o apagar micrófono')
         self.mic.clicked.connect(self.toggle_microphone)
-        controls.addWidget(self.mic)
-        controls.addStretch()
-        layout.addLayout(controls)
+        ghost.addWidget(self.mic)
+        self.chat_toggle = QPushButton('CHAT')
+        self.chat_toggle.setObjectName('ghostIcon')
+        self.chat_toggle.setCheckable(True)
+        self.chat_toggle.setToolTip('Mostrar u ocultar la conversación')
+        self.chat_toggle.setAccessibleName('Mostrar u ocultar chat')
+        self.chat_toggle.toggled.connect(self.toggle_chat)
+        ghost.addWidget(self.chat_toggle)
+        self.phone_button = QPushButton('TEL')
+        self.phone_button.setObjectName('ghostIcon')
+        self.phone_button.setToolTip('Teléfono Android')
+        self.phone_button.setAccessibleName('Conectar teléfono Android')
+        self.phone_button.clicked.connect(self.open_phone)
+        ghost.addWidget(self.phone_button)
+        self.agenda_button = QPushButton('AGD')
+        self.agenda_button.setObjectName('ghostIcon')
+        self.agenda_button.setToolTip('Agenda y recordatorios')
+        self.agenda_button.setAccessibleName('Agenda y recordatorios')
+        self.agenda_button.clicked.connect(self.open_agenda)
+        ghost.addWidget(self.agenda_button)
+        self.memory_button = QPushButton('MEM')
+        self.memory_button.setObjectName('ghostIcon')
+        self.memory_button.setToolTip('Memoria de JARVIS')
+        self.memory_button.setAccessibleName('Abrir memoria')
+        self.memory_button.clicked.connect(self.open_memory)
+        ghost.addWidget(self.memory_button)
+        self.settings_button = QPushButton('CFG')
+        self.settings_button.setObjectName('ghostIcon')
+        self.settings_button.setToolTip('Apariencia y comportamiento')
+        self.settings_button.setAccessibleName('Abrir ajustes')
+        self.settings_button.clicked.connect(self.open_visual_settings)
+        ghost.addWidget(self.settings_button)
+        ghost.addStretch()
+        self.ghost_row = QWidget()
+        self.ghost_row.setLayout(ghost)
+        layout.addWidget(self.ghost_row)
+
+        self.hint = QLabel('di «Jarvis…» o pulsa CHAT para escribir')
+        self.hint.setObjectName('hintLabel')
+        self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.hint)
 
         self.chat_panel = QWidget()
         chat_layout = QVBoxLayout(self.chat_panel)
@@ -1010,11 +1038,11 @@ class JarvisWindow(QMainWindow):
         layout.addWidget(self.chat_panel, 1)
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 2, 0, 0)
-        self.hud_left = QLabel('STATE IDLE · CPU 0% · MEM 0%')
+        self.hud_left = QLabel('STATE IDLE · PROC 0')
         self.hud_left.setObjectName('hudTiny')
         bottom_row.addWidget(self.hud_left)
         bottom_row.addStretch()
-        self.hud_right = QLabel('MODE AUTO · UPTIME 0D 00:00:00')
+        self.hud_right = QLabel('MODE AUTO · 1.0Hz · UPTIME 0D 00:00:00')
         self.hud_right.setObjectName('hudTiny')
         self.hud_right.setAlignment(Qt.AlignmentFlag.AlignRight)
         bottom_row.addWidget(self.hud_right)
@@ -1024,6 +1052,9 @@ class JarvisWindow(QMainWindow):
         self.hud_timer.timeout.connect(self.update_hud)
         self.hud_timer.start()
         psutil.cpu_percent(interval=None)  # prime: la primera lectura siempre es 0.0
+        self._net_prev = psutil.net_io_counters()
+        self._net_prev_at = time.monotonic()
+        self._last_tick_at = time.monotonic()
         self.update_hud()
         self.agenda_timer = QTimer(self)
         self.agenda_timer.setInterval(5000)
@@ -1084,15 +1115,10 @@ class JarvisWindow(QMainWindow):
         self.core.set_weather_searching(False)
         self.core.set_compact_display(False)
         self.root_layout.setAlignment(self.core, Qt.AlignmentFlag.AlignHCenter)
-        if not self.compact:
-            self.heading.show()
-            self.subtitle.show()
 
     @pyqtSlot(str, object)
     def on_weather_event(self, event, data):
         if event == 'loading':
-            if self.compact:
-                self.toggle_compact()
             self.dismiss_weather()
             location = str(data.get('location', ''))[:150] if isinstance(data, dict) else ''
             self.weather_loading.setText('Buscando el clima de ' + location + '…' if location else 'Buscando el clima…')
@@ -1110,8 +1136,6 @@ class JarvisWindow(QMainWindow):
                 self.weather_query = data.get('requested')
                 if read_state().get('network_actions_accepted') is True:
                     self.weather_refresh_timer.start()
-                self.heading.hide()
-                self.subtitle.hide()
                 self.weather_view.show()
                 self.core.set_compact_display(True)
                 self.root_layout.setAlignment(self.core, Qt.AlignmentFlag.AlignLeft)
@@ -1160,10 +1184,8 @@ class JarvisWindow(QMainWindow):
 
     @pyqtSlot(bool)
     def toggle_chat(self, enabled):
-        if enabled and self.compact:
-            self.toggle_compact()
-        self.chat_panel.setVisible(enabled and not self.compact)
-        if enabled and not self.compact:
+        self.chat_panel.setVisible(enabled)
+        if enabled:
             self.input.setFocus()
 
     def append_chat(self, author, text):
@@ -1239,8 +1261,6 @@ class JarvisWindow(QMainWindow):
             heading = 'Permiso solicitado para: ' + name
         self.append_chat('Sistema', heading + '\n' + details + privacy +
                          '\nEscribe AUTORIZO para aprobar o NO para rechazar.')
-        if self.compact:
-            self.toggle_compact()
         self.chat_toggle.setChecked(True)
         self.chat_panel.show()
         self.input.setPlaceholderText('Responde AUTORIZO o NO')
@@ -1391,84 +1411,87 @@ class JarvisWindow(QMainWindow):
     def update_hud(self):
         try:
             cpu = psutil.cpu_percent(interval=None)
-            mem = psutil.virtual_memory().percent
+            ram = psutil.virtual_memory()
+            mem = ram.percent
             uptime = int(time.time() - psutil.boot_time())
+            disk = psutil.disk_usage(str(Path.home().anchor or '/'))
+            battery = psutil.sensors_battery()
+            procs = len(psutil.pids())
+            counters = psutil.net_io_counters()
+            now = time.monotonic()
+            elapsed = max(now - self._net_prev_at, 0.001)
+            down = (counters.bytes_recv - self._net_prev.bytes_recv) / elapsed / 1e6
+            up = (counters.bytes_sent - self._net_prev.bytes_sent) / elapsed / 1e6
+            self._net_prev, self._net_prev_at = counters, now
+            health = max(5.0, min(100.0, 100.0 - max(0.0, cpu - 50.0) * 0.35
+                                   - max(0.0, mem - 70.0) * 0.5
+                                   - max(0.0, disk.percent - 85.0) * 0.8))
         except Exception:
-            cpu, mem, uptime = 0.0, 0.0, 0
-        self.clock_label.setText(datetime.now().strftime('%H:%M:%S'))
-        self.state_line.setText('ALL SYSTEMS NORMAL' if cpu < 25 else ('CARGA ELEVADA' if cpu < 60 else 'CARGA CRÍTICA'))
-        mode = 'IDLE' if cpu < 25 else ('ACTIVE' if cpu < 60 else 'BUSY')
+            cpu, mem, uptime, health = 0.0, 0.0, 0, 100.0
+            procs, down, up = 0, 0.0, 0.0
+            battery = None
+            ram = None
+        now = time.monotonic()
+        hz = 1.0 / max(now - self._last_tick_at, 0.001)
+        self._last_tick_at = now
+        hz = min(9.9, max(0.1, hz))
         days, rem = divmod(uptime, 86400)
         hours, rem = divmod(rem, 3600)
         minutes, seconds = divmod(rem, 60)
-        self.hud_left.setText(f'STATE {mode} · CPU {cpu:.0f}% · MEM {mem:.0f}%')
-        self.hud_right.setText(f'MODE AUTO · UPTIME {days}D {hours:02d}:{minutes:02d}:{seconds:02d}')
+        self.clock_label.setText(datetime.now().strftime('%H:%M:%S'))
+        self.state_line.setText('ALL SYSTEMS NORMAL' if health >= 70 else ('CARGA ELEVADA' if health >= 40 else 'SISTEMA EN RIESGO'))
+        mode = 'IDLE' if cpu < 25 else ('ACTIVE' if cpu < 60 else 'BUSY')
+        if battery is not None:
+            pwr = f'{round(battery.percent)}% {"ENCHUFADO" if battery.power_plugged else "BATERÍA"}'
+        else:
+            pwr = 'AC · EXTERNA'
+        mem_line = (f'MEM      {ram.used / 1024**3:.1f}/{ram.total / 1024**3:.1f} GB · {mem:.0f}%'
+                    if ram is not None else f'MEM      {mem:.0f}%')
+        self.hud_diag.setText(
+            'SYSTEM // DIAGNOSTICS\n'
+            f'HEALTH   {health:5.0f}%\n'
+            f'CPU      {cpu:5.1f}%\n'
+            f'{mem_line}\n'
+            f'NET      {down:.2f}↓ {up:.2f}↑ MB/s\n'
+            f'PWR      {pwr}\n'
+            f'UPTIME   {days}D {hours:02d}:{minutes:02d}:{seconds:02d}\n'
+            f'PROC     {procs}')
+        self.hud_left.setText(f'STATE {mode} · PROC {procs}')
+        self.hud_right.setText(f'MODE {"AUTO" if health >= 40 else "ALERT"} · {hz:.1f}Hz · UPTIME {days}D {hours:02d}:{minutes:02d}:{seconds:02d}')
 
-    def toggle_focus(self, enabled):
+    def set_expression_focus(self, enabled):
+        if enabled:
+            self.expr_jarvis.blockSignals(True)
+            self.expr_jarvis.setChecked(False)
+            self.expr_jarvis.blockSignals(False)
+            self.set_focus(True)
+        else:
+            self.expr_jarvis.blockSignals(True)
+            self.expr_jarvis.setChecked(True)
+            self.expr_jarvis.blockSignals(False)
+            self.set_focus(False)
+
+    def set_expression_normal(self, enabled):
+        if enabled:
+            self.expr_focus.blockSignals(True)
+            self.expr_focus.setChecked(False)
+            self.expr_focus.blockSignals(False)
+            self.set_focus(False)
+        else:
+            # «J.A.R.V.I.S» no se puede dejar sin seleccionar: vuelve a su estado.
+            self.expr_jarvis.blockSignals(True)
+            self.expr_jarvis.setChecked(True)
+            self.expr_jarvis.blockSignals(False)
+
+    def set_focus(self, enabled):
         if enabled and (self.weather_view.isVisible() or self.weather_loading.isVisible()):
             self.dismiss_weather()
-        for widget in (self.heading, self.subtitle, self.chat_panel, self.chat_toggle,
-                       self.phone_button, self.agenda_button, self.memory_button,
-                       self.settings_button, self.compact_toggle):
+        for widget in (self.hud_diag, self.ghost_row, self.hint, self.chat_panel, self.chat_toggle):
             widget.setVisible(not enabled)
-        self.root_layout.setContentsMargins(14, 14, 14, 14) if enabled else self.root_layout.setContentsMargins(30, 24, 30, 24)
+        self.root_layout.setContentsMargins(16, 16, 16, 16) if enabled else self.root_layout.setContentsMargins(30, 24, 30, 24)
 
     def exit_focus(self):
-        self.focus_button.setChecked(False)
-
-    def toggle_pin(self, checked):
-        # Compact mode remains floating; expanded mode respects the checkbox.
-        geometry = self.geometry()
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked or self.compact)
-        self.show()
-        self.setGeometry(geometry)
-
-    def toggle_compact(self):
-        if not self.compact:
-            if self.weather_view.isVisible() or self.weather_loading.isVisible():
-                self.dismiss_weather()
-            self.expanded_geometry = self.geometry()
-            self.expanded_maximized = self.isMaximized()
-            self.showNormal()
-            self.compact = True
-            self.focus_button.setChecked(False)  # F.O.C.U.S. solo tiene sentido en modo expandido
-            self.phone_button.hide()
-            self.settings_button.hide()
-            self.memory_button.hide()
-            self.agenda_button.hide()
-            self.focus_button.hide()
-            self.heading.hide()
-            self.subtitle.hide()
-            self.chat_toggle.setChecked(False)
-            self.chat_panel.hide()
-            self.compact_toggle.setText('Abrir chat')
-            self.root_layout.setContentsMargins(10, 10, 10, 10)
-            self.root_layout.setSpacing(6)
-            self.setMinimumSize(320, 350)
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-            self.show()
-            self.resize(360, 390)
-        else:
-            self.compact = False
-            self.phone_button.show()
-            self.settings_button.show()
-            self.memory_button.show()
-            self.agenda_button.show()
-            self.focus_button.show()
-            self.heading.show()
-            self.subtitle.show()
-            self.chat_toggle.setChecked(True)
-            self.chat_panel.show()
-            self.compact_toggle.setText('Modo compacto')
-            self.root_layout.setContentsMargins(30, 24, 30, 24)
-            self.root_layout.setSpacing(18)
-            self.setMinimumSize(560, 520)
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.pin.isChecked())
-            self.show()
-            if self.expanded_maximized:
-                self.showMaximized()
-            elif self.expanded_geometry is not None:
-                self.setGeometry(self.expanded_geometry)
+        self.expr_focus.setChecked(False)
 
     def toggle_microphone(self):
         if self.thread is not None:
@@ -1561,24 +1584,26 @@ class JarvisWindow(QMainWindow):
 
 STYLE = '''
 GridBackdrop, CoreAnimation { background: transparent; }
-QWidget { background: #04090e; color: #cfeef5; font-family: "Orbitron", "Segoe UI", sans-serif; font-size: 12px; }
+QWidget { background: #04090e; color: #cfeef5; font-family: "Orbitron", "Consolas", monospace; font-size: 12px; }
 QLabel { background: transparent; }
-QLabel#brand { color: #00f0ff; font-size: 15px; font-weight: 700; letter-spacing: 5px; }
-QLabel#heading { font-size: 22px; font-weight: 700; color: #eafcff; letter-spacing: 1px; }
-QLabel#muted, QLabel#footer { color: #4a7183; }
-QLabel#footer { font-size: 11px; }
-QLabel#statusBadge { color: #46ffb1; font-size: 11px; font-weight: 700; letter-spacing: 2px; }
-QLabel#model { color: #8296ab; font-size: 11px; }
-QLabel#clock { font-family: "Orbitron", "Consolas", monospace; font-size: 17px; color: #c9f6ff; letter-spacing: 6px; }
-QLabel#stateLine { font-family: "Orbitron", monospace; font-size: 8px; letter-spacing: 4px; color: #59e0ee; }
-QLabel#hudTiny { font-family: "Consolas", monospace; font-size: 8px; letter-spacing: 3px; color: #2c5a6c; }
-QPushButton#focusButton { border: 1px solid rgba(0,240,255,.45); background: rgba(0,240,255,.06); color: #8ff4ff; font-family: "Orbitron", monospace; font-size: 9px; letter-spacing: 4px; padding: 6px 14px; }
-QPushButton#focusButton:hover { background: rgba(0,240,255,.14); color: #eafcff; }
-QPushButton#focusButton:checked { background: rgba(0,240,255,.18); border: 1px solid #00f0ff; color: #eafcff; }
-QFrame#panel { background: rgba(6,16,22,.88); border: 1px solid rgba(0,240,255,.30); border-radius: 10px; }
-QLineEdit, QTextBrowser, QPlainTextEdit { background: #060e14; border: 1px solid rgba(0,240,255,.28); border-radius: 8px; padding: 12px; selection-background-color: #0a4b5c; color: #d9fbff; }
-QTextBrowser { border: none; line-height: 1.6; }
-QScrollArea#chatHistory { background: #050c12; border: 1px solid rgba(0,240,255,.22); border-radius: 12px; }
+QLabel#clock { font-size: 20px; color: #c9f6ff; letter-spacing: 7px; }
+QLabel#stateLine { font-size: 8px; letter-spacing: 4px; color: #59e0ee; }
+QLabel#hudDiag { font-family: "Consolas", monospace; font-size: 9px; letter-spacing: 2px; color: #57d7e8; }
+QLabel#hudTiny { font-family: "Consolas", monospace; font-size: 8px; letter-spacing: 3px; color: #2f6070; }
+QLabel#hintLabel { font-family: "Consolas", monospace; font-size: 8px; letter-spacing: 3px; color: #24434f; }
+QLabel#statusBadge { color: #46ffb1; font-size: 10px; letter-spacing: 2px; font-family: "Consolas", monospace; }
+QLabel#weatherLoading { color: #8de8ff; font-size: 15px; font-weight: 700; }
+QLabel#messageText { color: #edf4fa; font-size: 13px; background: transparent; font-family: "Consolas", monospace; }
+QFrame#exprBox { background: rgba(3,10,14,.82); border: 1px solid rgba(0,240,255,.35); }
+QLabel#exprTitle { font-family: "Consolas", monospace; font-size: 7px; letter-spacing: 4px; color: #3a6a7c; padding: 4px 8px 2px 8px; }
+QPushButton#exprButton { background: transparent; border: none; border-top: 1px solid rgba(0,240,255,.14); color: #8ff4ff; font-family: "Orbitron", monospace; font-size: 9px; letter-spacing: 4px; padding: 7px 10px; text-align: left; }
+QPushButton#exprButton:hover { background: rgba(0,240,255,.10); color: #eafcff; }
+QPushButton#exprButton:checked { background: rgba(0,240,255,.14); color: #eafcff; border-left: 3px solid #00f0ff; }
+QPushButton#ghostIcon { background: transparent; border: 1px solid transparent; color: #3f7d90; font-family: "Consolas", monospace; font-size: 10px; letter-spacing: 3px; padding: 6px 12px; }
+QPushButton#ghostIcon:hover { color: #00f0ff; border-color: rgba(0,240,255,.4); background: rgba(0,240,255,.06); }
+QPushButton#ghostIcon:checked { color: #02141a; background: #00f0ff; }
+QPushButton#ghostIcon:disabled { color: #24434f; }
+QScrollArea#chatHistory { background: rgba(4,12,17,.88); border: 1px solid rgba(0,240,255,.22); border-radius: 12px; }
 QWidget#chatContainer { background: transparent; }
 QFrame#bubble_user { background-color: rgba(0,90,120,.30); border: 1px solid rgba(0,240,255,.38); border-left: 3px solid #00f0ff; border-radius: 10px; }
 QFrame#bubble_jarvis { background-color: rgba(8,26,44,.55); border: 1px solid rgba(90,160,255,.32); border-left: 3px solid #2f7bff; border-radius: 10px; }
@@ -1586,17 +1611,14 @@ QFrame#bubble_system { background-color: rgba(61,42,25,.45); border: 1px solid r
 QLabel#sender_user { color: #5ff0ff; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
 QLabel#sender_jarvis { color: #7fb2ff; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
 QLabel#sender_system { color: #f0bd7c; font-size: 10px; font-weight: 800; }
-QLabel#weatherLoading { color: #8de8ff; font-size: 15px; font-weight: 700; }
-QLabel#messageText { color: #edf4fa; font-size: 13px; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 7px; margin: 4px; }
 QScrollBar::handle:vertical { background: #123c4a; min-height: 25px; border-radius: 3px; }
 QScrollBar::handle:vertical:hover { background: #00f0ff; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QLineEdit, QTextBrowser, QPlainTextEdit { background: rgba(4,12,17,.9); border: 1px solid rgba(0,240,255,.28); border-radius: 8px; padding: 12px; selection-background-color: #0a4b5c; color: #d9fbff; }
+QTextBrowser { border: none; line-height: 1.6; }
 QPushButton { border: 1px solid rgba(0,240,255,.35); border-radius: 8px; padding: 10px 16px; background: rgba(6,18,24,.9); color: #bfeffb; letter-spacing: 1px; }
 QPushButton:hover { background: rgba(0,240,255,.12); border-color: rgba(0,240,255,.65); color: #eafcff; }
-QPushButton#modeIcon { font-size: 22px; min-width: 40px; padding: 8px; }
-QPushButton#modeIcon:checked { background: rgba(0,240,255,.16); border: 1px solid #00f0ff; }
-QPushButton#modeIcon:disabled { color: #3a5563; background: #050c12; }
 QPushButton#send, QPushButton#approveButton { background: #00f0ff; color: #02141a; border: none; font-weight: 800; letter-spacing: 2px; }
 QPushButton#send:disabled { background: #12333e; color: #4a7183; }
 QComboBox { background: #060e14; color: #cfeef5; border: 1px solid rgba(0,240,255,.30); border-radius: 7px; padding: 7px; }
@@ -1604,6 +1626,7 @@ QComboBox:hover { border-color: rgba(0,240,255,.6); }
 QCheckBox { color: #8fb8c6; }
 QDialog { background: #04090e; }
 QLabel#dialogTitle { font-size: 19px; font-weight: 700; color: #d9fbff; letter-spacing: 1px; }
+QFrame#panel { background: rgba(6,16,22,.88); border: 1px solid rgba(0,240,255,.30); border-radius: 10px; }
 '''
 
 

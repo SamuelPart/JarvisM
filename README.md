@@ -274,15 +274,15 @@ No hace falta saber rutas. Ejemplos:
 
 El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia (y volverá a pedir tu confirmación).
 
-## Apariencia tipo HUD (integrada en la app)
+## Apariencia tipo HUD (rediseño completo de la ventana)
 
-La ventana principal de JARVIS (`python gui.py`) adopta la estética de la referencia de JARVIS **sin navegador ni puertos**: retícula blueprint sobre fondo casi negro, núcleo central con anillos HUD animados (anillo de marcas giratorio, arcos segmentados azul eléctrico y el **arco ámbar** superior) detrás de la esfera holográfica reactiva, reloj digital arriba a la derecha con una línea de estado («ALL SYSTEMS NORMAL» / «CARGA ELEVADA» / «CARGA CRÍTICA» según tu CPU) y una banda inferior con datos reales (`STATE IDLE · CPU … · MEM …` a la izquierda; `MODE AUTO · UPTIME …` a la derecha, actualizada cada segundo con psutil).
+La ventana principal de JARVIS (`python gui.py`) **es** la pantalla HUD de la referencia: fondo casi negro con retícula blueprint, núcleo central brillante con los anillos de la referencia (marcas giratorias, arcos segmentados azul eléctrico y el arco ámbar) y la marca «J.A.R.V.I.S» en el centro, reloj arriba a la derecha con línea de estado real («ALL SYSTEMS NORMAL» / «CARGA ELEVADA» / «SISTEMA EN RIESGO» según CPU/RAM/disco), y la caja **EXPRESSION** con `J.A.R.V.I.S` / `F.O.C.U.S.`.
 
-- **F.O.C.U.S.**: botón bajo el reloj (o tecla **Esc** para salir) que oculta la interfaz —chat, encabezados y botones de acción— y deja visible el núcleo y la información esencial; pensado como el modo de concentración de la referencia.
-- Las paletas de color de **Ajustes** siguen funcionando (la esfera muestra tu color; los anillos externos mantienen la identidad cian/ámbar de la referencia).
-- Sin dependencias nuevas: psutil y PyQt6 ya estaban en `requirements.txt`. El panel web anterior (`hud/` + Flask, puerto 5050) se retiró porque se pidió la apariencia **en la misma app**; sigue disponible en el historial de Git (`b6ef037`, `d3f2b0c`) por si algún día se quiere.
-
-**Límites honestos:** la interfaz no se ha ejecutado en este entorno de desarrollo (no hay pantalla ni PyQt6 aquí); el código pasa compilación y la suite de pruebas (192 tests), pero el primer arranque real ocurrirá en tu equipo. La resolución, el espaciado y los colores pueden necesitar finos según tu monitor. El estado superior deriva de la carga de CPU real; no es un diagnóstico profesional.
+- **Esquinas de datos reales** (psutil, 1 Hz): arriba-izquierda `SYSTEM // DIAGNOSTICS` (salud, CPU, RAM, red ↓/↑ en MB/s, energía, uptime, procesos); abajo-izquierda `STATE IDLE · PROC n`; abajo-derecha `MODE AUTO · <f>Hz · UPTIME …` (la frecuencia es la medida real de sondeo).
+- **Sin barra superior antigua**: se eliminaron la cabecera con botones, «Siempre visible», «Modo compacto», el logo y las frases de bienvenida. Las acciones viven en una fila de iconos fantasma discretos (`MIC`, `CHAT`, `TEL`, `AGD`, `MEM`, `CFG`) que se iluminan al pasar el cursor.
+- **F.O.C.U.S.** (o **Esc**): oculta diagnósticos, iconos y chat; deja el núcleo y la hora. La fila «J.A.R.V.I.S» de EXPRESSION vuelve al modo normal.
+- El chat ya no ocupa la pantalla: aparece solo al pulsar `CHAT` (o si JARVIS te pide una autorización); al terminar se oculta y vuelve la pantalla HUD limpia.
+- **Límites honestos:** no se ha ejecutado en este entorno (sin pantalla ni PyQt6); compila y la suite pasa (192 tests), pero el primer arranque real será en tu equipo. Fuentes: si «Orbitron» no está instalada se usa una monoespaciada del sistema. El núcleo visual conserva la esfera holográfica existente (reactiva a la voz) enmarcada con los anillos de la referencia; no es una réplica píxel-a-píxel del diseño conceptart.
 
 ## Arquitectura autónoma (paquete `agent/`)
 
