@@ -47,7 +47,6 @@ UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
 class VoiceSignals(QObject):
     activity = pyqtSignal(bool)
     voice_level = pyqtSignal(object)
-    briefing_ready = pyqtSignal(str)
     scheduled_email_result = pyqtSignal(object)
     weather_event = pyqtSignal(str, object)
     weather_refresh = pyqtSignal(int, object)
@@ -411,9 +410,9 @@ class VisualSettingsDialog(QDialog):
         self.agenda_delete_permission.setChecked(read_state().get('agenda_delete_accepted') is True)
         self.agenda_delete_permission.setToolTip('Permite eliminar recordatorios locales al pedirlo. No elimina eventos de Google Calendar.')
         layout.addWidget(self.agenda_delete_permission)
-        self.briefing_permission = QCheckBox('Resumen automático al iniciar')
+        self.briefing_permission = QCheckBox('Saludo automático al iniciar')
         self.briefing_permission.setChecked(read_state().get('startup_briefing_accepted') is True)
-        self.briefing_permission.setToolTip('Consulta recordatorios, calendario configurado, estado del equipo y cantidad de errores recientes en los registros. La voz puede enviarse a un servicio externo; los detalles de registros solicitados pueden enviarse al proveedor de IA.')
+        self.briefing_permission.setToolTip('Al abrir JARVIS saluda según la hora del día. No consulta recordatorios, calendario, estado del equipo ni registros. El saludo por voz puede enviarse al servicio de voz configurado.')
         layout.addWidget(self.briefing_permission)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Save).setText('Guardar')
@@ -853,7 +852,6 @@ class JarvisWindow(QMainWindow):
         self.core_state = CoreState()
         self.voice_signals.activity.connect(self.on_voice_activity)
         self.voice_signals.voice_level.connect(self.core.set_voice_level)
-        self.voice_signals.briefing_ready.connect(self.on_briefing_ready)
         self.voice_signals.scheduled_email_result.connect(self.on_scheduled_email_result)
         self.voice_signals.weather_event.connect(self.on_weather_event)
         self.voice_signals.weather_refresh.connect(self.on_weather_refresh)
@@ -1242,35 +1240,13 @@ class JarvisWindow(QMainWindow):
         except (sqlite3.Error, OSError):
             QMessageBox.warning(self, 'Memoria', 'No se pudo abrir la memoria local.')
 
-    def start_briefing(self):
+    def start_greeting(self):
         if not read_state().get('startup_briefing_accepted'):
             return
         greeting = startup_briefing.greeting(datetime.now().astimezone()) + ', señor. ¿Cómo está hoy?'
         self.append_chat('JARVIS', greeting)
         if self.chat_audio.isChecked() and self.thread is None:
             self.voice.speak(speech_text(greeting))
-        signals = self.voice_signals
-        def run():
-            try:
-                result = startup_briefing.build(include_greeting=False)
-            except Exception:
-                result = 'No pude completar la revisión inicial.'
-            try:
-                signals.briefing_ready.emit(result)
-            except RuntimeError:
-                pass  # The window may have closed while the review was running.
-        threading.Thread(target=run, name='JARVIS revisión inicial', daemon=True).start()
-
-    @pyqtSlot(str)
-    def on_briefing_ready(self, text):
-        if not read_state().get('startup_briefing_accepted'):
-            return
-        self.append_chat('JARVIS', text)
-        # Never speak over microphone capture or an active chat/approval request.
-        if self.chat_audio.isChecked() and self.thread is None:
-            self.voice.speak(speech_text(text))
-        elif self.thread is not None:
-            self.status.setText('Revisión inicial disponible en el chat')
 
     def open_visual_settings(self):
         dialog = VisualSettingsDialog(self.preferences, self.conversation_enabled, self)
@@ -1601,7 +1577,7 @@ def main():
         QMessageBox.critical(None, 'JARVIS', 'No se pudo abrir la agenda o la memoria local.')
         return 1
     window.show()
-    QTimer.singleShot(0, window.start_briefing)
+    QTimer.singleShot(0, window.start_greeting)
     return app.exec()
 
 

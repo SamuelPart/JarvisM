@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import threading
 from pathlib import Path
 from dotenv import load_dotenv
 from voice import Voice
@@ -102,15 +101,6 @@ def main():
         import startup_briefing
         from datetime import datetime
         announce(startup_briefing.greeting(datetime.now().astimezone()) + ', señor. ¿Cómo está hoy?')
-        def run_briefing():
-            try:
-                result = startup_briefing.build(include_greeting=False)
-            except Exception:
-                result = 'No pude completar la revisión inicial.'
-            if read_state().get('startup_briefing_accepted'):
-                # Console remains usable; avoid playing into a microphone session.
-                print('JARVIS — revisión inicial:', result, flush=True)
-        threading.Thread(target=run_briefing, name='JARVIS revisión inicial', daemon=True).start()
     import scheduled_emails
     def notify_scheduled(result):
         if result.get('state') == 'sent':
