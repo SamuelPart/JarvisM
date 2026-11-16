@@ -2148,3 +2148,16 @@ def test_voice_local_fallback_reports_no_measured_audio(monkeypatch):
     voice.on_level = lambda level: events.append(('level', level))
     voice._local('Hola')
     assert events == [('level', None), ('activity', True), ('activity', False)]
+
+
+def test_orb_transition_is_smooth_frame_independent_and_bounded():
+    from orb_motion import approach
+    first = approach(0, 1, .04, .26)
+    assert 0 < first < 1
+    assert approach(first, 0, .04, .26) < first
+    one_step = approach(0, 1, .08, .26)
+    two_steps = approach(approach(0, 1, .04, .26), 1, .04, .26)
+    assert one_step == pytest.approx(two_steps)
+    assert 0 < approach(0, 1, 999, .26) < 1
+    assert approach(.4, 1, -1, .26) == .4
+    assert approach(.4, 1, .04, 0) == 1

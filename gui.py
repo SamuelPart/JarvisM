@@ -7,12 +7,13 @@ import sqlite3
 import sys
 import threading
 import tempfile
+import time
 from pathlib import Path
 from datetime import datetime
 
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QPen
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QPainterPath, QPen
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -33,6 +34,7 @@ import scheduled_emails
 from weather_view import WeatherView
 from weather_timing import WeatherLoadingTiming
 from weather_sound import write_search_cue
+from orb_motion import approach
 from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
@@ -55,13 +57,16 @@ class CoreAnimation(QWidget):
         super().__init__()
         self.preferences = preferences.copy()
         self.compact_display = False
+        self.display_scale = 1.0
         self.weather_searching = False
         scale = SCALES[self.preferences['size']]
         self.setFixedSize(round(300 * scale), round(260 * scale))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.mode = 'idle'
         self.variant = 0
+        self.visual_variant = 0.0
         self.phase = 0.0
+        self.last_frame = time.monotonic()
         self.think_mix = 0.0
         self.speak_mix = 0.0
         self.approval_mix = 0.0
@@ -92,42 +97,82 @@ class CoreAnimation(QWidget):
 
     def set_compact_display(self, compact):
         self.compact_display = compact
-        scale = SCALES[self.preferences['size']] * (0.38 if compact else 1.0)
-        self.setFixedSize(round(300 * scale), round(260 * scale))
+        # The timer eases the size, so the sphere doesn't shrink in one frame.
         self.update()
 
     def advance(self):
         speed = 0.09 if self.weather_searching else 0.075 if self.mode == 'speaking' else 0.045 if self.mode == 'thinking' else 0.025
-        self.phase += speed * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
+        now = time.monotonic()
+        elapsed = max(0.0, min(now - self.last_frame, .15))
+        self.last_frame = now
+        self.phase += speed * elapsed / .04 * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
+        self.visual_variant = approach(self.visual_variant, self.variant, elapsed, .5)
+        target_scale = .38 if self.compact_display else 1.0
+        self.display_scale = approach(self.display_scale, target_scale, elapsed, .23)
+        if abs(target_scale - self.display_scale) < .002:
+            self.display_scale = target_scale
+        size = SCALES[self.preferences['size']] * self.display_scale
+        new_width, new_height = round(300 * size), round(260 * size)
+        if self.width() != new_width or self.height() != new_height:
+            self.setFixedSize(new_width, new_height)
         # Blend state changes instead of snapping between two unrelated shapes.
         thinking = (self.weather_searching or self.mode == 'thinking') and self.mode != 'approval'
-        self.think_mix += ((1.0 if thinking else 0.0) - self.think_mix) * .14
-        self.speak_mix += ((1.0 if self.mode == 'speaking' and not thinking else 0.0) - self.speak_mix) * .14
-        self.approval_mix += ((1.0 if self.mode == 'approval' else 0.0) - self.approval_mix) * .14
+        self.think_mix = approach(self.think_mix, 1.0 if thinking else 0.0, elapsed, .26)
+        self.speak_mix = approach(self.speak_mix, 1.0 if self.mode == 'speaking' and not thinking else 0.0, elapsed, .26)
+        self.approval_mix = approach(self.approval_mix, 1.0 if self.mode == 'approval' else 0.0, elapsed, .18)
         target = self.voice_level if self.voice_level is not None else .35 + .2 * math.sin(self.phase * 2.1)
-        self.smoothed_level += (target - self.smoothed_level) * (.5 if target > self.smoothed_level else .3)
+        self.smoothed_level = approach(self.smoothed_level, target, elapsed, .06 if target > self.smoothed_level else .11)
         self.update()
+
+    def paint_thought_streams(self, painter, radius, opacity):
+        reduced = self.preferences['animation'] == 'reducida'
+        for layer in range(4):
+            angle = layer * .72 + self.phase * (.18 + layer * .025)
+            spread = radius * (.48 + layer * .10)
+            path = QPainterPath()
+            # Project differently tilted elliptical paths into the core.
+            for step in range(41):
+                t = step * math.tau / 40
+                u = math.cos(t) * spread
+                v = math.sin(t) * spread * (.26 + layer * .065)
+                x = u * math.cos(angle) - v * math.sin(angle)
+                y = u * math.sin(angle) + v * math.cos(angle)
+                if not step:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(76, 191, 255, int((18 if reduced else 34) * opacity)), .8))
+            painter.drawPath(path)
+            position = (self.phase * (1.2 + layer * .18) + layer * 1.7) % math.tau
+            u = math.cos(position) * spread
+            v = math.sin(position) * spread * (.26 + layer * .065)
+            x, y = u * math.cos(angle) - v * math.sin(angle), u * math.sin(angle) + v * math.cos(angle)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(117, 226, 255, int((90 if reduced else 160) * opacity)))
+            painter.drawEllipse(QPointF(x, y), 2.1, 2.1)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.translate(self.width() / 2, self.height() / 2)
-        scale = SCALES[self.preferences['size']] * (0.38 if self.compact_display else 1.0)
+        scale = SCALES[self.preferences['size']] * self.display_scale
         painter.scale(scale, scale)
         radius = 100.0
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
-        if self.mode == 'approval':
-            glow.setColorAt(0, QColor(130, 65, 4, 22))
-            glow.setColorAt(0.76, QColor(230, 130, 18, 38))
-            glow.setColorAt(1, QColor(90, 45, 5, 0))
-        else:
-            glow.setColorAt(0, QColor(20, 16, 100, 18))
-            glow.setColorAt(0.76, QColor(28, 28, 174, 28))
-            glow.setColorAt(1, QColor(12, 10, 85, 0))
+        amber = self.approval_mix
+        glow.setColorAt(0, QColor(round(20 + 110 * amber), round(16 + 49 * amber), round(100 - 96 * amber), 18 + round(4 * amber)))
+        glow.setColorAt(0.76, QColor(round(28 + 202 * amber), round(28 + 102 * amber), round(174 - 156 * amber), 28 + round(10 * amber)))
+        glow.setColorAt(1, QColor(round(12 + 78 * amber), round(10 + 35 * amber), round(85 - 85 * amber), 0))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(glow)
         painter.drawEllipse(QPointF(0, 0), radius * 1.12, radius * 1.12)
+
+        # Thin, asymmetric internal channels carry traveling light pulses.
+        # They fade in with thought and remain inside the existing point sphere.
+        if self.think_mix > .01:
+            self.paint_thought_streams(painter, radius, self.think_mix)
 
         # Latitude rings projected in 3D: points on both hemispheres make the
         # hologram look like the reference, including its dotted polar circles.
@@ -135,7 +180,7 @@ class CoreAnimation(QWidget):
         points = []
         reduced = self.preferences['animation'] == 'reducida'
         strength = .4 if reduced else 1.0
-        variant = self.variant
+        variant = self.visual_variant
         thinking = self.think_mix
         speaking = self.speak_mix
         stretch = 1 + strength * (thinking * (0.11 + variant * .025) * math.sin(self.phase * (.7 + variant * .22))
