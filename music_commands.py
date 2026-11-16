@@ -1,6 +1,8 @@
 """Conservative direct routing for explicit music requests."""
 import re
 
+import action_log
+
 
 def parse_music_request(text):
     text = re.sub(r'^\s*(?:jarvis\s*[,!:;-]?\s*)', '', text.strip(), flags=re.I)
@@ -47,7 +49,17 @@ class MusicTrace:
         if self.block_immediate_email and name in ('send_gmail', 'reply_gmail'):
             return lambda *args, **kwargs: {'error': 'El usuario pidió un envío futuro; no se enviará ahora. Usa schedule_email si es un correo nuevo.'}
         if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder', 'schedule_email', 'cancel_scheduled_email', 'get_weather', 'phone_status', 'phone_action', 'create_document'):
-            return target
+            # Every authorized tool call executed on this machine is journaled,
+            # even ones whose answers are not overridden below.
+            def recorded(*args, **kwargs):
+                try:
+                    result = target(*args, **kwargs)
+                except Exception as exc:
+                    action_log.record(name, kwargs or dict(args=args), {'error': f'{type(exc).__name__}: {exc}'})
+                    raise
+                action_log.record(name, kwargs or dict(args=args), result)
+                return result
+            return recorded
         def tracked(*args, **kwargs):
             if name == 'get_weather':
                 self.weather_event('loading', {'location': kwargs.get('location', args[0] if args else '')})
@@ -86,8 +98,10 @@ class MusicTrace:
                     self.results.append((name, {'error': reason or 'Ocurrió un error al preparar WhatsApp; no conozco la causa.'}))
                 else:
                     self.results.append((name, {'error': 'La herramienta falló.'}))
+                action_log.record(name, kwargs or dict(args=args), self.results[-1][1])
                 raise
             self.results.append((name, result))
+            action_log.record(name, kwargs or dict(args=args), result)
             return result
         return tracked
 

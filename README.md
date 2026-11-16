@@ -133,7 +133,7 @@ JARVIS **no se reentrena** ni cambia por sí solo; aprende en el sentido de que 
 
 - **Aprendizaje automático (activado por defecto):** cada pocas conversaciones que hagan llegar contenido al modelo, JARVIS extrae de ellas hechos estables y duraderos sobre ti declarados por ti mismo (gustos, rutina, contexto, trato preferido) y los incorpora al perfil. Nada se almacena sin pasar por el filtro: no se guardan estados momentáneos, tareas ni datos que solo dijo el asistente.
 - **Al decir «recuerda que …»** (por voz o chat): JARVIS lo guarda en el acto y confirma con «Hecho, señor».
-- **Todo lo aprendido es visible y editable:** abre **Memoria** → «Preferencias»; ahí aparece junto con lo que escribiste tú (marcado con fecha). Puedes editar o borrar cualquier línea; nada se oculta. «Borrar conversaciones y preferencias» elimina también lo aprendido.
+- **Todo lo aprendido es visible y editable:** abre **Memoria** → «Preferencias»; ahí aparece junto con lo que escribiste tú (marcado con fecha). Puedes editar o borrar cualquier línea; nada se oculta. «Borrar conversaciones y preferencias» elimina también lo aprendido y el **registro de acciones** (`.jarvis-actions.jsonl`).
 - **Privacidad:** lo aprendido vive solo en tu equipo. El extractor se ejecuta con el proveedor de IA configurado (Gemini o NVIDIA) y solo sobre conversaciones que llegaron al modelo de todas formas; no sobre acciones locales cortas. Usa tokens solo cuando toque el turno de aprendizaje.
 - **Desactivar:** pon `JARVIS_LEARNING=0` en el entorno para apagar la extracción automática (el «recuerda que …» explícito sigue funcionando). Volver a activarlo: quita esa variable o ponla en 1.
 - Sigue siendo el mismo modelo: más contexto sobre ti, no una mente más inteligente ni capacidades nuevas.
@@ -263,6 +263,14 @@ JARVIS puede crear archivos locales por voz o por chat con el formato que pidas:
 - Las tablas (csv/xlsx) se pasan como filas; puedes pedir encabezados con estilo en Excel.
 - **PDF** es de texto, con fuentes básicas: no está maquetado con HTML/CSS, ni lleva imágenes insertadas ni formularios ni contraseña. **RTF** es mínimo (Word lo abre bien). **.doc binario antiguo** y **.xls** no: se entrega docx/xlsx, que Word y Excel modernos abren. Google Docs/Drive no están soportados (sin OAuth de Drive ni creación de documentos en la nube).
 - **docx, xlsx, pptx y pdf** usan librerías adicionales incluidas en `requirements.txt` (python-docx, openpyxl, python-pptx, fpdf2): si actualizas JARVIS desde el autoactualizador de la app, se instalan solas; en instalaciones manuales ejecuta `pip install -r requirements.txt`. Si alguna falta, JARVIS te dirá exactamente cuál falta en vez de fingir.
+
+## Registro de acciones (memoria de hechos)
+
+JARVIS guarda un **registro local de acciones ejecutadas** en `.jarvis-actions.jsonl` (excluido de Git): nombre de la herramienta, argumentos abreviados y resultado real (OK/FALLO), con hora. Lo rotan a las últimas 200 entradas. Se escriben en él tanto las acciones del chat (las que el modelo pide tras autorización) como los comandos locales directos (música, clima, rutinas, recordatorios, teléfono, Enviados).
+
+**Para qué sirve:** el modelo recibe las últimas acciones como contexto, así «¿creaste los PDFs?» o «¿abriste eso?» pueden responderse con hechos verificados en vez de memoria inventada. Nunca se registran campos sensibles (`content`, `body`, `password`, `token`, `secret`, `api_key`, `message`, `text`), ni contenidos de archivos; solo nombres, destinos y resultados. Se vacía junto con la memoria desde **Memoria → Borrar**. Puede desactivarse con `JARVIS_ACTION_LOG=0`.
+
+**Límites honestos:** no es conciencia ni garantiza obedecer todas las órdenes sin error. El modelo sigue decidiendo qué hacer y aún puede equivocarse en otras preguntas; el registro le da hechos de acciones pasadas, pero no convierte a JARVIS en infalible. Lo único que hoy responde siempre con certeza mecánica es la creación de documentos (`create_document`), cuya respuesta se reconstruye de lo verificado en disco.
 
 ## JARVIS independiente para Android
 

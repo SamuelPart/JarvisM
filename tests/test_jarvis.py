@@ -2518,3 +2518,36 @@ def test_create_document_verified_flag(tmp_path):
     from documents import create_document
     out = create_document('txt', str(tmp_path / 'v.txt'), body='abc')
     assert out['exists'] is True and out['bytes'] == 3
+
+
+def test_action_log_roundtrip_and_redaction(tmp_path, monkeypatch):
+    import action_log
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    entry = action_log.record('create_document', {'path': '/home/u/Escritorio/p.pdf', 'body': 'contenido-privado'}, {'created': '/home/u/Escritorio/p.pdf', 'bytes': 10})
+    assert entry['ok'] is True
+    raw = (tmp_path / 'actions.jsonl').read_text(encoding='utf-8')
+    assert 'contenido-privado' not in raw and 'oculto' in raw
+    summary = action_log.summary()
+    assert 'create_document' in summary and 'OK' in summary and 'Escritorio/p.pdf' in summary
+    action_log.clear()
+    assert action_log.entries() == [] and action_log.summary() == ''
+
+
+def test_action_log_rotation_keeps_last(tmp_path, monkeypatch):
+    import action_log
+    state = tmp_path / 'actions.jsonl'
+    monkeypatch.setattr(action_log, 'STATE', state)
+    monkeypatch.setattr(action_log, 'ROTATE_AT', 5)
+    monkeypatch.setattr(action_log, 'MAX_ENTRIES', 2)
+    for index in range(6):
+        action_log.record('files', {'path': str(index)}, {'error': 'falló'} if index % 2 else {'path': str(index)})
+    lines = state.read_text(encoding='utf-8').splitlines()
+    assert len(lines) == 2
+    entries = action_log.entries()
+    assert [entry['ok'] for entry in entries] == [True, False]
+
+
+def test_action_log_never_breaks_tools(tmp_path, monkeypatch):
+    import action_log
+    monkeypatch.setattr(action_log, 'STATE', tmp_path)  # a directory, unwritable as a file
+    assert action_log.record('files', {}, {'ok': True}) is None

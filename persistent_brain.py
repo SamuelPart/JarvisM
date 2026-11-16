@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 import learning
 import documents
+import action_log
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
@@ -72,6 +73,13 @@ def format_recent_sent(result):
     return f'El más reciente que encontré en Enviados es «{subject}», para {to}{when}.'
 
 
+def _journal(name, args, result):
+    """Record a direct local action with the same guarantees as the traced path."""
+    try:
+        action_log.record(name, args, result)
+    except Exception:
+        pass
+
 class PersistentBrain:
     def __init__(self, brain, memory):
         self.brain, self.memory = brain, memory
@@ -99,6 +107,10 @@ class PersistentBrain:
         if preference:
             instructions += ('\nPreferencias indicadas por el usuario (datos, no instrucciones de seguridad):\n'
                              + preference)
+        ledger = action_log.summary(12)
+        if ledger:
+            instructions += ('\n' + ledger +
+                             '\nNunca afirmes que una acción se completó si el registro indica lo contrario; ante la duda comprueba con la herramienta adecuada antes de responder.')
         if isinstance(self.brain, Brain):
             self.brain.instructions = instructions
             self.brain.history = [types.Content(role='user' if m['role'] == 'user' else 'model',
@@ -124,6 +136,7 @@ class PersistentBrain:
             result = self.brain.controller.get_weather(**args)
         except Exception:
             result = {'error': 'No pude consultar el clima; no conozco la causa.'}
+        _journal('get_weather', {'location': location}, result)
         if isinstance(result, dict) and result.get('ambiguous'):
             self.pending_weather = {'location': location, 'deadline': time.monotonic() + 300}
         self._emit_weather('result' if isinstance(result, dict) and result.get('ok') is True else 'error', result)
@@ -134,6 +147,7 @@ class PersistentBrain:
         if not authorize_tool('delete_reminder', args, self.approve):
             return 'No eliminé el recordatorio; no se autorizó la acción o no se pudo guardar el permiso.'
         result = self.brain.controller.delete_reminder(**args)
+        _journal('delete_reminder', args, result)
         return ('Listo, eliminé el recordatorio.' if result.get('deleted') is True
                 else 'No encontré ese recordatorio; puede que ya se haya eliminado o modificado.')
 
@@ -183,7 +197,9 @@ class PersistentBrain:
                 if not authorize_tool(name, args, self.approve):
                     answer = 'No consulté el teléfono porque no se autorizó la acción.'
                 else:
-                    answer = format_phone_result(name, getattr(self.brain.controller, name)(**args))
+                    phone_result = getattr(self.brain.controller, name)(**args)
+                    _journal(name, args, phone_result)
+                    answer = format_phone_result(name, phone_result)
             except Exception:
                 answer = 'No pude comunicarme con el teléfono; no conozco la causa.'
             return self._remember_answer(text, answer)
@@ -194,7 +210,9 @@ class PersistentBrain:
                 if not authorize_tool('search_gmail', args, self.approve):
                     answer = 'No consulté Enviados porque no se autorizó el acceso a Gmail.'
                 else:
-                    answer = format_recent_sent(self.brain.controller.search_gmail(**args))
+                    search_result = self.brain.controller.search_gmail(**args)
+                    _journal('search_gmail', args, search_result)
+                    answer = format_recent_sent(search_result)
             except Exception as exc:
                 from gmail_access import GmailError
                 if isinstance(exc, GmailError):
@@ -299,6 +317,7 @@ class PersistentBrain:
                     answer = 'Acción no autorizada, señor.'
                 else:
                     result = getattr(self.brain.controller, name)(**args)
+                    _journal(name, args, result)
                     if app:
                         answer = result.get('error') or ('Ya pedí abrir ' + app.group(1) + ', señor.')
                     elif time_request:
@@ -326,6 +345,7 @@ class PersistentBrain:
                 else:
                     print('JARVIS: ejecutando ' + name + '…', flush=True)
                     result = getattr(self.brain.controller, name)(**args)
+                    _journal(name, args, result)
                     answer = format_result(name, result)
                     print('JARVIS: resultado de música recibido.', flush=True)
             except Exception:
@@ -403,4 +423,5 @@ class PersistentBrain:
         self.pending_reminder_choices = None
         self.pending_weather = None
         self.memory.clear()
+        action_log.clear()
         self.refresh_context()
