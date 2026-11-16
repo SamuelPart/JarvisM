@@ -59,9 +59,21 @@ La autorización amplia activa la comprobación automática al iniciar tanto la 
 
 ## Personalizar la voz
 
-Por defecto, Edge TTS usa `es-MX-JorgeNeural`. En `.env`, cambie `JARVIS_TTS_VOICE` a otra voz disponible, por ejemplo `es-ES-AlvaroNeural` o `es-ES-ElviraNeural`. Para consultar el catálogo actual ejecute `venv/bin/edge-tts --list-voices` (en Windows `venv\Scripts\edge-tts.exe --list-voices`). La disponibilidad depende del servicio externo. Reinicie JARVIS para aplicar los cambios.
+Por defecto, JARVIS usa **ElevenLabs** (voz neuronal británica profunda «George», estilo JARVIS). En `.env`:
 
-El texto pronunciado se envía a Microsoft: no use el modo neuronal con información que no desee compartir. Para no enviar texto a ese servicio, configure `JARVIS_VOICE_MODE=local`; para desactivar la voz, `JARVIS_VOICE_MODE=off`. Las respuestas se seguirán mostrando en consola. La reproducción es secuencial y se realiza en segundo plano; al salir del programa puede interrumpirse.
+```env
+ELEVENLABS_API_KEY=tu_clave_aquí        # solo en tu equipo; nunca la subas a Git
+ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb   # opcional; George (británica, profunda)
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2 # opcional; multilingüe (español e inglés)
+```
+
+La clave nunca se imprime ni se guarda en el repo (`.env` está en `.gitignore`). Para ver tus voces y copiar su `voice_id`: ElevenLabs → Voice Library / Voices → copiar el ID; pégalo en `.env` y reinicia JARVIS.
+
+**Orden de síntesis automático:** ElevenLabs → Edge TTS (`es-MX-JorgeNeural`, configurable con `JARVIS_TTS_VOICE`) → voz local (pyttsx3). Si falta la clave o ElevenLabs responde con error (HTTP 401, cuota agotada, voz inexistente, sin red…), JARVIS lo informa con un diagnóstico **seguro** (nunca imprime tu clave ni mensajes crudos del proveedor) y continúa con Edge TTS; si Edge también falla, usa la voz local.
+
+**Privacidad y coste:** el texto pronunciado se envía a ElevenLabs (y al servicio de voz que finalmente reproduzca). ElevenLabs gratis tiene cuota de caracteres por mes; cada respuesta consume de ella. Para no enviar texto a ningún servicio externo: `JARVIS_VOICE_MODE=local`. Para silenciar la voz por completo: `JARVIS_VOICE_MODE=off` (la respuesta sigue en pantalla/historial). Para volver a Edge TTS como voz principal: `JARVIS_VOICE_MODE=edge`.
+
+**Diagnóstico honesto:** si la voz no sale tras actualizar, ejecuta `python benchmark.py` (comprueba entorno) y arranca `python gui.py` desde una terminal para ver el mensaje real (sin clave/Edge caído/red). Las pruebas automáticas cubren la síntesis con HTTP simulado (éxito, 401 sin filtrar la clave, fallback); no incluyen una llamada real a la API.
 
 ## Interfaz de escritorio
 
@@ -201,7 +213,7 @@ JARVIS puede buscar correos no leídos, leerlos y responder dentro del hilo medi
 
 Puede consultar recordatorios de la agenda local con permiso individual o con el permiso persistente de consulta de agenda. Para consultar también eventos del **calendario principal de Google**, habilite Google Calendar API en el mismo proyecto de Google Cloud y ejecute `venv/bin/python calendar_access.py` (Windows: `venv\Scripts\python.exe calendar_access.py`). Se abrirá Google para autorizar acceso de solo lectura al calendario, separado de Gmail. La cuenta usada para el calendario puede ser distinta; seleccione la deseada. Se guarda `.jarvis-calendar-token.json`, excluido de Git; no comparta el archivo. Cada consulta requiere permiso en JARVIS salvo que active el permiso persistente de consulta; sus eventos pueden enviarse al proveedor de IA. Puede consultar hasta 31 días y 100 eventos por petición; indica si hay más. No crea ni modifica eventos de Google Calendar. Para revocar el acceso, hágalo en Google y elimine el token local.
 
-La integración de ElevenLabs se retiró. Si una instalación anterior conserva `JARVIS_VOICE_MODE=elevenlabs`, JARVIS usará Edge TTS; cambie la línea a `JARVIS_VOICE_MODE=edge` y retire las líneas `ELEVENLABS_` de `.env` si ya no las necesita. El texto de voz se envía a Microsoft.
+La voz principal es **ElevenLabs** (ver «Personalizar la voz»): sin `ELEVENLABS_API_KEY` en `.env`, JARVIS avisa y cae a Edge TTS automáticamente. El texto pronunciado se envía al servicio de voz que finalmente sintetice (ElevenLabs o Microsoft); con `JARVIS_VOICE_MODE=local` no sale ningún texto.
 
 Si hay un reproductor mpv registrado por la versión anterior, JARVIS puede intentar detenerlo verificando su identidad. La pausa de la nueva ventana controlada no cierra otras pestañas. El registro heredado `.jarvis-music.json` no se sube a Git.
 

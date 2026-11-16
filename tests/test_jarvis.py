@@ -793,13 +793,96 @@ def test_music_does_not_stop_reused_or_foreign_process(tmp_path, monkeypatch):
 
 
 
-def test_old_elevenlabs_mode_uses_edge(monkeypatch):
+def test_default_voice_mode_is_elevenlabs(monkeypatch):
+    from voice import Voice
+    monkeypatch.delenv('JARVIS_VOICE_MODE', raising=False)
+    calls = []
+    voice = Voice()
+    monkeypatch.setattr(voice, '_elevenlabs', lambda text: calls.append(text))
+    assert voice.speak_wait('Hola')
+    assert calls == ['Hola']
+
+
+def test_elevenlabs_without_key_falls_back_to_edge(monkeypatch, capsys):
     from voice import Voice
     monkeypatch.setenv('JARVIS_VOICE_MODE', 'elevenlabs')
+    monkeypatch.delenv('ELEVENLABS_API_KEY', raising=False)
     calls = []
     voice = Voice()
     monkeypatch.setattr(voice, '_neural', lambda text: calls.append(text))
     monkeypatch.setattr(voice, '_local', lambda text: pytest.fail('No debería usar voz local'))
+    assert voice.speak_wait('Hola')
+    assert calls == ['Hola']
+    assert 'ELEVENLABS_API_KEY' in capsys.readouterr().out
+
+
+def test_elevenlabs_success_downloads_and_plays(monkeypatch, tmp_path):
+    import json
+    import voice as voice_module
+    fake_mp3 = b'ID3-fake-audio-bytes'
+
+    class _Response:
+        status_code = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def iter_content(self, chunk_size=65536):
+            yield fake_mp3
+
+    class _Session:
+        trust_env = True
+        def post(self, url, headers=None, json=None, params=None, timeout=None, allow_redirects=None, stream=None):
+            assert headers['xi-api-key'] == 'secret-key'
+            assert url.rsplit('/', 1)[-1] == 'JBFqnCBsd6RMkjVDRZzb'  # George por defecto
+            assert params['output_format'] == 'mp3_44100_128'
+            return _Response()
+        def close(self): pass
+
+    monkeypatch.setenv('ELEVENLABS_API_KEY', 'secret-key')
+    monkeypatch.delenv('ELEVENLABS_VOICE_ID', raising=False)
+    monkeypatch.delenv('ELEVENLABS_MODEL_ID', raising=False)
+    monkeypatch.setattr('requests.Session', _Session)
+    played = []
+    monkeypatch.setattr(voice_module.Voice, '_play_file', lambda self, path: played.append(path.read_bytes()))
+    voice = voice_module.Voice()
+    voice._elevenlabs('Hola, señor.')
+    assert played == [fake_mp3]
+
+
+def test_elevenlabs_http_error_never_leaks_key_or_provider_message(monkeypatch):
+    import voice as voice_module
+
+    class _Response:
+        status_code = 401
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def iter_content(self, chunk_size=4096):
+            yield b'{"detail": {"status": "invalid_api_key"}}'
+
+    def _fake_post(url, headers=None, json=None, params=None, timeout=None, allow_redirects=None, stream=None):
+        return _Response()
+
+    class _Session:
+        trust_env = True
+        def post(self, *args, **kwargs): return _fake_post(*args, **kwargs)
+        def close(self): pass
+
+    monkeypatch.setenv('ELEVENLABS_API_KEY', 'supersecretkey123')
+    monkeypatch.setattr('requests.Session', _Session)
+    voice = voice_module.Voice()
+    with pytest.raises(voice_module.VoiceError) as error:
+        voice._elevenlabs('Hola')
+    message = str(error.value)
+    assert 'HTTP 401' in message and 'clave' in message
+    assert 'supersecretkey123' not in message
+
+
+def test_edge_mode_skips_elevenlabs(monkeypatch):
+    from voice import Voice
+    monkeypatch.setenv('JARVIS_VOICE_MODE', 'edge')
+    calls = []
+    voice = Voice()
+    monkeypatch.setattr(voice, '_elevenlabs', lambda text: pytest.fail('No debería usar ElevenLabs'))
+    monkeypatch.setattr(voice, '_neural', lambda text: calls.append(text))
     assert voice.speak_wait('Hola')
     assert calls == ['Hola']
 

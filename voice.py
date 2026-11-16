@@ -1,15 +1,62 @@
-"""Voz neuronal opcional con alternativa local y reproducción secuencial."""
+"""Voz neuronal por defecto (ElevenLabs) con Edge/local como respaldo y reproducción secuencial.
+
+Orden de síntesis: ElevenLabs (por defecto; exige ELEVENLABS_API_KEY en .env)
+  → Edge TTS → voz local (pyttsx3). Cada nivel informa del fallo antes de bajar.
+"""
 import asyncio
+import json
 import os
 import queue
+import re
 import tempfile
 import threading
 import time
 from pathlib import Path
 
 
+_ELEVENLABS_ERRORS = {
+    'invalid_api_key': 'la clave de API no es válida.',
+    'missing_api_key': 'falta la clave de API.',
+    'quota_exceeded': 'se agotó la cuota de tu plan de ElevenLabs.',
+    'voice_not_found': 'la voz configurada (ELEVENLABS_VOICE_ID) no existe en tu cuenta.',
+    'model_not_found': 'el modelo configurado (ELEVENLABS_MODEL_ID) no está disponible.',
+    'only_for_creator': 'esta voz puede estar restringida a su creador.',
+    'too_many_concurrent_requests': 'hay demasiadas solicitudes simultáneas a ElevenLabs.',
+    'payment_required': 'tu plan de ElevenLabs requiere pago para esta solicitud.',
+}
+
+
+def elevenlabs_error(response):
+    """Diagnóstico seguro: lista blanca fija; nunca expone mensajes del proveedor, claves ni texto."""
+    explanation = None
+    try:
+        data = bytearray()
+        for chunk in response.iter_content(chunk_size=4096):
+            data.extend(chunk)
+            if len(data) > 16384:
+                break
+        if len(data) <= 16384:
+            payload = json.loads(data)
+            detail = payload.get('detail', {}) if isinstance(payload, dict) else {}
+            code = detail.get('status') if isinstance(detail, dict) else None
+            if isinstance(code, str):
+                explanation = _ELEVENLABS_ERRORS.get(code)
+    except (ValueError, TypeError, OSError):
+        pass
+    generic = 'revisa la voz, el modelo, la clave y la cuota; la causa exacta no está disponible.'
+    return f'ElevenLabs rechazó la solicitud (HTTP {response.status_code}): ' + (explanation or generic)
+
+
 class VoiceError(Exception):
     pass
+
+
+def _edge_then_local(voice, text):
+    try:
+        voice._neural(text)
+    except Exception:
+        print('(Edge también falló; intentando voz local.)', flush=True)
+        voice._local(text)
 
 
 class Voice:
@@ -33,7 +80,7 @@ class Voice:
         return result['ok']
 
     def _enqueue(self, text, completion):
-        if not text.strip() or os.getenv('JARVIS_VOICE_MODE', 'edge').lower() == 'off':
+        if not text.strip() or os.getenv('JARVIS_VOICE_MODE', 'elevenlabs').lower() == 'off':
             return False
         with self.lock:
             if self.thread is None or not self.thread.is_alive():
@@ -47,20 +94,26 @@ class Voice:
             text, completion = self.queue.get()
             ok = False
             try:
-                mode = os.getenv('JARVIS_VOICE_MODE', 'edge').strip().lower()
+                mode = os.getenv('JARVIS_VOICE_MODE', 'elevenlabs').strip().lower()
                 if mode == 'local':
                     self._local(text)
-                elif mode in ('edge', 'elevenlabs'):
-                    # Previous installations may still contain the removed setting.
-                    if mode == 'elevenlabs':
-                        print('(ElevenLabs ya no se usa; se intentará la voz de Edge.)', flush=True)
+                elif mode == 'elevenlabs':
+                    try:
+                        self._elevenlabs(text)
+                    except VoiceError as first:
+                        print(f'(ElevenLabs no disponible: {first}; probando voz Edge.)', flush=True)
+                        _edge_then_local(self, text)
+                    except Exception:
+                        print('(ElevenLabs no disponible (causa no publicada); probando voz Edge.)', flush=True)
+                        _edge_then_local(self, text)
+                elif mode == 'edge':
                     try:
                         self._neural(text)
                     except Exception:
                         print('(Voz neuronal no disponible; intentando voz local.)', flush=True)
                         self._local(text)
                 else:
-                    raise VoiceError('Modo de voz no reconocido. Usa edge, local u off.')
+                    raise VoiceError('Modo de voz no reconocido. Usa elevenlabs, edge, local u off.')
                 ok = True
             except VoiceError as exc:
                 print('(Aviso de voz: ' + str(exc) + ')', flush=True)
@@ -132,6 +185,44 @@ class Voice:
             pygame.mixer.music.stop()
             pygame.mixer.music.unload()
             pygame.mixer.quit()
+
+    def _elevenlabs(self, text):
+        import requests
+        key = os.getenv('ELEVENLABS_API_KEY', '').strip()
+        voice_id = os.getenv('ELEVENLABS_VOICE_ID', 'JBFqnCBsd6RMkjVDRZzb').strip()  # George (británica, profunda)
+        model = os.getenv('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2').strip()
+        if not key:
+            raise VoiceError('Falta ELEVENLABS_API_KEY en .env (o usa JARVIS_VOICE_MODE=edge para Edge TTS).')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', voice_id):
+            raise VoiceError('ELEVENLABS_VOICE_ID no es válido.')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', model):
+            raise VoiceError('ELEVENLABS_MODEL_ID no es válido.')
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            with session.post('https://api.elevenlabs.io/v1/text-to-speech/' + voice_id,
+                              headers={'xi-api-key': key, 'Accept': 'audio/mpeg'},
+                              json={'text': text, 'model_id': model},
+                              params={'output_format': 'mp3_44100_128'},
+                              timeout=(10, 90), allow_redirects=False, stream=True) as response:
+                if not 200 <= response.status_code < 300:
+                    raise VoiceError(elevenlabs_error(response))
+                with tempfile.TemporaryDirectory(prefix='jarvis-tts-') as directory:
+                    path = Path(directory) / 'voice.mp3'
+                    size = 0
+                    with path.open('wb') as file:
+                        for chunk in response.iter_content(chunk_size=65536):
+                            size += len(chunk)
+                            if size > 20 * 1024 * 1024:
+                                raise VoiceError('El audio de ElevenLabs es demasiado grande.')
+                            file.write(chunk)
+                    if not size:
+                        raise VoiceError('ElevenLabs devolvió audio vacío.')
+                    self._play_file(path)
+        except requests.RequestException as exc:
+            raise VoiceError('No se pudo conectar con ElevenLabs o se agotó el tiempo de espera.') from exc
+        finally:
+            session.close()
 
     def _local(self, text):
         import pyttsx3
