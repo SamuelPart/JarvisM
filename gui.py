@@ -597,8 +597,17 @@ class JarvisWindow(QMainWindow):
                    if name == 'classify_gmail' else ' Se consultará tu agenda y los datos pueden enviarse al proveedor del chat.'
                    if name in ('list_calendar_events', 'list_reminders') else '\nLos registros solicitados pueden contener datos sensibles y enviarse al proveedor del chat.'
                    if name == 'review_startup_logs' else '')
-        details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
-        self.append_chat('Sistema', 'Permiso solicitado para: ' + name + '\n' + details + privacy +
+        if name == 'delete_reminder_permission':
+            try:
+                when = datetime.fromisoformat(args['when']).strftime('%d/%m a las %H:%M')
+                details = f"Recordatorio: {args.get('title', '')}, {when}"
+            except (KeyError, TypeError, ValueError):
+                details = 'Recordatorio solicitado.'
+            heading = 'Permiso para eliminar recordatorios'
+        else:
+            details = json.dumps(args, ensure_ascii=False, indent=2, default=str)
+            heading = 'Permiso solicitado para: ' + name
+        self.append_chat('Sistema', heading + '\n' + details + privacy +
                          '\nEscribe AUTORIZO para aprobar o NO para rechazar.')
         if self.compact:
             self.toggle_compact()

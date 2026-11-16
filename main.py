@@ -46,9 +46,11 @@ def initial_security():
 
 def approve(name, args):
     if name == 'delete_reminder_permission':
-        print('Autorizar permitirá eliminar recordatorios locales cuando lo pidas sin preguntar cada vez. Puedes revocarlo en Ajustes.')
-    print('\nSolicitud de herramienta:', name)
-    print(json.dumps(args, ensure_ascii=False, indent=2, default=str))
+        print('Permiso para eliminar recordatorios locales cuando lo pidas sin preguntar cada vez. Puedes revocarlo en Ajustes.')
+        print('Recordatorio solicitado:', args.get('title', ''))
+    else:
+        print('\nSolicitud de herramienta:', name)
+        print(json.dumps(args, ensure_ascii=False, indent=2, default=str))
     return confirm('¿Autoriza esta acción exacta?')
 
 

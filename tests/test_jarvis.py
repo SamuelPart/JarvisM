@@ -1499,3 +1499,99 @@ def test_duplicate_reminders_can_be_selected_by_date_and_time():
     assert len(find_matching_reminders('tomar agua', reminders)) == 2
     assert [r['id'] for r in find_matching_reminders('tomar agua del 16/11/2026 a las 14:30', reminders)] == [2]
     assert find_matching_reminders('tomar agua del 16/11/2026 a las 15:30', reminders) == []
+
+
+def test_delete_ambiguous_reminder_asks_time_then_deletes_by_voice_or_chat(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+    import permissions
+    from agenda import Agenda
+    from system_control import SystemController
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.sqlite3'))
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_agenda_delete_permission(True)
+    now = datetime.now().astimezone()
+    tomorrow = (now + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    agenda = Agenda()
+    first = agenda.add('Tomar agua', tomorrow.timestamp())
+    second = agenda.add('Tomar agua', tomorrow.replace(hour=15, minute=30).timestamp())
+    brain = NvidiaBrain('fake', SystemController(), lambda *_: pytest.fail('Ya autorizado'),
+                        post=lambda **_: pytest.fail('No debe llamar al modelo'))
+    agent = PersistentBrain(brain, JarvisMemory(tmp_path / 'memory.db'))
+    assert '¿De qué hora?' in agent.ask('Jarvis, quiero que elimines el recordatorio de tomar agua')
+    assert len(agenda.list()) == 2
+    assert 'eliminé' in agent.ask('el de las 3 y media de la tarde')
+    remaining = agenda.list()
+    assert len(remaining) == 1 and remaining[0]['id'] == first and remaining[0]['id'] != second
+    assert 'eliminé' in agent.ask('borra el recordatorio de tomar agua')
+    assert agenda.list() == []
+
+
+def test_reminder_time_ambiguity_never_deletes_wrong_candidate(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+    import permissions
+    from agenda import Agenda
+    from system_control import SystemController
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.sqlite3'))
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_agenda_delete_permission(True)
+    tomorrow = (datetime.now().astimezone() + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    db = Agenda()
+    db.add('Agua', tomorrow.timestamp())
+    db.add('Agua', tomorrow.replace(hour=21).timestamp())
+    db.add('Agua', (tomorrow + timedelta(days=1)).timestamp())
+    agent = PersistentBrain(NvidiaBrain('fake', SystemController(), lambda *_: True), JarvisMemory(tmp_path / 'memory.db'))
+    assert 'qué hora' in agent.ask('elimina mi recordatorio de agua').lower()
+    assert 'mañana, tarde o noche' in agent.ask('las nueve').lower()
+    assert len(db.list()) == 3
+    assert 'de qué día' in agent.ask('de la mañana').lower()
+    assert 'eliminé' in agent.ask('mañana')
+    assert len(db.list()) == 2
+
+
+def test_reminder_time_selector_handles_midnight_and_meridian():
+    from reminder_commands import select_reminders_by_time
+    reminders = [
+        {'when': '2026-11-15T00:00:00-05:00'},
+        {'when': '2026-11-15T12:00:00-05:00'},
+        {'when': '2026-11-15T21:00:00-05:00'},
+    ]
+    assert select_reminders_by_time('12 a.m.', reminders) == [reminders[0]]
+    assert select_reminders_by_time('12 p.m.', reminders) == [reminders[1]]
+    assert select_reminders_by_time('9 p.m.', reminders) == [reminders[2]]
+    assert select_reminders_by_time('00:00', reminders) == [reminders[0]]
+
+
+def test_reminder_selection_does_not_delete_if_original_changed(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+    import permissions
+    from agenda import Agenda
+    from system_control import SystemController
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setenv('JARVIS_AGENDA_PATH', str(tmp_path / 'agenda.sqlite3'))
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_agenda_delete_permission(True)
+    tomorrow = (datetime.now().astimezone() + timedelta(days=1)).replace(hour=9, minute=0, second=0, microsecond=0)
+    db = Agenda()
+    identifier = db.add('Agua', tomorrow.timestamp())
+    db.add('Agua', tomorrow.replace(hour=10).timestamp())
+    agent = PersistentBrain(NvidiaBrain('fake', SystemController(), lambda *_: True), JarvisMemory(tmp_path / 'memory.db'))
+    assert '¿De qué hora?' in agent.ask('elimina el recordatorio de agua')
+    with db._connect() as connection:
+        connection.execute('UPDATE reminders SET title = ? WHERE id = ?', ('Otro', identifier))
+    assert 'modificado' in agent.ask('a las nueve')
+    assert len(db.list()) == 2
+
+
+def test_reminder_minute_followup_only_matches_selected_minute():
+    from reminder_commands import select_reminders_by_minute
+    items = [{'when': '2026-11-15T09:15:00-05:00'}, {'when': '2026-11-15T09:30:00-05:00'}]
+    assert select_reminders_by_minute('y media', items) == [items[1]]
+    assert select_reminders_by_minute('y cuarto', items) == [items[0]]

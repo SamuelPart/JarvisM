@@ -1,13 +1,14 @@
 """Bridge local memory to either provider without persisting tool protocol data."""
 import sqlite3
 import re
+import time
 from datetime import datetime
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved, authorize_tool
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
-from reminder_commands import parse_relative_reminder, parse_delete_request, find_matching_reminders
+from reminder_commands import parse_relative_reminder, parse_delete_request, find_matching_reminders, select_reminders_by_time, select_reminders_by_date, select_reminders_by_period, select_reminders_by_minute
 
 
 def natural_time(value):
@@ -33,6 +34,9 @@ class PersistentBrain:
     def __init__(self, brain, memory):
         self.brain, self.memory = brain, memory
         self.model = brain.model
+        self.pending_reminder_choices = None
+        self.pending_reminder_deadline = 0
+        self.pending_reminder_question = None
         self.base_instruction = (brain.instructions if isinstance(brain, Brain)
                                  else brain.history[0]['content'])
 
@@ -60,9 +64,72 @@ class PersistentBrain:
         else:
             raise TypeError('Proveedor de memoria no compatible')
 
+    def _delete_selected_reminder(self, reminder):
+        args = {'reminder_id': reminder['id'], 'title': reminder['title'], 'when': reminder['when']}
+        if not authorize_tool('delete_reminder', args, self.approve):
+            return 'No eliminé el recordatorio; no se autorizó la acción o no se pudo guardar el permiso.'
+        result = self.brain.controller.delete_reminder(**args)
+        return ('Listo, eliminé el recordatorio.' if result.get('deleted') is True
+                else 'No encontré ese recordatorio; puede que ya se haya eliminado o modificado.')
+
+    def _remember_answer(self, text, answer):
+        try:
+            self.memory.add_turn(text, answer)
+        except (sqlite3.Error, OSError):
+            return answer + '\n\nAviso: no se pudo guardar esta conversación en la memoria local.'
+        return answer
+
     def ask(self, text):
         # Handle common automation requests without depending on a model to call tools.
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        if self.pending_reminder_choices:
+            if time.monotonic() > self.pending_reminder_deadline:
+                self.pending_reminder_choices = None
+            elif re.fullmatch(r'(?:no|cancela|cancelar|olvida(?:lo|r)?|ninguno)', clean, re.I):
+                self.pending_reminder_choices = None
+                return self._remember_answer(text, 'De acuerdo, no eliminé ningún recordatorio.')
+            elif parse_delete_request(clean) is None:
+                choices = self.pending_reminder_choices
+                if self.pending_reminder_question == 'period':
+                    matches = select_reminders_by_period(clean, choices)
+                elif self.pending_reminder_question == 'minute':
+                    matches = select_reminders_by_minute(clean, choices)
+                elif self.pending_reminder_question == 'day':
+                    matches = select_reminders_by_date(clean, choices)
+                else:
+                    matches = None
+                if matches is None:
+                    matches = select_reminders_by_time(clean, choices)
+                if matches is None and self.pending_reminder_question != 'period':
+                    matches = select_reminders_by_date(clean, choices)
+                if matches is not None:
+                    if len(matches) == 1:
+                        self.pending_reminder_choices = None
+                        try:
+                            answer = self._delete_selected_reminder(matches[0])
+                        except Exception:
+                            answer = 'No pude eliminar el recordatorio; revisa la agenda local.'
+                    elif not matches:
+                        answer = 'No encontré un recordatorio a esa hora o fecha. ¿Cuál es?'
+                    else:
+                        self.pending_reminder_choices = matches
+                        timestamps = [datetime.fromisoformat(item['when']) for item in matches]
+                        hours = {dt.hour for dt in timestamps}
+                        minutes = {dt.minute for dt in timestamps}
+                        if len(hours) > 1:
+                            self.pending_reminder_question = 'period'
+                            answer = 'Hay más de uno a esa hora. ¿Es de la mañana, tarde o noche?'
+                        elif len(minutes) > 1:
+                            self.pending_reminder_question = 'minute'
+                            answer = 'Hay más de uno a esa hora. ¿Me dices también los minutos?'
+                        else:
+                            self.pending_reminder_question = 'day'
+                            answer = 'Hay más de uno a esa hora. ¿De qué día?'
+                    return self._remember_answer(text, answer)
+                # A new unrelated request abandons the pending deletion.
+                self.pending_reminder_choices = None
+            else:
+                self.pending_reminder_choices = None
         # Moving this live checkout can invalidate the interpreter and launcher.
         # Recognize the user's plain-language request without asking for paths
         # that are already known, and do not pretend a move took place.
@@ -87,23 +154,12 @@ class PersistentBrain:
                     if not matches:
                         answer = 'No encontré ese recordatorio en la agenda local.'
                     elif len(matches) > 1:
-                        options = []
-                        for item in matches[:5]:
-                            try:
-                                when = datetime.fromisoformat(item['when']).strftime('%d/%m/%Y a las %H:%M')
-                                options.append(f"{item['title']}, del {when}")
-                            except (KeyError, TypeError, ValueError):
-                                pass
-                        answer = ('Hay varios recordatorios: ' + '; '.join(options) + '. Dime el título, fecha y hora del que quieres eliminar.'
-                                  if options else 'Hay varios recordatorios que coinciden. Dime cuál quieres eliminar.')
+                        self.pending_reminder_choices = matches
+                        self.pending_reminder_question = 'hour'
+                        self.pending_reminder_deadline = time.monotonic() + 300
+                        answer = 'Hay varios recordatorios con ese nombre. ¿De qué hora?'
                     else:
-                        args = {'reminder_id': matches[0]['id'], 'title': matches[0]['title'], 'when': matches[0]['when']}
-                        if not authorize_tool('delete_reminder', args, self.approve):
-                            answer = 'No eliminé el recordatorio; no se autorizó la acción o no se pudo guardar el permiso.'
-                        else:
-                            result = self.brain.controller.delete_reminder(**args)
-                            answer = ('Listo, eliminé el recordatorio.' if result.get('deleted') is True
-                                      else 'No encontré ese recordatorio; puede que ya se haya eliminado.')
+                        answer = self._delete_selected_reminder(matches[0])
             except Exception:
                 answer = 'No pude eliminar el recordatorio; revisa la agenda local.'
             try:
@@ -192,5 +248,6 @@ class PersistentBrain:
         return answer
 
     def clear_memory(self):
+        self.pending_reminder_choices = None
         self.memory.clear()
         self.refresh_context()
