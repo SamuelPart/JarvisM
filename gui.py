@@ -4,9 +4,7 @@ import faulthandler
 import json
 import math
 import os
-import socket
 import sqlite3
-import subprocess
 import sys
 import threading
 import tempfile
@@ -17,7 +15,8 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPixmap, QPainter, QRadialGradient, QPainterPath, QPen
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPixmap, QPainter, QRadialGradient, QPainterPath, QPen, QShortcut, QKeySequence
+import psutil
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -52,6 +51,52 @@ class VoiceSignals(QObject):
     scheduled_email_result = pyqtSignal(object)
     weather_event = pyqtSignal(str, object)
     weather_refresh = pyqtSignal(int, object)
+
+
+class GridBackdrop(QWidget):
+    """Full-window near-black blueprint grid, painted behind everything."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        width, height = self.width(), self.height()
+        painter.fillRect(0, 0, width, height, QColor('#02060a'))
+        # Soft radial glow centred on the core area.
+        cx, cy = width / 2, height * 0.40
+        glow = QRadialGradient(QPointF(cx, cy), max(width, height) * 0.62)
+        glow.setColorAt(0, QColor(3, 32, 46, 150))
+        glow.setColorAt(0.55, QColor(2, 14, 22, 60))
+        glow.setColorAt(1, QColor(0, 0, 0, 0))
+        painter.fillRect(0, 0, width, height, glow)
+        # Blueprint grid: minor 28px, major 140px.
+        minor = QPen(QColor(0, 240, 255, 10), 1)
+        major = QPen(QColor(0, 240, 255, 18), 1)
+        painter.setPen(minor)
+        step = 28
+        while step < width:
+            painter.drawLine(step, 0, step, height)
+            step += 28
+        step = 28
+        while step < height:
+            painter.drawLine(0, step, width, step)
+            step += 28
+        painter.setPen(major)
+        step = 140
+        while step < width:
+            painter.drawLine(step, 0, step, height)
+            step += 140
+        step = 140
+        while step < height:
+            painter.drawLine(0, step, width, step)
+            step += 140
+        # Vignette towards the edges.
+        vignette = QRadialGradient(QPointF(width / 2, height / 2), max(width, height) * 0.75)
+        vignette.setColorAt(0.55, QColor(0, 0, 0, 0))
+        vignette.setColorAt(1.0, QColor(0, 0, 0, 190))
+        painter.fillRect(0, 0, width, height, vignette)
+        painter.end()
 
 
 class CoreAnimation(QWidget):
@@ -162,6 +207,24 @@ class CoreAnimation(QWidget):
         scale = SCALES[self.preferences['size']] * self.display_scale
         painter.scale(scale, scale)
         radius = 100.0
+        # Outer HUD rings (reference style): rotating ticks, segmented arcs and
+        # the amber signature arc, painted behind the particle sphere.
+        spin = self.phase
+
+        def dash_ring(r, width, color, pattern, rotation):
+            painter.save()
+            painter.rotate(math.degrees(rotation))
+            ring = QPen(color, width)
+            ring.setDashPattern(pattern)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(ring)
+            painter.drawEllipse(QPointF(0, 0), r, r)
+            painter.restore()
+
+        dash_ring(124, 1.2, QColor(140, 240, 255, 60), [1, 7], 0)
+        dash_ring(116, 8, QColor(53, 224, 244, 160), [1.5, 4.9], spin * 0.5)
+        dash_ring(108, 11, QColor(47, 123, 255, 110), [26, 9, 40, 9, 12, 9], -spin * 0.7)
+        dash_ring(100.5, 3.4, QColor(255, 213, 74, 220), [24, 10000], math.radians(-95) + spin * 0.35)
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
         amber = self.approval_mix
@@ -800,7 +863,7 @@ class JarvisWindow(QMainWindow):
         self.resize(860, 800)
         self.setMinimumSize(560, 520)
         self.setStyleSheet(STYLE)
-        root = QWidget()
+        root = GridBackdrop()
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
         self.root_layout = layout
@@ -830,12 +893,34 @@ class JarvisWindow(QMainWindow):
         self.compact_toggle = QPushButton('Modo compacto')
         self.compact_toggle.clicked.connect(self.toggle_compact)
         top.addWidget(self.compact_toggle)
-        self.hud_button = QPushButton('HUD')
-        self.hud_button.setToolTip('Abre el HUD futurista (datos reales) en el navegador')
-        self.hud_button.setAccessibleName('Abrir HUD')
-        self.hud_button.clicked.connect(self.open_hud)
-        top.addWidget(self.hud_button)
         layout.addLayout(top)
+
+        clock_row = QHBoxLayout()
+        clock_row.addStretch()
+        clock_box = QVBoxLayout()
+        clock_box.setSpacing(2)
+        self.clock_label = QLabel('--:--:--')
+        self.clock_label.setObjectName('clock')
+        self.clock_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        clock_box.addWidget(self.clock_label)
+        self.state_line = QLabel('ALL SYSTEMS NORMAL')
+        self.state_line.setObjectName('stateLine')
+        self.state_line.setAlignment(Qt.AlignmentFlag.AlignRight)
+        clock_box.addWidget(self.state_line)
+        self.focus_button = QPushButton('F.O.C.U.S.')
+        self.focus_button.setObjectName('focusButton')
+        self.focus_button.setCheckable(True)
+        self.focus_button.setToolTip('Modo F.O.C.U.S.: oculta la interfaz y deja solo el núcleo. Esc para salir')
+        self.focus_button.setAccessibleName('Modo F.O.C.U.S.')
+        self.focus_button.toggled.connect(self.toggle_focus)
+        focus_holder = QHBoxLayout()
+        focus_holder.addStretch()
+        focus_holder.addWidget(self.focus_button)
+        clock_box.addLayout(focus_holder)
+        clock_row.addLayout(clock_box)
+        layout.addLayout(clock_row)
+        self.escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self.escape_shortcut.activated.connect(self.exit_focus)
 
         self.heading = QLabel('Tu asistente, listo para ayudarte.')
         self.heading.setObjectName('heading')
@@ -923,6 +1008,23 @@ class JarvisWindow(QMainWindow):
         chat_layout.addWidget(self.chat_audio)
         self.chat_panel.hide()
         layout.addWidget(self.chat_panel, 1)
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 2, 0, 0)
+        self.hud_left = QLabel('STATE IDLE · CPU 0% · MEM 0%')
+        self.hud_left.setObjectName('hudTiny')
+        bottom_row.addWidget(self.hud_left)
+        bottom_row.addStretch()
+        self.hud_right = QLabel('MODE AUTO · UPTIME 0D 00:00:00')
+        self.hud_right.setObjectName('hudTiny')
+        self.hud_right.setAlignment(Qt.AlignmentFlag.AlignRight)
+        bottom_row.addWidget(self.hud_right)
+        layout.addLayout(bottom_row)
+        self.hud_timer = QTimer(self)
+        self.hud_timer.setInterval(1000)
+        self.hud_timer.timeout.connect(self.update_hud)
+        self.hud_timer.start()
+        psutil.cpu_percent(interval=None)  # prime: la primera lectura siempre es 0.0
+        self.update_hud()
         self.agenda_timer = QTimer(self)
         self.agenda_timer.setInterval(5000)
         self.agenda_timer.timeout.connect(self.check_reminders)
@@ -1195,38 +1297,6 @@ class JarvisWindow(QMainWindow):
         else:
             self.set_task_state('idle')
 
-    def open_hud(self):
-        """Abre el HUD futurista (panel local) en el navegador.
-
-        Arranca `hud/app.py` en un proceso aparte si aún no está en marcha;
-        si algo falla, lo dice en vez de fingir que abrió.
-        """
-        url = 'http://127.0.0.1:5050'
-        running = False
-        try:
-            with socket.create_connection(('127.0.0.1', 5050), timeout=0.25):
-                running = True
-        except OSError:
-            running = False
-        if not running:
-            try:
-                import flask  # noqa: F401
-                import psutil  # noqa: F401
-            except ImportError:
-                QMessageBox.warning(self, 'JARVIS',
-                                    'El HUD necesita Flask y psutil.\n\nInstálalos con:\n\npip install flask psutil')
-                return
-            try:
-                subprocess.Popen([sys.executable, str(ROOT / 'hud' / 'app.py')],
-                                 cwd=str(ROOT),
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except OSError as exc:
-                QMessageBox.warning(self, 'JARVIS', f'No pude iniciar el HUD: {exc}')
-                return
-            time.sleep(1.2)  # un respiro para que el servidor ligue el puerto
-        QDesktopServices.openUrl(QUrl(url))
-        self.status.setText('HUD abierto en el navegador.')
-
     def open_phone(self):
         if self.thread is not None:
             self.status.setText('Espera a que termine la solicitud antes de conectar el teléfono.')
@@ -1318,6 +1388,34 @@ class JarvisWindow(QMainWindow):
             return
         self.core.configure(self.preferences)
 
+    def update_hud(self):
+        try:
+            cpu = psutil.cpu_percent(interval=None)
+            mem = psutil.virtual_memory().percent
+            uptime = int(time.time() - psutil.boot_time())
+        except Exception:
+            cpu, mem, uptime = 0.0, 0.0, 0
+        self.clock_label.setText(datetime.now().strftime('%H:%M:%S'))
+        self.state_line.setText('ALL SYSTEMS NORMAL' if cpu < 25 else ('CARGA ELEVADA' if cpu < 60 else 'CARGA CRÍTICA'))
+        mode = 'IDLE' if cpu < 25 else ('ACTIVE' if cpu < 60 else 'BUSY')
+        days, rem = divmod(uptime, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, seconds = divmod(rem, 60)
+        self.hud_left.setText(f'STATE {mode} · CPU {cpu:.0f}% · MEM {mem:.0f}%')
+        self.hud_right.setText(f'MODE AUTO · UPTIME {days}D {hours:02d}:{minutes:02d}:{seconds:02d}')
+
+    def toggle_focus(self, enabled):
+        if enabled and (self.weather_view.isVisible() or self.weather_loading.isVisible()):
+            self.dismiss_weather()
+        for widget in (self.heading, self.subtitle, self.chat_panel, self.chat_toggle,
+                       self.phone_button, self.agenda_button, self.memory_button,
+                       self.settings_button, self.compact_toggle):
+            widget.setVisible(not enabled)
+        self.root_layout.setContentsMargins(14, 14, 14, 14) if enabled else self.root_layout.setContentsMargins(30, 24, 30, 24)
+
+    def exit_focus(self):
+        self.focus_button.setChecked(False)
+
     def toggle_pin(self, checked):
         # Compact mode remains floating; expanded mode respects the checkbox.
         geometry = self.geometry()
@@ -1333,10 +1431,12 @@ class JarvisWindow(QMainWindow):
             self.expanded_maximized = self.isMaximized()
             self.showNormal()
             self.compact = True
+            self.focus_button.setChecked(False)  # F.O.C.U.S. solo tiene sentido en modo expandido
             self.phone_button.hide()
             self.settings_button.hide()
             self.memory_button.hide()
             self.agenda_button.hide()
+            self.focus_button.hide()
             self.heading.hide()
             self.subtitle.hide()
             self.chat_toggle.setChecked(False)
@@ -1354,6 +1454,7 @@ class JarvisWindow(QMainWindow):
             self.settings_button.show()
             self.memory_button.show()
             self.agenda_button.show()
+            self.focus_button.show()
             self.heading.show()
             self.subtitle.show()
             self.chat_toggle.setChecked(True)
@@ -1459,41 +1560,50 @@ class JarvisWindow(QMainWindow):
 
 
 STYLE = '''
-QWidget { background: #0b111b; color: #e4edf7; font-family: "Segoe UI", sans-serif; font-size: 13px; }
+GridBackdrop, CoreAnimation { background: transparent; }
+QWidget { background: #04090e; color: #cfeef5; font-family: "Orbitron", "Segoe UI", sans-serif; font-size: 12px; }
 QLabel { background: transparent; }
-QLabel#brand { color: #85d9e9; font-size: 15px; font-weight: 800; letter-spacing: 3px; }
-QLabel#heading { font-size: 24px; font-weight: 700; color: #f5f9fc; }
-QLabel#muted, QLabel#footer { color: #8496aa; }
+QLabel#brand { color: #00f0ff; font-size: 15px; font-weight: 700; letter-spacing: 5px; }
+QLabel#heading { font-size: 22px; font-weight: 700; color: #eafcff; letter-spacing: 1px; }
+QLabel#muted, QLabel#footer { color: #4a7183; }
 QLabel#footer { font-size: 11px; }
-QLabel#statusBadge { color: #74d8c4; font-size: 11px; font-weight: 700; }
+QLabel#statusBadge { color: #46ffb1; font-size: 11px; font-weight: 700; letter-spacing: 2px; }
 QLabel#model { color: #8296ab; font-size: 11px; }
-QFrame#panel { background: #111b28; border: 1px solid #223447; border-radius: 16px; }
-QLineEdit, QTextBrowser, QPlainTextEdit { background: #111b28; border: 1px solid #283b4e; border-radius: 10px; padding: 12px; selection-background-color: #287487; }
+QLabel#clock { font-family: "Orbitron", "Consolas", monospace; font-size: 17px; color: #c9f6ff; letter-spacing: 6px; }
+QLabel#stateLine { font-family: "Orbitron", monospace; font-size: 8px; letter-spacing: 4px; color: #59e0ee; }
+QLabel#hudTiny { font-family: "Consolas", monospace; font-size: 8px; letter-spacing: 3px; color: #2c5a6c; }
+QPushButton#focusButton { border: 1px solid rgba(0,240,255,.45); background: rgba(0,240,255,.06); color: #8ff4ff; font-family: "Orbitron", monospace; font-size: 9px; letter-spacing: 4px; padding: 6px 14px; }
+QPushButton#focusButton:hover { background: rgba(0,240,255,.14); color: #eafcff; }
+QPushButton#focusButton:checked { background: rgba(0,240,255,.18); border: 1px solid #00f0ff; color: #eafcff; }
+QFrame#panel { background: rgba(6,16,22,.88); border: 1px solid rgba(0,240,255,.30); border-radius: 10px; }
+QLineEdit, QTextBrowser, QPlainTextEdit { background: #060e14; border: 1px solid rgba(0,240,255,.28); border-radius: 8px; padding: 12px; selection-background-color: #0a4b5c; color: #d9fbff; }
 QTextBrowser { border: none; line-height: 1.6; }
-QScrollArea#chatHistory { background: #0c1522; border: 1px solid #1e3548; border-radius: 14px; }
+QScrollArea#chatHistory { background: #050c12; border: 1px solid rgba(0,240,255,.22); border-radius: 12px; }
 QWidget#chatContainer { background: transparent; }
-QFrame#bubble_user { background-color: rgba(20, 57, 75, 210); border: 1px solid #28627a; border-left: 3px solid #5dd9ef; border-radius: 11px; }
-QFrame#bubble_jarvis { background-color: rgba(22, 30, 52, 225); border: 1px solid #344269; border-left: 3px solid #8696ff; border-radius: 11px; }
-QFrame#bubble_system { background-color: rgba(61, 42, 25, 220); border: 1px solid #765738; border-left: 3px solid #e6aa5c; border-radius: 11px; }
-QLabel#sender_user { color: #80ddea; font-size: 10px; font-weight: 800; }
-QLabel#sender_jarvis { color: #a8b2ff; font-size: 10px; font-weight: 800; }
+QFrame#bubble_user { background-color: rgba(0,90,120,.30); border: 1px solid rgba(0,240,255,.38); border-left: 3px solid #00f0ff; border-radius: 10px; }
+QFrame#bubble_jarvis { background-color: rgba(8,26,44,.55); border: 1px solid rgba(90,160,255,.32); border-left: 3px solid #2f7bff; border-radius: 10px; }
+QFrame#bubble_system { background-color: rgba(61,42,25,.45); border: 1px solid rgba(230,170,92,.45); border-left: 3px solid #e6aa5c; border-radius: 10px; }
+QLabel#sender_user { color: #5ff0ff; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
+QLabel#sender_jarvis { color: #7fb2ff; font-size: 10px; font-weight: 800; letter-spacing: 1px; }
 QLabel#sender_system { color: #f0bd7c; font-size: 10px; font-weight: 800; }
 QLabel#weatherLoading { color: #8de8ff; font-size: 15px; font-weight: 700; }
 QLabel#messageText { color: #edf4fa; font-size: 13px; background: transparent; }
 QScrollBar:vertical { background: transparent; width: 7px; margin: 4px; }
-QScrollBar::handle:vertical { background: #34566b; min-height: 25px; border-radius: 3px; }
+QScrollBar::handle:vertical { background: #123c4a; min-height: 25px; border-radius: 3px; }
+QScrollBar::handle:vertical:hover { background: #00f0ff; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QPushButton { border: 1px solid #31475b; border-radius: 9px; padding: 10px 16px; background: #1c2b3b; }
-QPushButton:hover { background: #294154; }
+QPushButton { border: 1px solid rgba(0,240,255,.35); border-radius: 8px; padding: 10px 16px; background: rgba(6,18,24,.9); color: #bfeffb; letter-spacing: 1px; }
+QPushButton:hover { background: rgba(0,240,255,.12); border-color: rgba(0,240,255,.65); color: #eafcff; }
 QPushButton#modeIcon { font-size: 22px; min-width: 40px; padding: 8px; }
-QPushButton#modeIcon:checked { background: #186979; border: 1px solid #7fe4ee; }
-QPushButton#modeIcon:disabled { color: #6c7d89; background: #1a2731; }
-QPushButton#send, QPushButton#approveButton { background: #76d7e4; color: #07151d; border: none; font-weight: 700; }
-QPushButton#send:disabled { background: #344957; color: #8296aa; }
-QComboBox { background: #172838; color: #e4edf7; border: 1px solid #355266; border-radius: 7px; padding: 7px; }
-QCheckBox { color: #a8b9c9; }
-QDialog { background: #0b111b; }
-QLabel#dialogTitle { font-size: 19px; font-weight: 700; }
+QPushButton#modeIcon:checked { background: rgba(0,240,255,.16); border: 1px solid #00f0ff; }
+QPushButton#modeIcon:disabled { color: #3a5563; background: #050c12; }
+QPushButton#send, QPushButton#approveButton { background: #00f0ff; color: #02141a; border: none; font-weight: 800; letter-spacing: 2px; }
+QPushButton#send:disabled { background: #12333e; color: #4a7183; }
+QComboBox { background: #060e14; color: #cfeef5; border: 1px solid rgba(0,240,255,.30); border-radius: 7px; padding: 7px; }
+QComboBox:hover { border-color: rgba(0,240,255,.6); }
+QCheckBox { color: #8fb8c6; }
+QDialog { background: #04090e; }
+QLabel#dialogTitle { font-size: 19px; font-weight: 700; color: #d9fbff; letter-spacing: 1px; }
 '''
 
 

@@ -274,21 +274,15 @@ No hace falta saber rutas. Ejemplos:
 
 El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia (y volverá a pedir tu confirmación).
 
-## HUD futurista (panel local, estilo JARVIS)
+## Apariencia tipo HUD (integrada en la app)
 
-[`hud/app.py`](hud/app.py) es un HUD estilo Iron Man (pantalla completa: retícula casi negra, núcleo ARC central brillante con anillos animados, «estado» y caja «EXPRESSION» como en la referencia de JARVIS) que muestra **datos reales de tu equipo** en tiempo real (sin nube, sin telemetría). La velocidad y el brillo del núcleo reaccionan a la carga de CPU, un arco fino muestra la salud general y el modo F.O.C.U.S. atenúa todo excepto el núcleo (clic en «F.O.C.U.S.»).
+La ventana principal de JARVIS (`python gui.py`) adopta la estética de la referencia de JARVIS **sin navegador ni puertos**: retícula blueprint sobre fondo casi negro, núcleo central con anillos HUD animados (anillo de marcas giratorio, arcos segmentados azul eléctrico y el **arco ámbar** superior) detrás de la esfera holográfica reactiva, reloj digital arriba a la derecha con una línea de estado («ALL SYSTEMS NORMAL» / «CARGA ELEVADA» / «CARGA CRÍTICA» según tu CPU) y una banda inferior con datos reales (`STATE IDLE · CPU … · MEM …` a la izquierda; `MODE AUTO · UPTIME …` a la derecha, actualizada cada segundo con psutil).
 
-```bash
-pip install -r requirements.txt   # o: pip install flask psutil
-python hud/app.py                 # abre http://127.0.0.1:5050
-python hud/app.py --host 0.0.0.0  # visible desde la LAN (sin autenticación: úsalo solo en red de confianza)
-```
+- **F.O.C.U.S.**: botón bajo el reloj (o tecla **Esc** para salir) que oculta la interfaz —chat, encabezados y botones de acción— y deja visible el núcleo y la información esencial; pensado como el modo de concentración de la referencia.
+- Las paletas de color de **Ajustes** siguen funcionando (la esfera muestra tu color; los anillos externos mantienen la identidad cian/ámbar de la referencia).
+- Sin dependencias nuevas: psutil y PyQt6 ya estaban en `requirements.txt`. El panel web anterior (`hud/` + Flask, puerto 5050) se retiró porque se pidió la apariencia **en la misma app**; sigue disponible en el historial de Git (`b6ef037`, `d3f2b0c`) por si algún día se quiere.
 
-**Desde el escritorio:** tras `git pull --ff-only`, hay un botón **«HUD»** en la barra superior de JARVIS que arranca el panel y lo abre en tu navegador (o lo reutiliza si ya está en marcha). La ventana clásica de JARVIS no cambia de diseño; el HUD es esta pantalla en el navegador.
-
-- La API local es `GET /api/stats` (JSON: CPU total y por núcleo, RAM + SWAP, disco, red up/down en Mb/s calculada por delta entre muestras, batería real, uptime, procesos, «salud» heurística, temperatura si el hardware expone sensores).
-- El frontend (`templates/index.html`) actualiza todo cada **1 s** con `fetch` + `setInterval`, sin recargar; la velocidad de la animación del núcleo reacciona a la carga de CPU. Arriba a la izquierda verás diagnóstico compacto (salud, CPU, RAM, SWAP, disco libre, red ↓/↑, energía, uptime, procesos); las esquinas inferiores muestran `STATE`/`PANELS`/`CORE` y `MODE`/`DATA FLOW`/`TEMP`.
-- **Límites honestos:** en equipos sin batería (sobremesa) el panel muestra «AC / SIN BATERÍA»; sin sensores, «N/D» en temperatura; los Mb/s de red son el delta entre dos lecturas, no un contador acumulado; el número de barras de CPU es el de núcleos reales de tu máquina; «ACTIVE MODULES» indica disponibilidad de voz/visión/red/memoria local, no es una certificación oficial. Es un HUD decorativo con datos reales, no una herramienta de diagnóstico profesional.
+**Límites honestos:** la interfaz no se ha ejecutado en este entorno de desarrollo (no hay pantalla ni PyQt6 aquí); el código pasa compilación y la suite de pruebas (192 tests), pero el primer arranque real ocurrirá en tu equipo. La resolución, el espaciado y los colores pueden necesitar finos según tu monitor. El estado superior deriva de la carga de CPU real; no es un diagnóstico profesional.
 
 ## Arquitectura autónoma (paquete `agent/`)
 
