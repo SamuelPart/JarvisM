@@ -74,8 +74,20 @@ def set_agenda_delete_permission(granted):
     _set_permission('agenda_delete', granted)
 
 
+def set_scheduled_email_permission(granted):
+    _set_permission('scheduled_email', granted)
+
+
 def authorize_tool(name, args, approve):
     if preapproved(name):
+        return True
+    if name == 'schedule_email':
+        if not approve('schedule_email_permission', args):
+            return False
+        try:
+            set_scheduled_email_permission(True)
+        except OSError:
+            return False
         return True
     if name != 'delete_reminder':
         return approve(name, args)
@@ -93,7 +105,8 @@ def set_briefing_permission(granted):
 
 def preapproved(name):
     state = read_state()
-    return ((name in AUTOMATION_TOOLS and state.get('automation_accepted') is True) or
+    return ((name in {'schedule_email', 'list_scheduled_emails', 'cancel_scheduled_email'} and state.get('scheduled_email_accepted') is True) or
+            (name in AUTOMATION_TOOLS and state.get('automation_accepted') is True) or
             (name in PREAPPROVED_TOOLS and state.get('network_actions_accepted') is True) or
             (name in GMAIL_TOOLS and state.get('gmail_actions_accepted') is True) or
             (name == 'delete_reminder' and state.get('agenda_delete_accepted') is True) or

@@ -85,6 +85,14 @@ Pida a JARVIS que prepare el mensaje e indique el número con código de país. 
 
 Si aparece un error Gemini, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.
 
+## Correos programados con Gmail
+
+Pide por voz o chat, por ejemplo: «Programa un correo para [dirección], asunto [asunto], mensaje [texto], dentro de diez minutos». También admite horas, días, semanas, meses y años o una fecha y hora concretas. JARVIS debe pedir los datos que falten y no enviar el mensaje en el momento de programarlo. Las duraciones de meses y años usan calendario, no meses de treinta días; si la fecha no existe o la hora es ambigua por cambio horario, pide otra fecha.
+
+La primera programación solicita autorización persistente, separada del permiso general de Gmail: permite programar y enviar correos sin preguntar cada vez. Incluye envíos futuros que podrían ser erróneos o inducidos por datos maliciosos. Puedes detener futuros envíos en **Ajustes → Permitir programar y enviar correos**; un envío ya iniciado no se interrumpe. La cuenta Gmail debe estar configurada previamente. Los mensajes se envían con la cuenta configurada en JARVIS en el momento del envío; si cambias de cuenta antes, podrían salir desde la cuenta nueva. La programación es **local**, no es la función Programar envío de Google: **JARVIS debe estar abierto, conectado y autorizado cuando llegue la hora**. Si estaba cerrado, intentará enviar el correo vencido cuando vuelva a abrirse; puede enviarse tarde. El sistema y su reloj deben funcionar correctamente.
+
+Los destinatarios, asuntos, mensajes y fechas pendientes se guardan sin cifrar en `.jarvis-scheduled-email.sqlite3`, con permisos del usuario, excluido de Git. No incluyas información que no quieras guardar en ese equipo. Puedes pedir «¿qué correos tengo programados?» o «cancela el correo programado de [asunto]» antes de que empiece el envío. Los estados `sending` o `uncertain` indican resultado desconocido: **revisa Gmail Enviados antes de reintentar**. Para evitar duplicados, JARVIS no reintenta automáticamente si el envío falló o se interrumpió y podría haberse enviado. El texto se conserva localmente en esos casos; cancelar o confirmar el envío lo elimina de la cola. No se garantiza entrega ni una hora exacta, y esta función no sustituye un servicio de programación siempre activo.
+
 ## Proveedor NVIDIA NIM
 
 Puede seleccionar NVIDIA en vez de Gemini, tanto en chat como en voz. Cree una clave nueva en NVIDIA y añada en su `.env` local:

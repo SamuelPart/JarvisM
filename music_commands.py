@@ -36,19 +36,37 @@ def is_music_action_request(text):
 
 class MusicTrace:
     """Record only real music tool calls, not LLM claims."""
-    def __init__(self, controller):
+    def __init__(self, controller, block_immediate_email=False):
         self.controller = controller
+        self.block_immediate_email = block_immediate_email
         self.results = []
 
     def __getattr__(self, name):
         target = getattr(self.controller, name)
-        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder'):
+        if self.block_immediate_email and name in ('send_gmail', 'reply_gmail'):
+            return lambda *args, **kwargs: {'error': 'El usuario pidió un envío futuro; no se enviará ahora. Usa schedule_email si es un correo nuevo.'}
+        if name not in ('play_music', 'stop_music', 'whatsapp_prepare', 'delete_reminder', 'schedule_email', 'cancel_scheduled_email'):
             return target
         def tracked(*args, **kwargs):
             try:
                 result = target(*args, **kwargs)
             except Exception as exc:
-                if name == 'whatsapp_prepare':
+                if name == 'schedule_email':
+                    allowed = ('Necesito saber cuándo quieres enviarlo.',
+                               'No entendí cuándo enviarlo. Dime, por ejemplo, dentro de diez minutos o una fecha y hora.',
+                               'El reloj necesita una zona horaria local válida.',
+                               'Indica una cantidad de tiempo válida y futura.',
+                               'Esa fecha no existe en el mes de destino. Dime una fecha y hora concreta.',
+                               'La hora local es ambigua o no existe por un cambio horario. Dime otra hora.',
+                               'La fecha de envío debe ser futura.',
+                               'Esa fecha está fuera del rango permitido.',
+                               'Gmail no está configurado en JARVIS; primero conecta tu cuenta.',
+                               'Indica una sola dirección de correo válida.',
+                               'El asunto debe contener entre 1 y 300 caracteres sin saltos de línea.',
+                               'El texto debe contener entre 1 y 12000 caracteres.')
+                    reason = str(exc) if str(exc) in allowed else 'No pude guardar el correo programado; no conozco la causa.'
+                    self.results.append((name, {'error': reason}))
+                elif name == 'whatsapp_prepare':
                     known = {
                         'Indique el número internacional con código de país y solo dígitos.':
                             'Necesito el número con código de país y solo dígitos.',

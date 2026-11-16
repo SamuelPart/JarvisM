@@ -30,6 +30,13 @@ def is_local_time_request(text):
     return bool(re.fullmatch(polite + question + suffix, text, re.I))
 
 
+def is_scheduled_email_request(text):
+    """Prevent an immediately sent Gmail message when the request is for later."""
+    email = re.search(r'\b(?:correos?|email|e-mail|gmail)\b', text, re.I)
+    future = re.search(r'\b(?:program(?:a|ar|e|ado|arlo)|dentro|despu[eé]s|ma[ñn]ana|pasado ma[ñn]ana|semana|mes(?:es)?|a[ñn]os?|horas?|minutos?|segundos?|m[aá]s tarde|fecha futura)\b|\ben\s+\d+\b|\bpara el\s+\d+\b', text, re.I)
+    return bool(email and future)
+
+
 class PersistentBrain:
     def __init__(self, brain, memory):
         self.brain, self.memory = brain, memory
@@ -213,7 +220,7 @@ class PersistentBrain:
         else:
             self.refresh_context()
             original = self.brain.controller
-            trace = MusicTrace(original)
+            trace = MusicTrace(original, block_immediate_email=is_scheduled_email_request(clean))
             self.brain.controller = trace
             try:
                 answer = self.brain.ask(text)
@@ -221,7 +228,21 @@ class PersistentBrain:
                 self.brain.controller = original
             if trace.results:
                 name, result = trace.results[-1]
-                if name == 'delete_reminder':
+                if name == 'schedule_email':
+                    if isinstance(result, dict) and result.get('scheduled') is True:
+                        try:
+                            when = datetime.fromisoformat(result['when']).strftime('%d/%m/%Y a las %H:%M')
+                            answer = ('Listo, quedó programado para el ' + when + '. '
+                                      'JARVIS debe estar abierto y conectado; si está cerrado lo intentará al volver a abrirlo.')
+                        except (KeyError, ValueError, TypeError):
+                            answer = 'El correo quedó guardado, pero no pude leer la fecha. Revísala en los correos programados.'
+                    else:
+                        reason = result.get('error') if isinstance(result, dict) else None
+                        answer = 'No pude programar el correo: ' + (str(reason) if reason else 'no conozco la causa.')
+                elif name == 'cancel_scheduled_email':
+                    answer = ('Listo, cancelé el correo programado.' if isinstance(result, dict) and result.get('cancelled') is True
+                              else 'No pude cancelarlo: puede que ya no esté pendiente o esté enviándose.')
+                elif name == 'delete_reminder':
                     answer = ('Listo, eliminé el recordatorio.' if isinstance(result, dict) and result.get('deleted') is True
                               else 'No pude eliminar el recordatorio; puede que ya no exista.')
                 elif name == 'whatsapp_prepare':
@@ -235,6 +256,14 @@ class PersistentBrain:
                         answer = 'No pude abrir el borrador: el navegador no aceptó la solicitud.'
                 else:
                     answer = format_result(name, result)
+            elif (is_scheduled_email_request(clean)
+                  and re.search(r'\b(?:programa|programar|programes|env[ií]a|env[ií]es|enviar|manda|mandar)\b', clean, re.I)
+                  and '?' not in answer and '¿' not in answer):
+                answer = 'Todavía no quedó programado. Dime el destinatario, el asunto, el mensaje y cuándo quieres enviarlo.'
+            elif (re.search(r'\b(?:cancela|cancelar|elimina|eliminar|borra|borrar)\b', clean, re.I)
+                  and re.search(r'\b(?:correo|email|e-mail)\b', clean, re.I)
+                  and re.search(r'\bprogramad[oa]s?\b', clean, re.I) and '?' not in answer and '¿' not in answer):
+                answer = 'No cancelé ningún correo programado. Dime cuál quieres cancelar.'
             elif (re.search(r'\b(?:elimina|eliminar|borra|borrar|quita|quitar|cancela|cancelar)\b', clean, re.I)
                   and re.search(r'\brecordatorios?\b', clean, re.I)):
                 answer = 'No eliminé ningún recordatorio. Dime cuál quieres eliminar.'

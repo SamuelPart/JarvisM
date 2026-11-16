@@ -25,6 +25,7 @@ import calendar_access
 import startup_briefing
 import routines
 import privileged_tasks
+import scheduled_emails
 
 
 class SystemController:
@@ -184,6 +185,16 @@ class SystemController:
 
     def read_gmail(self, message_id: str) -> dict:
         return gmail_access.read_message(message_id)
+
+    def schedule_email(self, to: str, subject: str, body: str, when: str) -> dict:
+        return scheduled_emails.ScheduledEmails().add(to, subject, body, when)
+
+    def list_scheduled_emails(self) -> dict:
+        return {'emails': scheduled_emails.ScheduledEmails().list(),
+                'note': 'sending y uncertain requieren revisar Enviados; nunca se reintentan automáticamente.'}
+
+    def cancel_scheduled_email(self, identifier: int, to: str, subject: str, when: str) -> dict:
+        return scheduled_emails.ScheduledEmails().cancel(identifier, to, subject, when)
 
     def send_gmail(self, to: str, subject: str, body: str) -> dict:
         return gmail_access.send_message(to, subject, body)

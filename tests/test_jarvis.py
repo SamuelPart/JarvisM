@@ -1595,3 +1595,216 @@ def test_reminder_minute_followup_only_matches_selected_minute():
     items = [{'when': '2026-11-15T09:15:00-05:00'}, {'when': '2026-11-15T09:30:00-05:00'}]
     assert select_reminders_by_minute('y media', items) == [items[1]]
     assert select_reminders_by_minute('y cuarto', items) == [items[0]]
+
+
+def test_schedule_relative_durations_and_calendar_dates(monkeypatch):
+    import os
+    import time
+    from datetime import datetime
+    from scheduled_emails import resolve_when
+    monkeypatch.setenv('TZ', 'UTC')
+    if hasattr(time, 'tzset'): time.tzset()
+    try:
+        now = datetime(2028, 1, 31, 10, 20, 0).astimezone()
+        assert resolve_when('dentro de diez minutos', now) == int(now.timestamp()) + 600
+        assert resolve_when('en dos semanas', now) == int(now.timestamp()) + 14 * 86400
+        assert datetime.fromtimestamp(resolve_when('en dos meses', now)).strftime('%Y-%m-%d %H:%M') == '2028-03-31 10:20'
+        with pytest.raises(ValueError, match='no existe'):
+            resolve_when('en un mes', now)
+        leap = datetime(2028, 2, 29, 10, 20).astimezone()
+        with pytest.raises(ValueError, match='no existe'):
+            resolve_when('dentro de un año', leap)
+        with pytest.raises(ValueError): resolve_when('en cero minutos', now)
+        with pytest.raises(ValueError): resolve_when('2028-01-31T10:20:00', now)
+    finally:
+        monkeypatch.delenv('TZ', raising=False)
+        if hasattr(time, 'tzset'): time.tzset()
+
+
+def test_scheduled_email_cancel_and_one_time_send(tmp_path, monkeypatch):
+    import time
+    import sqlite3
+    import scheduled_emails as scheduled
+    import permissions
+    import gmail_access
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    monkeypatch.setattr(gmail_access, 'TOKEN', tmp_path / 'token.json')
+    gmail_access.TOKEN.touch()
+    queue = scheduled.ScheduledEmails(tmp_path / 'queue.sqlite3')
+    assert queue.path.stat().st_mode & 0o777 == 0o600
+    first = queue.add('prueba@example.com', 'Hola', 'Mensaje', 'en un minuto')
+    assert first['scheduled'] and queue.list()[0]['state'] == 'pending'
+    assert not queue.cancel(first['id'], first['to'], 'otro asunto', first['when'])['cancelled']
+    assert queue.cancel(first['id'], first['to'], first['subject'], first['when'])['cancelled']
+    with sqlite3.connect(queue.path) as db:
+        assert db.execute('SELECT body FROM scheduled_email WHERE id=?', (first['id'],)).fetchone()[0] == ''
+    second = queue.add('prueba@example.com', 'Segundo', 'Cuerpo', 'en un minuto')
+    with sqlite3.connect(queue.path) as db:
+        db.execute('UPDATE scheduled_email SET due=? WHERE id=?', (int(time.time()) - 1, second['id']))
+    sent = []
+    sender = lambda *args: sent.append(args) or {'sent': True, 'message_id': 'abc123'}
+    assert scheduled.process_one(queue, sender) is None and sent == []
+    permissions.set_scheduled_email_permission(True)
+    assert scheduled.process_one(queue, sender)['state'] == 'sent'
+    assert scheduled.process_one(queue, sender) is None and len(sent) == 1
+    assert [row['state'] for row in queue.list()] == ['sent', 'cancelled']
+    with sqlite3.connect(queue.path) as db:
+        assert db.execute('SELECT body FROM scheduled_email WHERE id=?', (second['id'],)).fetchone()[0] == ''
+
+
+def test_scheduled_email_uncertain_never_retries_and_preserves_message(tmp_path, monkeypatch):
+    import time
+    import sqlite3
+    import scheduled_emails as scheduled
+    import permissions
+    import gmail_access
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_scheduled_email_permission(True)
+    monkeypatch.setattr(gmail_access, 'TOKEN', tmp_path / 'token.json')
+    gmail_access.TOKEN.touch()
+    queue = scheduled.ScheduledEmails(tmp_path / 'queue.sqlite3')
+    item = queue.add('prueba@example.com', 'Prueba', 'No perder', 'en un minuto')
+    with sqlite3.connect(queue.path) as db:
+        db.execute('UPDATE scheduled_email SET due=? WHERE id=?', (int(time.time()) - 1, item['id']))
+    calls = []
+    def failed(*args):
+        calls.append(True)
+        raise TimeoutError('Could already have been sent')
+    assert scheduled.process_one(queue, failed)['state'] == 'uncertain'
+    assert scheduled.process_one(queue, failed) is None and len(calls) == 1
+    with sqlite3.connect(queue.path) as db:
+        assert db.execute('SELECT state, body FROM scheduled_email WHERE id=?', (item['id'],)).fetchone() == ('uncertain', 'No perder')
+
+
+def test_scheduled_email_claim_is_atomic(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    import sqlite3
+    import scheduled_emails as scheduled
+    import gmail_access
+    monkeypatch.setattr(gmail_access, 'TOKEN', tmp_path / 'token.json')
+    gmail_access.TOKEN.touch()
+    queue = scheduled.ScheduledEmails(tmp_path / 'queue.sqlite3')
+    entry = queue.add('prueba@example.com', 'Prueba', 'Hola', 'en un minuto')
+    with sqlite3.connect(queue.path) as db:
+        db.execute('UPDATE scheduled_email SET due=? WHERE id=?', (int(time.time()) - 1, entry['id']))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: queue.claim_one(), range(2)))
+    assert sum(item is not None for item in outcomes) == 1
+    assert queue.list()[0]['state'] == 'sending'
+
+
+def test_schedule_permission_is_independent_and_revocable(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_gmail_permission(True)
+    assert not permissions.preapproved('schedule_email')
+    calls = []
+    assert permissions.authorize_tool('schedule_email', {'to': 'x@example.com'}, lambda name, args: calls.append(name) or True)
+    assert calls == ['schedule_email_permission']
+    assert permissions.authorize_tool('schedule_email', {}, lambda *_: pytest.fail('No debe preguntar otra vez'))
+    permissions.set_scheduled_email_permission(False)
+    assert not permissions.preapproved('schedule_email')
+
+
+def test_schedule_voice_confirmation_explains_future_sending():
+    from voice_session import VoiceSession
+    spoken = []
+    voice = SimpleNamespace(speak_wait=lambda text: spoken.append(text) or True)
+    session = VoiceSession(None, voice, lambda: 'autorizo')
+    assert session.approve('schedule_email_permission', {'to': 'x@example.com', 'subject': 'Hola', 'body': 'Prueba', 'when': 'en diez minutos'})
+    assert 'sin preguntar cada vez' in spoken[0] and 'JARVIS esté abierto' in spoken[0]
+    assert 'Prueba' in spoken[0] and 'x@example.com' in spoken[0]
+
+
+def test_future_email_never_invokes_immediate_send_even_if_model_chooses_it(tmp_path, monkeypatch):
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    permissions.set_gmail_permission(True)
+    calls = []
+    sent = []
+    def post(*args, **kwargs):
+        calls.append(True)
+        message = ({'content': '', 'tool_calls': [{'id': 't1', 'function': {'name': 'send_gmail', 'arguments': '{"to":"test@example.com","subject":"Prueba","body":"Hola"}'}}]}
+                   if len(calls) == 1 else {'content': 'Correo programado.'})
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': message}]})
+    controller = SimpleNamespace(send_gmail=lambda **kwargs: sent.append(kwargs) or {'sent': True})
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
+    result = agent.ask('envía un correo dentro de diez minutos')
+    assert sent == [] and 'Todavía no quedó programado' in result
+
+
+def test_schedule_email_tool_reports_real_scheduled_state(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    calls = []
+    def post(*args, **kwargs):
+        calls.append(True)
+        message = ({'content': '', 'tool_calls': [{'id': 't1', 'function': {'name': 'schedule_email', 'arguments': '{"to":"test@example.com","subject":"Hola","body":"Prueba","when":"en dos minutos"}'}}]}
+                   if len(calls) == 1 else {'content': 'Enviado.'})
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': message}]})
+    controller = SimpleNamespace(schedule_email=lambda **args: {'scheduled': True, 'when': '2030-02-10T15:00:00-05:00'})
+    questions = []
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda name, args: questions.append(name) or True, post=post), JarvisMemory(tmp_path / 'memory.db'))
+    result = agent.ask('Programa un correo en dos minutos')
+    assert questions == ['schedule_email_permission']
+    assert 'quedó programado' in result and 'abierto y conectado' in result and 'Enviado' not in result
+
+
+def test_revoking_scheduled_email_permission_prevents_claimed_send(tmp_path, monkeypatch):
+    import time
+    import sqlite3
+    import scheduled_emails as scheduled
+    import gmail_access
+    import permissions
+    monkeypatch.setattr(gmail_access, 'TOKEN', tmp_path / 'token.json')
+    gmail_access.TOKEN.touch()
+    queue = scheduled.ScheduledEmails(tmp_path / 'queue.sqlite3')
+    entry = queue.add('test@example.com', 'Prueba', 'Mensaje', 'en un minuto')
+    with sqlite3.connect(queue.path) as db:
+        db.execute('UPDATE scheduled_email SET due=? WHERE id=?', (int(time.time()) - 1, entry['id']))
+    states = iter([{'scheduled_email_accepted': True}, {'scheduled_email_accepted': False}])
+    monkeypatch.setattr(permissions, 'read_state', lambda: next(states))
+    assert scheduled.process_one(queue, lambda *_: pytest.fail('No debe enviar')) is None
+    assert queue.list()[0]['state'] == 'pending'
+
+
+def test_email_with_no_gmail_token_or_invalid_data_is_not_stored(tmp_path, monkeypatch):
+    import scheduled_emails as scheduled
+    import gmail_access
+    monkeypatch.setattr(gmail_access, 'TOKEN', tmp_path / 'nonexistent.json')
+    queue = scheduled.ScheduledEmails(tmp_path / 'queue.sqlite3')
+    with pytest.raises(gmail_access.GmailError, match='no está configurado'):
+        queue.add('test@example.com', 'Hola', 'Texto', 'en un minuto')
+    with pytest.raises(gmail_access.GmailError, match='dirección'):
+        queue.add('not-an-email', 'Hola', 'Texto', 'en un minuto')
+    assert queue.list() == []
+
+
+def test_schedule_calendar_durations_respect_dst_and_reject_nonexistent_hour(monkeypatch):
+    import time
+    from datetime import datetime
+    from scheduled_emails import resolve_when
+    if not hasattr(time, 'tzset'):
+        pytest.skip('TZ changes are unavailable')
+    monkeypatch.setenv('TZ', 'America/New_York')
+    time.tzset()
+    try:
+        if time.localtime(datetime(2028, 3, 1).timestamp()).tm_zone not in ('EST', 'EDT'):
+            pytest.skip('Timezone database is unavailable')
+        # One calendar week preserves wall clock despite the spring transition.
+        now = datetime(2028, 3, 5, 10, 0).astimezone()
+        result = datetime.fromtimestamp(resolve_when('en una semana', now))
+        assert (result.day, result.hour) == (12, 10)
+        missing = datetime(2028, 3, 11, 2, 30).astimezone()
+        with pytest.raises(ValueError, match='no existe'):
+            resolve_when('en un día', missing)
+    finally:
+        monkeypatch.delenv('TZ', raising=False)
+        time.tzset()

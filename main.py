@@ -45,7 +45,10 @@ def initial_security():
 
 
 def approve(name, args):
-    if name == 'delete_reminder_permission':
+    if name == 'schedule_email_permission':
+        print('Autorizar permite programar y enviar correos futuros sin preguntar cada vez; se guardan localmente y se envían con JARVIS abierto. Puedes revocarlo en Ajustes.')
+        print(json.dumps(args, ensure_ascii=False, indent=2, default=str))
+    elif name == 'delete_reminder_permission':
         print('Permiso para eliminar recordatorios locales cuando lo pidas sin preguntar cada vez. Puedes revocarlo en Ajustes.')
         print('Recordatorio solicitado:', args.get('title', ''))
     else:
@@ -108,6 +111,14 @@ def main():
                 # Console remains usable; avoid playing into a microphone session.
                 print('JARVIS — revisión inicial:', result, flush=True)
         threading.Thread(target=run_briefing, name='JARVIS revisión inicial', daemon=True).start()
+    import scheduled_emails
+    def notify_scheduled(result):
+        if result.get('state') == 'sent':
+            print('JARVIS: se envió el correo programado:', result.get('subject', ''), flush=True)
+        else:
+            print('JARVIS: no se pudo confirmar el envío de un correo programado; revisa Enviados antes de reintentar.', flush=True)
+    scheduler = scheduled_emails.Scheduler(notify_scheduled)
+    scheduler.start()
     print('Escriba su mensaje, /voz, /actualizar o /salir.')
     while True:
         try:
@@ -129,6 +140,7 @@ def main():
                 print(describe_error(exc))
         except (KeyboardInterrupt, EOFError):
             print('\nHasta pronto.'); break
+    scheduler.stop()
     return 0
 
 

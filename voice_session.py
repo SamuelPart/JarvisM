@@ -29,17 +29,20 @@ class VoiceSession:
         self.stop_event.set()
 
     def queue_reminder(self, title):
-        self.reminders.put(title)
+        self.queue_announcement('Señor, recordatorio: ' + title)
+
+    def queue_announcement(self, message):
+        self.reminders.put(message)
 
     def announce_reminders(self):
         # Only the listening thread speaks these, between capture cycles, never
         # during an approval or while the microphone is recording.
         while not self.stop_event.is_set():
             try:
-                title = self.reminders.get_nowait()
+                message = self.reminders.get_nowait()
             except queue.Empty:
                 break
-            self.speak('Señor, recordatorio: ' + title)
+            self.speak(message)
 
     def speak(self, text):
         self.status('Hablando')
@@ -50,6 +53,22 @@ class VoiceSession:
             return False
         self.status('Esperando autorización por voz')
         try:
+            if name == 'schedule_email_permission':
+                to, subject, body, when = (args.get('to'), args.get('subject'), args.get('body'), args.get('when'))
+                if not all(isinstance(value, str) for value in (to, subject, body, when)) or len(body) > 700:
+                    self.voice.speak_wait('No puedo leer el correo completo por voz; usa el chat para revisarlo.')
+                    return False
+                prompt = (f'Para {to}, asunto {subject}, el mensaje dice: {body}. Momento solicitado: {when}. '
+                          '¿Autoriza una sola vez programar y enviar correos cuando lo pida, sin preguntar cada vez? '
+                          'Quedarán guardados en este equipo y se enviarán cuando JARVIS esté abierto y conectado. '
+                          'Si estuvo cerrado, se intentará al volver a abrirlo. Puede desactivar este permiso en Ajustes. Diga autorizo para aceptar.')
+                if not self.voice.speak_wait(prompt) or self.stop_event.is_set():
+                    return False
+                try:
+                    answer = self.listen()
+                except Exception:
+                    return False
+                return not self.stop_event.is_set() and is_approval(answer)
             if name == 'delete_reminder_permission':
                 prompt = ('¿Autoriza una sola vez que elimine recordatorios locales cuando me lo pida, '
                           'sin preguntar cada vez? Eliminaré el recordatorio solicitado. '

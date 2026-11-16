@@ -134,13 +134,16 @@ def _post(session, path, body, sending=False):
         raise GmailError('Gmail devolvió una respuesta inválida; verifica el resultado antes de reintentar.') from exc
 
 
-def send_message(to, subject, body):
+def validate_message(to, subject, body):
     if not isinstance(to, str) or not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}", to) or len(to) > 254:
         raise GmailError('Indica una sola dirección de correo válida.')
     if not isinstance(subject, str) or not subject.strip() or len(subject) > 300 or '\n' in subject or '\r' in subject:
         raise GmailError('El asunto debe contener entre 1 y 300 caracteres sin saltos de línea.')
     if not isinstance(body, str) or not body.strip() or len(body) > 12000:
         raise GmailError('El texto debe contener entre 1 y 12000 caracteres.')
+
+def send_message(to, subject, body):
+    validate_message(to, subject, body)
     message = EmailMessage()
     message['To'], message['Subject'] = to, subject
     message.set_content(body)

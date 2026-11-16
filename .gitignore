@@ -26,3 +26,5 @@ gmail-credentials.json
 .jarvis-briefing.json
 
 .jarvis-routine.json
+
+.jarvis-scheduled-email.sqlite3*

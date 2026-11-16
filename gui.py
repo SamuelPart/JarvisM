@@ -27,7 +27,8 @@ from core_state import CoreState
 from agenda import Agenda
 from approval import is_approved
 import startup_briefing
-from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission
+import scheduled_emails
+from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
 
@@ -37,6 +38,7 @@ UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
 class VoiceSignals(QObject):
     activity = pyqtSignal(bool)
     briefing_ready = pyqtSignal(str)
+    scheduled_email_result = pyqtSignal(object)
 
 
 class CoreAnimation(QWidget):
@@ -277,6 +279,10 @@ class VisualSettingsDialog(QDialog):
         self.agenda_permission.setChecked(read_state().get('agenda_read_accepted') is True)
         self.agenda_permission.setToolTip('Incluye hora, recordatorios y eventos de Google Calendar. Los datos pueden enviarse al proveedor de IA; crear recordatorios requiere permiso aparte.')
         layout.addWidget(self.agenda_permission)
+        self.scheduled_email_permission = QCheckBox('Permitir programar y enviar correos sin preguntar cada vez')
+        self.scheduled_email_permission.setChecked(read_state().get('scheduled_email_accepted') is True)
+        self.scheduled_email_permission.setToolTip('Guarda destinatario, asunto, mensaje y fecha localmente. Al llegar la fecha JARVIS intenta enviarlos por Gmail si está abierto y conectado; si estuvo cerrado, lo intenta al abrir. Revocar pausa los pendientes; no interrumpe un envío ya iniciado. Errores o contenido malicioso pueden provocar envíos no deseados.')
+        layout.addWidget(self.scheduled_email_permission)
         self.agenda_delete_permission = QCheckBox('Eliminar recordatorios locales sin preguntar cada vez')
         self.agenda_delete_permission.setChecked(read_state().get('agenda_delete_accepted') is True)
         self.agenda_delete_permission.setToolTip('Permite eliminar recordatorios locales al pedirlo. No elimina eventos de Google Calendar.')
@@ -480,6 +486,7 @@ class JarvisWindow(QMainWindow):
         self.core_state = CoreState()
         self.voice_signals.activity.connect(self.on_voice_activity)
         self.voice_signals.briefing_ready.connect(self.on_briefing_ready)
+        self.voice_signals.scheduled_email_result.connect(self.on_scheduled_email_result)
         self.voice.on_activity = self.voice_signals.activity.emit
 
         self.status = QLabel('Micrófono apagado')
@@ -530,6 +537,14 @@ class JarvisWindow(QMainWindow):
         self.agenda_timer.setInterval(5000)
         self.agenda_timer.timeout.connect(self.check_reminders)
         self.agenda_timer.start()
+        signals = self.voice_signals
+        def notify_scheduled(result):
+            try:
+                signals.scheduled_email_result.emit(result)
+            except RuntimeError:
+                pass
+        self.email_scheduler = scheduled_emails.Scheduler(notify_scheduled)
+        self.email_scheduler.start()
         if not read_state().get('startup_briefing_accepted'):
             QTimer.singleShot(0, self.check_reminders)
 
@@ -585,7 +600,8 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('approval')
         self.status.setText('Esperando tu autorización en el chat…')
         self.approval_pending = True
-        privacy = ('\nAl autorizar, permites eliminar recordatorios locales cuando lo pidas sin volver a preguntar. Puedes revocarlo en Ajustes. Se eliminará el recordatorio solicitado.'
+        privacy = ('\nAl autorizar, permites programar y enviar correos futuros sin preguntar cada vez. Se guardan en este equipo; si JARVIS estuvo cerrado intentará enviarlos al abrirse. Puedes desactivarlo en Ajustes; un envío ya iniciado no se interrumpe.'
+                   if name == 'schedule_email_permission' else '\nAl autorizar, permites eliminar recordatorios locales cuando lo pidas sin volver a preguntar. Puedes revocarlo en Ajustes. Se eliminará el recordatorio solicitado.'
                    if name == 'delete_reminder_permission' else '\nSe abrirá un borrador de WhatsApp; no se enviará automáticamente. Revisa el número y el texto y pulsa Enviar en WhatsApp.'
                    if name == 'whatsapp_prepare' else '\nSe capturará la pantalla completa y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_screen' else '\nLa imagen se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
@@ -597,7 +613,10 @@ class JarvisWindow(QMainWindow):
                    if name == 'classify_gmail' else ' Se consultará tu agenda y los datos pueden enviarse al proveedor del chat.'
                    if name in ('list_calendar_events', 'list_reminders') else '\nLos registros solicitados pueden contener datos sensibles y enviarse al proveedor del chat.'
                    if name == 'review_startup_logs' else '')
-        if name == 'delete_reminder_permission':
+        if name == 'schedule_email_permission':
+            details = ('Para: ' + str(args.get('to', '')) + '\nAsunto: ' + str(args.get('subject', '')) + '\nMensaje: ' + str(args.get('body', '')) + '\nCuándo: ' + str(args.get('when', '')))
+            heading = 'Permiso para programar correos'
+        elif name == 'delete_reminder_permission':
             try:
                 when = datetime.fromisoformat(args['when']).strftime('%d/%m a las %H:%M')
                 details = f"Recordatorio: {args.get('title', '')}, {when}"
@@ -679,6 +698,20 @@ class JarvisWindow(QMainWindow):
             else:
                 self.voice.speak('Señor, recordatorio: ' + title)
 
+    @pyqtSlot(object)
+    def on_scheduled_email_result(self, result):
+        if result.get('state') == 'sent':
+            message = 'Se envió el correo programado con asunto ' + result.get('subject', '') + '.'
+        else:
+            message = ('No se pudo confirmar el envío del correo programado con asunto ' + result.get('subject', '')
+                       + '. Revisa Enviados antes de reintentarlo.')
+        self.append_chat('Sistema', message)
+        self.status.setText(message)
+        if isinstance(self.worker, VoiceWorker):
+            self.worker.session.queue_announcement(message)
+        elif self.thread is None and self.chat_audio.isChecked():
+            self.voice.speak(speech_text(message))
+
     def open_memory(self):
         if self.thread is not None:
             QMessageBox.information(self, 'Memoria', 'Detén el micrófono o espera a que termine la solicitud antes de modificar la memoria.')
@@ -730,6 +763,7 @@ class JarvisWindow(QMainWindow):
             set_gmail_permission(dialog.gmail_permission.isChecked())
             set_agenda_permission(dialog.agenda_permission.isChecked())
             set_agenda_delete_permission(dialog.agenda_delete_permission.isChecked())
+            set_scheduled_email_permission(dialog.scheduled_email_permission.isChecked())
             set_briefing_permission(dialog.briefing_permission.isChecked())
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
@@ -813,10 +847,10 @@ class JarvisWindow(QMainWindow):
             import queue
             while True:
                 try:
-                    title = self.worker.session.reminders.get_nowait()
+                    message = self.worker.session.reminders.get_nowait()
                 except queue.Empty:
                     break
-                self.voice.speak('Señor, recordatorio: ' + title)
+                self.voice.speak(message)
         self.thread.deleteLater()
         self.thread = None
         self.worker = None
@@ -843,6 +877,7 @@ class JarvisWindow(QMainWindow):
             QMessageBox.information(self, 'JARVIS', message)
             event.ignore()
         else:
+            self.email_scheduler.stop()
             self.voice.on_activity = None
             event.accept()
 
