@@ -71,7 +71,7 @@ Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux 
 
 ### Animación del núcleo
 
-El núcleo central es la esfera clásica azul de puntos dibujada por Qt, creada por código, sin GIF. Se mueve continuamente y con mayor intensidad cuando JARVIS habla. La animación de voz es decorativa y no mide el audio real.
+El núcleo central es la esfera clásica azul de puntos dibujada por Qt, creada por código, sin GIF. Se mueve continuamente; al pensar se deforma, produce destellos y emite sonidos electrónicos breves que varían entre solicitudes. Al hablar utiliza movimientos distintos que también varían. La animación de voz representa el estado de habla, pero no mide el audio ni sigue sus palabras o volumen.
 
 La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
@@ -121,7 +121,7 @@ Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con 
 
 ### Ajustes visuales
 
-En la ventana completa pulse «Ajustes» para elegir el color en espera, su tamaño y animación normal o reducida. La esfera se mueve siempre; una preferencia antigua de animación desactivada se convierte a reducida. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
+En la ventana completa pulse «Ajustes» para elegir el color en espera, su tamaño, animación normal o reducida y activar o desactivar los sonidos tecnológicos al pensar y buscar el clima. El sonido se detiene al hablar para no tapar la voz; si no hay soporte de audio Qt, JARVIS continúa sin él. La esfera se mueve siempre; una preferencia antigua de animación desactivada se convierte a reducida. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
 
 ### Memoria entre sesiones
 

@@ -59,6 +59,7 @@ class CoreAnimation(QWidget):
         self.setFixedSize(round(300 * scale), round(260 * scale))
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.mode = 'idle'
+        self.variant = 0
         self.phase = 0.0
         self.timer = QTimer(self)
         self.timer.setInterval(40)
@@ -66,6 +67,8 @@ class CoreAnimation(QWidget):
         self.timer.start()
 
     def set_mode(self, mode):
+        if mode != self.mode and mode in ('thinking', 'speaking'):
+            self.variant = (self.variant + 1) % 3
         self.mode = mode
         self.update()
 
@@ -114,6 +117,15 @@ class CoreAnimation(QWidget):
         # hologram look like the reference, including its dotted polar circles.
         tilt = 0.22
         points = []
+        reduced = self.preferences['animation'] == 'reducida'
+        strength = .4 if reduced else 1.0
+        variant = self.variant
+        if self.weather_searching or self.mode == 'thinking':
+            stretch = 1 + strength * (0.11 + variant * .025) * math.sin(self.phase * (.7 + variant * .22))
+        elif self.mode == 'speaking':
+            stretch = 1 + strength * .035 * math.sin(self.phase * (1.4 + variant * .25))
+        else:
+            stretch = 1
         for latitude in range(1, 41):
             theta = math.pi * latitude / 41
             sin_theta, cos_theta = math.sin(theta), math.cos(theta)
@@ -127,12 +139,14 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.weather_searching:
-                    # The same sphere ripples and stretches into an energy core.
-                    pulse += 0.12 * math.sin(self.phase * 2.0 + theta * 4 + angle * 2)
+                if self.weather_searching or self.mode == 'thinking':
+                    # Varied waves deform the same dotted sphere, not a separate icon.
+                    pulse += strength * (0.10 * math.sin(self.phase * (1.7 + variant * .3) + theta * (3 + variant) + angle * 2)
+                                         + .035 * math.sin(angle * (3 + variant) - self.phase * 2.3))
                 elif self.mode == 'speaking':
-                    pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
-                stretch = 1 + 0.18 * math.sin(self.phase * .9) if self.weather_searching else 1
+                    # Animated speech state, not a measurement of audio amplitude.
+                    pulse += strength * (0.055 * math.sin(self.phase * (2.1 + variant * .4))
+                                         + 0.035 * math.sin(theta * (6 + variant) + self.phase * 3 + angle * (2 + variant)))
                 px, py = radius * x * pulse * stretch, -radius * screen_y * pulse / stretch
                 alpha = int(105 + 110 * (z + 1) / 2)
                 dot = 0.65 + 0.35 * (z + 1) / 2
@@ -146,7 +160,7 @@ class CoreAnimation(QWidget):
             painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
             painter.setBrush(QColor(*bright_color, alpha))
             painter.drawEllipse(QPointF(x, y), dot, dot)
-        if self.weather_searching:
+        if self.weather_searching or self.mode == 'thinking':
             # Moving sparks and brief highlights emerge from the same dots.
             for i in range(10):
                 angle = i * math.tau / 10 + self.phase * .38
@@ -291,7 +305,7 @@ class VisualSettingsDialog(QDialog):
         layout.addWidget(info)
         form = QFormLayout()
         self.fields = {}
-        for key, label in (('color', 'Color'), ('size', 'Tamaño'), ('animation', 'Animación'), ('weather_sound', 'Sonido al buscar clima')):
+        for key, label in (('color', 'Color'), ('size', 'Tamaño'), ('animation', 'Animación'), ('weather_sound', 'Sonidos tecnológicos al pensar')):
             combo = QComboBox()
             for value in OPTIONS[key]:
                 combo.addItem(value.capitalize(), value)
@@ -474,6 +488,7 @@ class JarvisWindow(QMainWindow):
         self.weather_refresh_in_flight = False
         self.weather_sound = None
         self.weather_sound_dir = None
+        self.sound_variant = 0
         self.preferences = load_ui(UI_SETTINGS_PATH)
         self.thread = None
         self.worker = None
@@ -614,7 +629,7 @@ class JarvisWindow(QMainWindow):
         if not read_state().get('startup_briefing_accepted'):
             QTimer.singleShot(0, self.check_reminders)
 
-    def play_weather_sound(self):
+    def play_thinking_sound(self, kind='thinking'):
         if self.preferences.get('weather_sound') != 'activado' or self.core_state.speaking:
             return
         try:
@@ -622,13 +637,15 @@ class JarvisWindow(QMainWindow):
             # Missing multimedia support or an audio device must not block JARVIS.
             from PyQt6.QtMultimedia import QSoundEffect
             if self.weather_sound is None:
-                self.weather_sound_dir = tempfile.TemporaryDirectory(prefix='jarvis-weather-')
-                path = Path(self.weather_sound_dir.name) / 'search.wav'
-                write_search_cue(path)
+                self.weather_sound_dir = tempfile.TemporaryDirectory(prefix='jarvis-effects-')
                 self.weather_sound = QSoundEffect(self)
-                self.weather_sound.setSource(QUrl.fromLocalFile(str(path)))
                 self.weather_sound.setVolume(0.35)
+            self.sound_variant = (self.sound_variant + 1) % 3
+            path = Path(self.weather_sound_dir.name) / f'{kind}-{self.sound_variant}.wav'
+            if not path.exists():
+                write_search_cue(path, kind=kind, variant=self.sound_variant)
             self.weather_sound.stop()
+            self.weather_sound.setSource(QUrl.fromLocalFile(str(path)))
             self.weather_sound.play()
         except Exception:
             pass  # Weather remains usable without sound hardware or Qt multimedia.
@@ -661,7 +678,7 @@ class JarvisWindow(QMainWindow):
             self.weather_loading.setText('Buscando el clima de ' + location + '…' if location else 'Buscando el clima…')
             self.weather_loading.show()
             self.core.set_weather_searching(True)
-            self.play_weather_sound()
+            self.play_thinking_sound('weather')
             self.status.setText('Buscando datos del clima…')
             self.set_task_state('thinking')
         elif event == 'result' and isinstance(data, dict) and data.get('ok') is True:
@@ -823,7 +840,12 @@ class JarvisWindow(QMainWindow):
         self.append_chat('Sistema', error)
 
     def set_task_state(self, state):
+        previous = self.core_state.task
         self.core.set_mode(self.core_state.set_task(state))
+        if state == 'thinking' and previous != 'thinking' and not self.core.weather_searching:
+            self.play_thinking_sound()
+        elif state != 'thinking' and previous == 'thinking' and not self.core.weather_searching:
+            self.stop_weather_sound()
 
     @pyqtSlot(bool)
     def on_voice_activity(self, active):

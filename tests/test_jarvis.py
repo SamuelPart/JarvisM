@@ -2096,3 +2096,17 @@ def test_weather_sound_setting_can_be_disabled_and_survives_restart(tmp_path):
     path = tmp_path / 'settings.json'
     save(path, {'weather_sound': 'desactivado'})
     assert load(path)['weather_sound'] == 'desactivado'
+
+
+def test_thinking_and_weather_cues_vary_without_changing_duration(tmp_path):
+    import wave
+    from weather_sound import write_search_cue
+    sounds = []
+    for kind in ('thinking', 'weather'):
+        for variant in range(3):
+            path = tmp_path / f'{kind}-{variant}.wav'
+            write_search_cue(path, kind=kind, variant=variant)
+            with wave.open(str(path), 'rb') as sound:
+                assert sound.getnframes() / sound.getframerate() == pytest.approx(.78, abs=.001)
+                sounds.append(sound.readframes(sound.getnframes()))
+    assert len(set(sounds)) == 6
