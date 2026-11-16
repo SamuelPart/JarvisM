@@ -28,6 +28,7 @@ import privileged_tasks
 import scheduled_emails
 import weather
 import android_phone
+import hardware_diagnostics
 
 
 class SystemController:
@@ -281,6 +282,10 @@ class SystemController:
     def web_search(self, query: str) -> dict:
         """Return untrusted search snippets for the model to summarize with citations."""
         return search(query)
+
+    def diagnose_microphone(self) -> dict:
+        """Local, read-only microphone diagnostic; nothing is transmitted."""
+        return hardware_diagnostics.diagnose_microphone()
 
     def system_stats(self) -> dict:
         battery = psutil.sensors_battery()

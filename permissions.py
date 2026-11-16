@@ -9,7 +9,7 @@ PREAPPROVED_TOOLS = frozenset({'web_search', 'music_search', 'play_music', 'stop
 GMAIL_TOOLS = frozenset({'search_gmail', 'read_gmail', 'send_gmail', 'reply_gmail', 'classify_gmail'})
 AGENDA_TOOLS = frozenset({'current_time', 'list_reminders', 'list_calendar_events'})
 # No blanket approval for arbitrary shell, GUI automation, or sending images.
-AUTOMATION_TOOLS = frozenset({'open_url', 'open_app', 'system_stats', 'volume_brightness',
+AUTOMATION_TOOLS = frozenset({'open_url', 'open_app', 'system_stats', 'volume_brightness', 'diagnose_microphone',
                               'files', 'project_location', 'create_reminder', 'configure_routine', 'run_routine'})
 
 

@@ -2268,3 +2268,64 @@ def test_phone_voice_and_chat_route_to_connected_device_without_model(tmp_path, 
     assert '73 por ciento' in agent.ask('qué batería tiene mi celular')
     assert 'no pude comprobar' in agent.ask('abre WhatsApp en mi teléfono').lower()
     assert calls == [{'action': 'whatsapp'}]
+
+
+def test_microphone_muted_is_detected():
+    import hardware_diagnostics
+    def runner(cmd, **kwargs):
+        cmd = list(cmd)
+        body = {'arecord': 'card 0: I82801AALB [Intel], device 0: ALC [ALC]\n  Subdevices: 1/1\n',
+                'pactl info': 'Default Source: alsa_input.pci-0000_00_1b.0.analog-stereo\n',
+                'pactl list sources short': '4\talsa_input.pci-0000_00_1b.0.analog-stereo\tmodule\ts16le 2ch\tRUNNING\n'}.get(
+                    ' '.join(cmd[:2]), '')
+        if cmd[:2] == ['pactl', 'get-source-mute']: body = 'Mute: yes'
+        if cmd[:2] == ['pactl', 'get-source-volume']: body = 'Volume: front-left: 65536 / 100%'
+        if cmd[:2] == ['arecord', '-l']: body = 'card 0: I82801AALB [Intel], device 0: ALC [ALC]\n  Subdevices: 1/1\n'
+        return SimpleNamespace(returncode=0, stdout=body, stderr='')
+    result = hardware_diagnostics.diagnose_microphone(system='Linux', runner=runner, capture=False)
+    assert result['microphone_detected'] is True
+    assert result['muted'] is True
+    assert 'silencia' in result['summary'].lower()
+
+
+def test_microphone_missing_is_reported_honestly():
+    import hardware_diagnostics
+    def runner(cmd, **kwargs):
+        cmd = list(cmd)
+        body = {'arecord -l': '', 'pactl info': '', 'pactl list sources short': ''}.get(' '.join(cmd[:2]), '')
+        code = 0 if cmd[:2] == ['arecord', '-l'] else (1 if cmd[:2] == ['pactl', 'info'] else 0)
+        return SimpleNamespace(returncode=code, stdout=body, stderr='')
+    result = hardware_diagnostics.diagnose_microphone(system='Linux', runner=runner, capture=False)
+    assert result['microphone_detected'] is False
+    assert 'no detect' in result['summary'].lower()
+
+
+def test_microphone_healthy_path_local_capture(tmp_path):
+    import hardware_diagnostics
+    import wave
+    def runner(cmd, **kwargs):
+        cmd = list(cmd)
+        if cmd[:1] == ['arecord'] and cmd[1] == '-q':
+            path = cmd[-1]
+            with wave.open(path, 'wb') as wav:
+                wav.setnchannels(1); wav.setsampwidth(2); wav.setframerate(16000)
+                wav.writeframes((b'\x40\x1f' * 2000))  # constant ~8000 amplitude
+            return SimpleNamespace(returncode=0, stdout='', stderr='')
+        if cmd[:2] == ['arecord', '-l']: body = 'card 0: HDA [Intel], device 0: ALC [ALC]\n  Subdevices: 1/1\n'
+        elif cmd[:2] == ['pactl', 'info']: body = 'Default Source: alsa_input.test\n'
+        elif cmd[:2] == ['pactl', 'list']: body = '4\talsa_input.test\tmodule\ts16le 2ch\tRUNNING\n'
+        elif cmd[:2] == ['pactl', 'get-source-mute']: body = 'Mute: no'
+        elif cmd[:2] == ['pactl', 'get-source-volume']: body = 'Volume: 80%'
+        else: body = ''
+        return SimpleNamespace(returncode=0, stdout=body, stderr='')
+    result = hardware_diagnostics.diagnose_microphone(system='Linux', runner=runner, capture=True)
+    assert result['microphone_detected'] is True and result['muted'] is False
+    assert any(c['check'] == 'prueba de grabación' and c['status'] == 'ok' for c in result['checks'])
+    assert 'cuantificación' not in result['summary'].lower()
+
+
+def test_microphone_non_linux_is_honest():
+    import hardware_diagnostics
+    result = hardware_diagnostics.diagnose_microphone(system='Windows', runner=None, capture=False)
+    assert result['microphone_detected'] is None
+    assert 'solo está disponible en Linux' in result['checks'][0]['detail']
