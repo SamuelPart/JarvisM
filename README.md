@@ -299,6 +299,14 @@ JARVIS puede **enviar y recibir** WhatsApp en el mismo programa, sin sistema apa
 
 **Límites honestos:** no puedo probar la conexión real desde aquí (sin tus credenciales de Meta ni tu número); los flujos están cubiertos con pruebas con la API simulada. Fuera de la ventana de 24 h, los mensajes proactivos solo pueden usar plantillas aprobadas por Meta. Los mensajes recibidos entran al mismo cerebro/memoria que el escritorio. Si solo quieres enviar, no hace falta el túnel ni el webhook. Sin `WHATSAPP_*`, JARVIS funciona igual que siempre. Para un WhatsApp a un amigo con un clic, el botón existente (borrador en WhatsApp) ya sirve hoy sin configuración.
 
+## Probar JARVIS (banco de pruebas)
+
+`python benchmark.py` comprueba el entorno y mide lo que no depende de la red: importaciones, reflejos (sí/no, selección), creación/verificación de archivos, registro de acciones, memoria. `python benchmark.py --live` añade medición real del modelo (consume cuota de tu proveedor; sin `--live` no gasta API). Informe opcional en `--save informe.json`.
+
+En determinista todo debe ser submilisegundo; el modelo tarda lo que tarde tu red y el proveedor (cientos de ms a segundos). Un FAIL indica entorno roto (imports, memoria, deps), no lentitud. En vivo, un fallo del modelo no necesariamente rompe el determinismo.
+
+Pruebas manuales útiles tras actualizar: «créame 3 archivos pdf de prueba en escritorio» (deben aparecer), «elimina los archivos pdf de prueba que creaste» (deben desaparecer), «planifica: …», «planifica: borra el pdf…» (debe pedir confirmación), «recuerda que prefiero respuestas breves», «¿qué hora es?» (instantáneo) y «hazme un resumen de la reunión» (modelo).
+
 ## Registro de acciones (memoria de hechos)
 
 JARVIS guarda un **registro local de acciones ejecutadas** en `.jarvis-actions.jsonl` (excluido de Git): nombre de la herramienta, argumentos abreviados y resultado real (OK/FALLO), con hora. Lo rotan a las últimas 200 entradas. Se escriben en él tanto las acciones del chat (las que el modelo pide tras autorización) como los comandos locales directos (música, clima, rutinas, recordatorios, teléfono, Enviados).
