@@ -25,6 +25,7 @@ from pathlib import Path
 
 from agent import __version__
 from agent.tools import build_default_registry
+import whatsapp_cloud
 
 _STARTED = time.time()
 _STATE_DIR = Path(__file__).resolve().parent.parent / '.agent-memory'
@@ -51,7 +52,28 @@ def load_or_create_token():
     return token
 
 
-def make_handler(registry, token):
+def _default_message_handler():
+    """Same app, same brain — not a second system.
+
+    Reuses provider.create_brain: the same JARVIS, the same local memory. Every
+    action that would ask for permission is declined remotely (approve=False);
+    only actions the user already pre-authorised on this machine run.
+    """
+    import threading
+    from provider import create_brain
+    from system_control import SystemController
+
+    brain = create_brain(SystemController(), lambda name, args: False)
+    lock = threading.Lock()
+
+    def handle(text):
+        with lock:
+            return brain.ask(text)
+
+    return handle
+
+
+def make_handler(registry, token, whatsapp_handler=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = 'JarvisAgent/0.1'
 
@@ -71,15 +93,61 @@ def make_handler(registry, token):
             provided = header[7:].strip() if header.startswith('Bearer ') else self.headers.get('X-Token', '')
             return bool(provided) and secrets.compare_digest(provided, token)
 
+        def _whatsapp_webhook(self):
+            try:
+                length = min(int(self.headers.get('Content-Length', '0')), 65536)
+                raw = self.rfile.read(length)
+            except (ValueError, OSError):
+                return self._send(400, {'error': 'Cuerpo inválido.'})
+            if not whatsapp_cloud.verify_signature(raw, self.headers.get('X-Hub-Signature-256')):
+                return self._send(503, {'error': 'Webhook rechazado: define WHATSAPP_APP_SECRET válido (X-Hub-Signature-256).'})
+            try:
+                payload = json.loads(raw or b'{}')
+            except ValueError:
+                return self._send(400, {'error': 'JSON inválido.'})
+            messages = whatsapp_cloud.parse_inbound(payload)
+            owner = whatsapp_cloud.recipient()
+            processed = 0
+            for message in messages:
+                # Solo el dueño puede hablar con JARVIS por este canal; el resto se ignora en silencio.
+                if not owner or message['from'] != owner:
+                    continue
+                handler = whatsapp_handler or _default_message_handler()
+                try:
+                    answer = handler(message['text'])
+                except Exception:
+                    answer = 'No pude procesar la solicitud.'
+                if answer:
+                    whatsapp_cloud.send_message(str(answer)[:4000], to=message['from'])
+                processed += 1
+            return self._send(200, {'status': 'ok', 'processed': processed})
+
         def do_GET(self):
-            if self.path == '/status':
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(self.path)
+            if parsed.path == '/whatsapp/webhook':
+                challenge = whatsapp_cloud.verify_webhook({k: v[0] for k, v in parse_qs(parsed.query).items()})
+                if challenge is not None:
+                    body = challenge.encode('utf-8')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                return self._send(403, {'error': 'Token de verificación de WhatsApp no válido.'})
+            if parsed.path == '/status':
                 return self._send(200, {'ok': True, 'version': __version__,
                                         'uptime_seconds': round(time.time() - _STARTED, 1),
                                         'tools': [tool['name'] for tool in registry.list()]})
             return self._send(404, {'error': 'Not found'})
 
         def do_POST(self):
-            if self.path != '/action':
+            from urllib.parse import urlparse
+            path = urlparse(self.path).path
+            if path == '/whatsapp/webhook':
+                return self._whatsapp_webhook()
+            if path != '/action':
                 return self._send(404, {'error': 'Not found'})
             if not self._auth_ok():
                 return self._send(401, {'error': 'Token requerido (Authorization: Bearer …).'})
@@ -99,12 +167,13 @@ def make_handler(registry, token):
     return Handler
 
 
-def serve(host='127.0.0.1', port=8799, registry=None):
+def serve(host='127.0.0.1', port=8799, registry=None, whatsapp_handler=None):
     registry = registry or build_default_registry()
     token = load_or_create_token()
-    server = ThreadingHTTPServer((host, port), make_handler(registry, token))
-    print(f'JARVIS REST escuchando en http://{host}:{port} (token en .agent-memory/rest-token o JARVIS_REST_TOKEN)')
+    server = ThreadingHTTPServer((host, port), make_handler(registry, token, whatsapp_handler=whatsapp_handler))
+    print(f'JARVIS escuchando en http://{host}:{port} (token en .agent-memory/rest-token o JARVIS_REST_TOKEN)')
     print('POST /action requiere token y, para herramientas peligrosas, "confirmed": true.')
+    print('WhatsApp: GET/POST /whatsapp/webhook (requiere WHATSAPP_* en .env; solo del dueño, acciones peligrosas denegadas).')
     try:
         server.serve_forever()
     finally:

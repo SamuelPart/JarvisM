@@ -107,6 +107,16 @@ def main():
             print('JARVIS: se envió el correo programado:', result.get('subject', ''), flush=True)
         else:
             print('JARVIS: no se pudo confirmar el envío de un correo programado; revisa Enviados antes de reintentar.', flush=True)
+    if os.environ.get('JARVIS_HEARTBEAT_DISK') != '0':
+        try:
+            from agent.heartbeats import Heartbeat
+            from agent.watchdogs import disk_watchdog
+            heartbeat = Heartbeat()
+            heartbeat.register('disco', 900, disk_watchdog)
+            heartbeat.start()
+            print('Monitor local de disco activo (cada 15 min). JARVIS_HEARTBEAT_DISK=0 lo desactiva.', flush=True)
+        except Exception:
+            pass
     scheduler = scheduled_emails.Scheduler(notify_scheduled)
     scheduler.start()
     print('Escriba su mensaje, /voz, /actualizar o /salir.')

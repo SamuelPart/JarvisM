@@ -284,7 +284,20 @@ Además del núcleo ya existente de JARVIS (memoria SQLite, registro de acciones
 - **`agent/tools.py` + `agent/server.py` — actuación/cuerpo:** registro único de herramientas con destructivas bloqueadas salvo confirmación humana explícita; API REST **opcional** (`python -m agent.server`, token en `.agent-memory/rest-token`, `POST /action` con `"confirmed": true` para peligrosas, localhost por defecto) pensada también para ESP32/Arduino vía HTTP puro, sin que el hardware procese IA.
 - **`agent/heartbeats.py` — heartbeats:** comprobador en segundo plano (jobs registrados, intervalo, pausa/reanudación, registro de errores). No registra nada por defecto: la autonomía exige registrarla tú.
 
-**Estado honesto:** es el esqueleto funcional, con pruebas, no un asistente móvil/mensajería operativo. Nada está cableado a la ventana de escritorio ni a Telegram/WhatsApp/Discord todavía; el canal de mensajería es el siguiente paso y requiere tu elección y tus claves (p. ej. un bot de Telegram). Los datos de `.agent-memory/` no salen del equipo; al llamar al modelo, el contexto incluye solo lo que `context_block()` inyecte.
+**Integrado en la misma app (no es un sistema aparte):** el contexto de `agent/memory` se inyecta en el prompt de JARVIS; «planifica: <objetivo>» funciona en el mismo chat (orquestador + Gemini + confirmación para acciones peligrosas, incluidas en el mismo diálogo de autorización); «Borrar» limpia también `MEMORY.md` y el registro de acciones; las autorizaciones de chat aceptan palabras naturales («vale», «claro», «ok»…) manteniendo el rechazo por defecto; y un monitor de disco local (cada 15 min, sin red, solo registra transiciones a bajo espacio) corre dentro del proceso. No es conciencia ni autonomía sin límites: nada actúa sin permiso.
+
+
+## WhatsApp (Meta Cloud API, opt-in)
+
+JARVIS puede **enviar y recibir** WhatsApp en el mismo programa, sin sistema aparte. La integración usa la **API oficial de Meta WhatsApp Cloud API** (texto); no usa librerías no oficiales ni automatización de WhatsApp Web (riesgo de baneo).
+
+**Qué necesitas (en Meta for Developers):** una app con el producto «WhatsApp», un **token de acceso** (temporal o permanente), el **ID del número de teléfono**, y para recibir: un **token de verificación** y el **App Secret** de la app. Pon en `.env`: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_RECIPIENT` (tus dígitos internacionales, p. ej. `51987654321`), `WHATSAPP_VERIFY_TOKEN` (texto libre que tú inventas) y `WHATSAPP_APP_SECRET`. `WHATSAPP_GRAPH_VERSION` es opcional.
+
+**Enviar (funciona en cuanto .env tiene token e id):** pídele «envíame un WhatsApp: <texto>»; antes de enviar aparece el diálogo de confirmación habitual (es una herramienta peligrosa). Solo informa enviado si la API responde éxito.
+
+**Recibir (requiere URL pública HTTPS):** el webhook vive en `python -m agent.server --host 0.0.0.0 --port 8799` (`GET/POST /whatsapp/webhook`). Meta exige una URL pública; en un equipo casero usa un túnel (`cloudflared tunnel --url http://localhost:8799` o ngrok) y registra esa URL en Meta (Webhooks → callback URL + verify token). El POST verifica `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET`; sin el secreto **rechaza todo**. Solo procesa mensajes cuyo remitente sea exactamente `WHATSAPP_RECIPIENT`; **cualquier otro número se ignora en silencio**. Las acciones peligrosas están **denegadas** en este canal (no hay diálogo de confirmación por chat): las herramientas con aprobación interactiva responden que no pueden ejecutarse; el resto (hora, clima con permiso previo, planifica, música, documentos de prueba…) funciona.
+
+**Límites honestos:** no puedo probar la conexión real desde aquí (sin tus credenciales de Meta ni tu número); los flujos están cubiertos con pruebas con la API simulada. Fuera de la ventana de 24 h, los mensajes proactivos solo pueden usar plantillas aprobadas por Meta. Los mensajes recibidos entran al mismo cerebro/memoria que el escritorio. Si solo quieres enviar, no hace falta el túnel ni el webhook. Sin `WHATSAPP_*`, JARVIS funciona igual que siempre. Para un WhatsApp a un amigo con un clic, el botón existente (borrador en WhatsApp) ya sirve hoy sin configuración.
 
 ## Registro de acciones (memoria de hechos)
 

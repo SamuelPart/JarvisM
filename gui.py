@@ -928,6 +928,15 @@ class JarvisWindow(QMainWindow):
                 pass
         self.email_scheduler = scheduled_emails.Scheduler(notify_scheduled)
         self.email_scheduler.start()
+        if os.environ.get('JARVIS_HEARTBEAT_DISK') != '0':
+            try:
+                from agent.heartbeats import Heartbeat
+                from agent.watchdogs import disk_watchdog
+                self.heartbeat = Heartbeat()
+                self.heartbeat.register('disco', 900, disk_watchdog)
+                self.heartbeat.start()
+            except Exception:
+                self.heartbeat = None
         if not read_state().get('startup_briefing_accepted'):
             QTimer.singleShot(0, self.check_reminders)
 

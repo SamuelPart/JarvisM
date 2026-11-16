@@ -104,6 +104,16 @@ def build_default_registry():
                            _remember,
                            danger=False,
                            schema={'preference': 'string'}))
+
+    def _send_whatsapp(text, to=None):
+        import whatsapp_cloud
+        return whatsapp_cloud.send_message(text, to=to)
+
+    registry.register(Tool('send_whatsapp',
+                           'Envía un mensaje de WhatsApp vía Cloud API. Requiere WHATSAPP_TOKEN y WHATSAPP_PHONE_NUMBER_ID en .env. Informa éxito solo si la API confirma.',
+                           _send_whatsapp,
+                           danger=True,
+                           schema={'text': 'string', 'to': 'string'}))
     return registry
 
 

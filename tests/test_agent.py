@@ -134,3 +134,160 @@ def test_rest_server_status_and_auth(tmp_path, monkeypatch):
         assert body['status'] == 'ok' and 'local_time' in body
     finally:
         httpd.shutdown()
+
+
+def test_whatsapp_cloud_send_paths(monkeypatch):
+    import whatsapp_cloud
+    monkeypatch.setenv('WHATSAPP_TOKEN', 'fake-token')
+    monkeypatch.setenv('WHATSAPP_PHONE_NUMBER_ID', '12345')
+    monkeypatch.setenv('WHATSAPP_RECIPIENT', '+51 987 654 321')
+
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {'messages': [{'id': 'wamid.123'}]}
+
+    sent = []
+    monkeypatch.setattr(whatsapp_cloud.requests, 'post',
+                        lambda url, data, headers, timeout: sent.append((url, data, headers)) or FakeResponse())
+    out = whatsapp_cloud.send_message('hola desde JARVIS')
+    assert out['sent'] is True and out['message_id'] == 'wamid.123' and out['to'] == '51987654321'
+    url, data, headers = sent[0]
+    assert '12345/messages' in url and headers['Authorization'] == 'Bearer fake-token'
+
+    class FakeError(FakeResponse):
+        status_code = 401
+        def json(self):
+            return {'error': {'message': 'invalid token'}}
+
+    monkeypatch.setattr(whatsapp_cloud.requests, 'post',
+                        lambda *args, **kwargs: FakeError())
+    out = whatsapp_cloud.send_message('hola')
+    assert '401' in out['error'] and 'invalid token' in out['error']
+
+    monkeypatch.delenv('WHATSAPP_TOKEN')
+    assert 'no está configurado' in whatsapp_cloud.send_message('hola')['error']
+
+
+def test_whatsapp_webhook_verify_and_signature(monkeypatch):
+    import whatsapp_cloud, hashlib, hmac
+    monkeypatch.setenv('WHATSAPP_VERIFY_TOKEN', 'verify-me')
+    assert whatsapp_cloud.verify_webhook({'hub.mode': 'subscribe', 'hub.verify_token': 'verify-me', 'hub.challenge': '12345'}) == '12345'
+    assert whatsapp_cloud.verify_webhook({'hub.mode': 'subscribe', 'hub.verify_token': 'wrong', 'hub.challenge': '12345'}) is None
+    monkeypatch.delenv('WHATSAPP_APP_SECRET', raising=False)
+    assert whatsapp_cloud.verify_signature(b'{}', 'sha256=abc') is False  # sin secreto, todo se rechaza
+    monkeypatch.setenv('WHATSAPP_APP_SECRET', 'shh')
+    digest = hmac.new(b'shh', b'{"entry":[]}', hashlib.sha256).hexdigest()
+    assert whatsapp_cloud.verify_signature(b'{"entry":[]}', 'sha256=' + digest) is True
+    assert whatsapp_cloud.verify_signature(b'{"entry":[]}', 'sha256=' + '0' * 64) is False
+
+
+def test_whatsapp_parse_inbound():
+    import whatsapp_cloud
+    payload = {'entry': [{'changes': [{'value': {
+        'contacts': [{'wa_id': '51987654321', 'profile': {'name': 'Señor'}}],
+        'messages': [{'from': '51987654321', 'id': 'wamid.1', 'type': 'text', 'text': {'body': 'hola'}},
+                     {'from': '51987654321', 'id': 'wamid.2', 'type': 'image'}]}}]}]}
+    messages = whatsapp_cloud.parse_inbound(payload)
+    assert messages == [{'from': '51987654321', 'id': 'wamid.1', 'text': 'hola', 'name': 'Señor'}]
+
+
+def _whatsapp_post(handler, port, body, signature=None):
+    import urllib.request, urllib.error
+    headers = {'Content-Type': 'application/json'}
+    if signature:
+        headers['X-Hub-Signature-256'] = signature
+    req = urllib.request.Request(f'http://127.0.0.1:{port}/whatsapp/webhook',
+                                 data=body, headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(req) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read() or b'{}')
+
+
+def test_whatsapp_webhook_flow(tmp_path, monkeypatch):
+    import json as _json
+    import whatsapp_cloud
+    from agent import server as agent_server
+    from agent.tools import build_default_registry
+    monkeypatch.setenv('WHATSAPP_APP_SECRET', 'secret')
+    monkeypatch.setenv('WHATSAPP_RECIPIENT', '51987654321')
+    monkeypatch.setattr(agent_server, 'load_or_create_token', lambda: 'tok')
+    calls, replies = [], []
+    monkeypatch.setattr(whatsapp_cloud, 'send_message',
+                        lambda body, to=None, timeout=20: replies.append((body, to)) or {'sent': True})
+    registry = build_default_registry()
+    httpd = None
+    from http.server import ThreadingHTTPServer
+    httpd = ThreadingHTTPServer(('127.0.0.1', 0),
+                                agent_server.make_handler(registry, 'tok',
+                                                          whatsapp_handler=lambda text: calls.append(text) or 'respuesta del cerebro'))
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    port = httpd.server_address[1]
+    import hmac, hashlib
+    body = _json.dumps({'entry': [{'changes': [{'value': {
+        'contacts': [{'wa_id': '51987654321', 'profile': {'name': 'Señor'}}],
+        'messages': [{'from': '51987654321', 'id': 'w1', 'type': 'text', 'text': {'body': '¿qué hora es?'}}]}}]}]}).encode()
+    signature = 'sha256=' + hmac.new(b'secret', body, hashlib.sha256).hexdigest()
+    code, payload = _whatsapp_post(None, port, body, signature)
+    assert code == 200 and payload['processed'] == 1
+    assert calls == ['¿qué hora es?'] and replies == [('respuesta del cerebro', '51987654321')]
+    # intruso: mismo webhook, otro número → ignorado
+    calls.clear()
+    body2 = body.replace(b'51987654321', b'99999999999')
+    signature2 = 'sha256=' + hmac.new(b'secret', body2, hashlib.sha256).hexdigest()
+    code, payload = _whatsapp_post(None, port, body2, signature2)
+    assert code == 200 and payload['processed'] == 0 and calls == []
+    # firma inválida → rechazado
+    code, _ = _whatsapp_post(None, port, body, 'sha256=' + '0' * 64)
+    assert code == 503
+    httpd.shutdown()
+
+
+def test_disk_watchdog_journals_only_on_transition(monkeypatch, tmp_path):
+    import action_log
+    from agent import watchdogs
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    monkeypatch.setattr(watchdogs, '_LAST', {'disk_low': False})
+    class FakeDisk:
+        def __init__(self, percent):
+            self.percent = percent
+    monkeypatch.setattr(watchdogs.psutil, 'disk_usage', lambda root: FakeDisk(50))
+    assert watchdogs.disk_watchdog(90)['low'] is False
+    assert action_log.entries() == []
+    monkeypatch.setattr(watchdogs.psutil, 'disk_usage', lambda root: FakeDisk(95))
+    watchdogs.disk_watchdog(90)
+    watchdogs.disk_watchdog(90)  # segunda vez: sin duplicado
+    errors = [e for e in action_log.entries() if 'disco' in str(e).lower()]
+    assert len(errors) == 1 and '95 por ciento' in errors[0]['detail']['error']
+
+
+def test_planifica_shortcut(tmp_path, monkeypatch):
+    import memory
+    import persistent_brain
+    import action_log
+    from types import SimpleNamespace
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    mem = memory.JarvisMemory(tmp_path / 'm.sqlite3')
+    class FakeBrain:
+        model = 'fake'
+        class client: pass
+        instructions = 'fake'
+        history = []
+    brain = persistent_brain.PersistentBrain.__new__(persistent_brain.PersistentBrain)
+    brain.brain = FakeBrain()
+    brain.memory = mem
+    brain.model = 'fake'
+    brain.pending_reminder_choices = None
+    brain.pending_weather = None
+    brain.pending_delete_created = None
+    brain.weather_event = lambda *_: None
+    brain.pending_reminder_deadline = 0
+    brain.pending_reminder_question = None
+    brain.base_instruction = 'fake'
+    brain.approve = lambda *_, **__: False
+    monkeypatch.setenv('GEMINI_API_KEY', '')  # sin clave → descomposición honesta de un paso
+    answer = brain.ask('planifica: revisar el estado de las pruebas')
+    assert 'Plan' in answer and 'revisar el estado' in answer and '¿Necesitas algo más?' in answer
