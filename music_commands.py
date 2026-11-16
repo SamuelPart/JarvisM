@@ -42,7 +42,7 @@ class MusicTrace:
 
     def __getattr__(self, name):
         target = getattr(self.controller, name)
-        if name not in ('play_music', 'stop_music'):
+        if name not in ('play_music', 'stop_music', 'whatsapp_prepare'):
             return target
         def tracked(*args, **kwargs):
             try:

@@ -35,6 +35,21 @@ class VoiceSession:
             return False
         self.status('Esperando autorización por voz')
         try:
+            if name == 'whatsapp_prepare':
+                phone, message = args.get('phone'), args.get('message')
+                if not isinstance(phone, str) or not isinstance(message, str) or len(message) > 700:
+                    self.voice.speak_wait('No puedo leer el borrador completo por voz; usa el chat para revisarlo.')
+                    return False
+                prompt = (f'Para el número {phone}, el mensaje es: {message}. '
+                          '¿Abro este borrador de WhatsApp? Diga autorizo para abrirlo. '
+                          'No puedo enviarlo automáticamente; deberá pulsar Enviar.')
+                if not self.voice.speak_wait(prompt) or self.stop_event.is_set():
+                    return False
+                try:
+                    answer = self.listen()
+                except Exception:
+                    return False
+                return not self.stop_event.is_set() and is_approval(answer)
             details = json.dumps(args, ensure_ascii=False, sort_keys=True)
             if len(details) > 800:
                 self.voice.speak_wait('La solicitud es demasiado larga para confirmarla por voz. La acción fue rechazada.')

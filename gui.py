@@ -581,7 +581,8 @@ class JarvisWindow(QMainWindow):
         self.set_task_state('approval')
         self.status.setText('Esperando tu autorización en el chat…')
         self.approval_pending = True
-        privacy = ('\nSe capturará la pantalla completa y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
+        privacy = ('\nSe abrirá un borrador de WhatsApp; no se enviará automáticamente. Revisa el número y el texto y pulsa Enviar en WhatsApp.'
+                   if name == 'whatsapp_prepare' else '\nSe capturará la pantalla completa y se enviará a NVIDIA; la descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_screen' else '\nLa imagen se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
                    if name == 'inspect_image' else '\nSe buscarán correos en Gmail y sus metadatos pueden enviarse al proveedor del chat.'
                    if name == 'search_gmail' else '\nSe descargará el adjunto de Gmail y se enviará a NVIDIA; su descripción puede enviarse al proveedor del chat.'
@@ -922,10 +923,10 @@ def main():
         text = ('JARVIS funcionará con los permisos de tu usuario; no lo ejecutes como administrador.\n\n'
                 '¿Autorizas de forma persistente, sin preguntar cada vez, búsquedas, música, abrir aplicaciones y páginas, '
                 'consultar y crear recordatorios, leer, crear, modificar y mover archivos, controlar volumen y brillo, '
-                'preparar borradores de WhatsApp y buscar, leer, enviar, responder y clasificar Gmail? También activará el resumen inicial y '
+                'buscar, leer, enviar, responder y clasificar Gmail? También activará el resumen inicial y '
                 'las actualizaciones automáticas de código y dependencias desde el remoto Git configurado.\n\n'
                 'Puede cometer errores o seguir contenido malicioso; tus datos pueden enviarse a proveedores externos. '
-                'Los comandos de terminal, control directo del ratón y teclado e imágenes seguirán requiriendo autorización. '
+                'Cada borrador de WhatsApp, las acciones de administrador, comandos de terminal, control directo del ratón y teclado e imágenes seguirán requiriendo autorización. '
                 'Puedes cambiar los permisos en Ajustes.\n\n'
                 + ('Sí: iniciar con automatización. No: iniciar sin concederla. Cancelar: no iniciar.' if first else
                    'Sí: activar. No: mantener desactivada. Cancelar: salir.'))

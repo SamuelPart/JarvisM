@@ -24,6 +24,7 @@ import gmail_access
 import calendar_access
 import startup_briefing
 import routines
+import privileged_tasks
 
 
 class SystemController:
@@ -32,6 +33,12 @@ class SystemController:
         if self.system not in ('Windows', 'Linux'):
             raise RuntimeError('Solo Windows y Linux son compatibles.')
         self.music = MusicPlayer()
+
+    def install_program(self, package: str) -> dict:
+        return privileged_tasks.install_program(package)
+
+    def update_system(self) -> dict:
+        return privileged_tasks.update_system()
 
     def open_app(self, name: str) -> dict:
         return routines.open_app(name)

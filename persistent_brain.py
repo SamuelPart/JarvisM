@@ -90,7 +90,15 @@ class PersistentBrain:
                 self.brain.controller = original
             if trace.results:
                 name, result = trace.results[-1]
-                answer = format_result(name, result)
+                if name == 'whatsapp_prepare':
+                    if not isinstance(result, dict) or result.get('error'):
+                        answer = 'No pude preparar el borrador de WhatsApp.'
+                    elif result.get('opened'):
+                        answer = 'Solicité abrir el borrador en WhatsApp. Debes pulsar Enviar; no he enviado el mensaje.'
+                    else:
+                        answer = 'No pude solicitar la apertura del borrador de WhatsApp; no se envió el mensaje.'
+                else:
+                    answer = format_result(name, result)
             elif is_music_action_request(text):
                 answer = 'No llegué a iniciar la música, señor. Pídame «pon la canción» y su nombre.'
 

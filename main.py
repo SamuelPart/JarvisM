@@ -77,7 +77,7 @@ def main():
     if not initial_security():
         print('Inicio cancelado.'); return 1
     if not read_state().get('automation_asked'):
-        granted = confirm('¿Autoriza permanentemente búsquedas, música, abrir sitios y aplicaciones, agenda, leer y modificar archivos, volumen, brillo, borradores de WhatsApp, Gmail (incluyendo envío), resumen inicial y actualizaciones automáticas de código y dependencias? Los datos pueden enviarse a proveedores externos; errores o contenido malicioso pueden causar acciones no deseadas. Terminal, ratón y teclado e imágenes siguen requiriendo autorización. Puede cambiar permisos en Ajustes.')
+        granted = confirm('¿Autoriza permanentemente búsquedas, música, abrir sitios y aplicaciones, agenda, leer y modificar archivos, volumen, brillo, Gmail (incluyendo envío), resumen inicial y actualizaciones automáticas de código y dependencias? Los datos pueden enviarse a proveedores externos; errores o contenido malicioso pueden causar acciones no deseadas. WhatsApp, acciones de administrador, terminal, ratón y teclado e imágenes siguen requiriendo autorización. Puede cambiar permisos en Ajustes.')
         try:
             set_automation_permission(granted)
         except OSError:

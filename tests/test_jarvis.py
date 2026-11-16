@@ -1200,3 +1200,64 @@ def test_updater_restart_uses_requested_entrypoint(monkeypatch, tmp_path):
     assert called[0][1][1] == str(tmp_path / 'gui.py')
     with pytest.raises(ValueError):
         updater.restart('../other.py')
+
+
+def test_privileged_apt_is_scoped_and_stops_on_failure(monkeypatch):
+    import privileged_tasks as admin
+    monkeypatch.setattr(admin.platform, 'system', lambda: 'Linux')
+    monkeypatch.setattr(admin.os.path, 'isfile', lambda path: True)
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stderr='', stdout='')
+    monkeypatch.setattr(admin.subprocess, 'run', run)
+    assert admin.install_program('vlc')['ok']
+    assert calls[0] == ['/usr/bin/pkexec', '/usr/bin/apt-get', 'install', '-y', '--', 'vlc']
+    for invalid in ('-y', 'vlc;id', 'vlc foo', '../vlc', 'vlc=1'):
+        with pytest.raises(ValueError): admin.install_program(invalid)
+    assert admin.update_system()['ok']
+    assert calls[1][2:] == ['update']
+    assert calls[2][2:4] == ['upgrade', '-y']
+    calls.clear()
+    monkeypatch.setattr(admin.subprocess, 'run', lambda args, **kwargs: calls.append(args) or SimpleNamespace(returncode=1, stderr='secret', stdout=''))
+    result = admin.update_system()
+    assert not result['ok'] and result['stage'] == 'update' and len(calls) == 1
+    assert 'secret' not in str(result)
+
+
+def test_whatsapp_draft_requires_fresh_approval_even_with_automation(tmp_path, monkeypatch):
+    import permissions
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
+    permissions.set_automation_permission(True)
+    assert not permissions.preapproved('whatsapp_prepare')
+    assert not permissions.preapproved('install_program')
+    assert not permissions.preapproved('update_system')
+
+
+def test_whatsapp_voice_reads_exact_draft_and_requires_approval():
+    from voice_session import VoiceSession
+    class Voice:
+        def __init__(self): self.spoken = []
+        def speak_wait(self, message): self.spoken.append(message); return True
+    voice = Voice()
+    session = VoiceSession(None, voice, lambda: 'autorizo')
+    assert session.approve('whatsapp_prepare', {'phone': '+51987654321', 'message': 'Hola, ¿cómo estás?'})
+    assert '+51987654321' in voice.spoken[0] and 'Hola, ¿cómo estás?' in voice.spoken[0]
+    assert 'No puedo enviarlo automáticamente' in voice.spoken[0]
+    assert not VoiceSession(None, voice, lambda: 'no').approve('whatsapp_prepare', {'phone': '+51987654321', 'message': 'hola'})
+
+
+def test_whatsapp_tool_does_not_let_model_claim_message_was_sent(tmp_path, monkeypatch):
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    calls = []
+    def post(*args, **kwargs):
+        calls.append(True)
+        msg = ({'content': '', 'tool_calls': [{'id': 't1', 'function': {'name': 'whatsapp_prepare', 'arguments': '{"phone":"+51987654321","message":"Hola"}'}}]}
+               if len(calls) == 1 else {'content': 'Mensaje enviado.'})
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': msg}]})
+    controller = SimpleNamespace(whatsapp_prepare=lambda **kwargs: {'opened': True, 'sent': False})
+    agent = PersistentBrain(NvidiaBrain('key', controller, lambda *_: True, post=post), JarvisMemory(tmp_path / 'memory.db'))
+    result = agent.ask('Envía hola por WhatsApp al +51987654321')
+    assert 'no he enviado' in result and 'debes pulsar' in result.lower()
