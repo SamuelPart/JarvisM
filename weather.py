@@ -1,9 +1,10 @@
-"""On-demand weather from Open-Meteo; geocoding via OSM and country capitals."""
+"""On-demand Open-Meteo weather, OSM geocoding and bundled country capitals."""
 from __future__ import annotations
 import math
+import json
+from pathlib import Path
 import re
 import unicodedata
-from urllib.parse import quote
 import requests
 
 USER_AGENT = 'JarvisM/1.0 (desktop weather; https://github.com/SamuelPart/JarvisM)'
@@ -31,54 +32,44 @@ def _norm(value):
 
 
 def _fetch(url, params):
+    service = 'OpenStreetMap' if 'nominatim.openstreetmap.org' in url else 'Open-Meteo'
     try:
         response = requests.get(url, params=params, headers={'User-Agent': USER_AGENT, 'Accept-Language': 'es'},
                                 timeout=(5, 12), allow_redirects=False)
         if response.status_code == 404:
             return None
         if response.status_code != 200:
-            raise WeatherError('El servicio del clima no respondió correctamente. Inténtalo de nuevo.')
+            raise WeatherError(f'{service} no respondió correctamente (HTTP {response.status_code}). Inténtalo de nuevo.')
         return response.json()
-    except (requests.RequestException, ValueError) as exc:
-        raise WeatherError('No pude conectar con el servicio del clima. Revisa tu conexión.') from exc
+    except requests.Timeout as exc:
+        raise WeatherError(f'{service} tardó demasiado en responder. Inténtalo de nuevo.') from exc
+    except requests.RequestException as exc:
+        raise WeatherError(f'No pude conectar con {service}. Revisa la conexión o inténtalo más tarde.') from exc
+    except ValueError as exc:
+        raise WeatherError(f'{service} devolvió una respuesta inválida.') from exc
 
 
 def _country(name):
-    # REST Countries' name endpoint does not reliably search translated names.
-    # Query its translation endpoint too, then require an exact alias match so
-    # a city or a partial country name is never silently treated as a country.
+    # Country names and capitals are bundled locally, so a third-party country
+    # lookup outage cannot prevent a weather request. Only exact aliases match.
+    try:
+        with (Path(__file__).resolve().parent / 'data' / 'countries.json').open(encoding='utf-8') as source:
+            countries = json.load(source)
+    except (OSError, ValueError) as exc:
+        raise WeatherError('No pude leer la lista local de países. Actualiza o reinstala JARVIS.') from exc
     wanted = _norm(name)
-    matches = {}
-    service_failed = False
-    succeeded = False
-    for endpoint in ('name', 'translation'):
-        try:
-            result = _fetch('https://restcountries.com/v3.1/' + endpoint + '/' + quote(name, safe=''),
-                            {'fields': 'name,translations,capital,cca2,cca3'})
-            succeeded = True
-        except WeatherError:
-            service_failed = True
-            continue
-        if not isinstance(result, list):
-            continue
-        for item in result:
-            if not isinstance(item, dict):
-                continue
-            base, translations = item.get('name') or {}, item.get('translations') or {}
-            if not isinstance(base, dict) or not isinstance(translations, dict):
-                continue
-            names = [base.get('common', ''), base.get('official', ''), item.get('cca2', ''), item.get('cca3', '')]
-            for entry in translations.values():
-                if isinstance(entry, dict):
-                    names += [entry.get('common', ''), entry.get('official', '')]
-            if wanted and wanted in {_norm(n) for n in names if n}:
-                key = item.get('cca2') or item.get('cca3') or str(base.get('common'))
-                matches[key] = item
-    if len(matches) == 1:
-        return next(iter(matches.values()))
-    if not succeeded and service_failed:
-        raise WeatherError('No pude consultar el servicio de países. Revisa tu conexión e inténtalo de nuevo.')
-    return None
+    matches = []
+    for item in countries:
+        base = item.get('name') or {}
+        translations = item.get('translations') or {}
+        names = [base.get('common', ''), base.get('official', ''), item.get('cca2', ''), item.get('cca3', '')]
+        names.extend(item.get('altSpellings') or [])
+        for entry in translations.values():
+            if isinstance(entry, dict):
+                names.extend([entry.get('common', ''), entry.get('official', '')])
+        if wanted and wanted in {_norm(n) for n in names if isinstance(n, str) and n}:
+            matches.append(item)
+    return matches[0] if len(matches) == 1 else None
 
 
 def _geocode(query, forced_country=None, allow_top=False):
@@ -142,7 +133,7 @@ def get_weather(location):
         try:
             country = _country(location)
         except WeatherError as exc:
-            # A geocoder may still resolve a city if the country service is down.
+            # A geocoder may still resolve a city if the local list is unavailable.
             country_error = exc
     if country:
         capitals = country.get('capital') or []

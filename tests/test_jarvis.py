@@ -2021,7 +2021,7 @@ def test_weather_http_failures_are_not_disguised_as_weather(monkeypatch):
     monkeypatch.setattr(weather.requests, 'get', timeout)
     with pytest.raises(weather.WeatherError) as error:
         weather._fetch('https://api.open-meteo.com/v1/forecast', {})
-    assert 'conectar' in str(error.value) and 'private internals' not in str(error.value)
+    assert 'Open-Meteo' in str(error.value) and 'tardó demasiado' in str(error.value) and 'private internals' not in str(error.value)
 
 
 def test_weather_failure_shows_no_fabricated_values(tmp_path, monkeypatch):
@@ -2040,18 +2040,12 @@ def test_weather_failure_shows_no_fabricated_values(tmp_path, monkeypatch):
     assert [e[0] for e in events] == ['loading', 'error']
 
 
-def test_country_recognizes_spanish_translation_when_name_endpoint_misses(monkeypatch):
+def test_country_lookup_is_local_and_recognizes_spanish_without_network(monkeypatch):
     import weather
-    calls = []
-    peru = {'name': {'common': 'Peru', 'official': 'Republic of Peru'},
-            'translations': {'spa': {'common': 'Perú', 'official': 'República del Perú'}},
-            'capital': ['Lima'], 'cca2': 'PE', 'cca3': 'PER'}
-    def fetch(url, params):
-        calls.append(url)
-        return [peru] if '/translation/' in url else None
-    monkeypatch.setattr(weather, '_fetch', fetch)
-    assert weather._country('Perú') == peru
-    assert any('/translation/' in url for url in calls)
+    monkeypatch.setattr(weather, '_fetch', lambda *_: pytest.fail('No debe consultar un servicio de países'))
+    peru = weather._country('Perú')
+    assert peru['cca2'] == 'PE' and peru['capital'] == ['Lima']
+    assert weather._country('España')['cca2'] == 'ES'
     assert weather._country('Perúx') is None
 
 
