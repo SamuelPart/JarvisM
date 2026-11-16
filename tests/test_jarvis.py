@@ -2376,3 +2376,52 @@ def test_conversation_mode_not_persisted_by_default():
     assert session.conversation_mode is False
     session.set_conversation_mode(True)
     assert session.conversation_mode is True
+
+
+def test_explicit_remember_fact_parsing():
+    from learning import explicit_fact
+    assert explicit_fact('recuerda que odio el café') == 'odio el café'
+    assert explicit_fact('Recuerda que prefiero respuestas breves.') == 'prefiero respuestas breves'
+    assert explicit_fact('recuerda esto: trabajo en Trujillo') == 'trabajo en Trujillo'
+    assert explicit_fact('recuerda') is None
+    assert explicit_fact('hola, recuerda que vendrás mañana ¿verdad?') is None
+
+
+def test_parse_facts_tolerates_model_output():
+    from learning import parse_facts
+    assert parse_facts('["Prefiere respuestas breves", "Le gusta el jazz"]') == ['Prefiere respuestas breves', 'Le gusta el jazz']
+    assert parse_facts('Claro, aquí tienes: ["Odia el calor.", "", 5]') == ['Odia el calor.']
+    assert parse_facts('[]') == []
+    assert parse_facts('no es json') == []
+    assert parse_facts('["Prefiere respuestas breves"] ') == ['Prefiere respuestas breves']
+
+
+def test_merge_facts_dedupes_dates_and_caps(tmp_path):
+    import memory as memory_module
+    mem = memory_module.JarvisMemory(tmp_path / 'mem.db')
+    mem.set_preferences('Prefiero respuestas breves')
+    assert mem.get_preferences() == 'Prefiero respuestas breves'
+    from learning import merge_facts
+    added = merge_facts(mem, ['Odia el calor', 'odia el calor '], date='2026-11-16')
+    assert added == 1
+    stored = mem.get_preferences()
+    assert 'Odia el calor' in stored and '(2026-11-16)' in stored
+    # Re-adding the same fact through a different case does not duplicate it
+    assert merge_facts(mem, ['ODIA EL CALOR'], date='2026-11-16') == 0
+    # Cap: oldest learned bullet gets dropped first with big facts
+    many = [f'hecho número {i} con palabras suficientes para ocupar espacio' for i in range(60)]
+    assert merge_facts(mem, many, date='2026-11-16') > 0
+    assert len(mem.get_preferences()) <= 2000
+
+
+def test_merge_facts_keeps_user_text_with_priority(tmp_path):
+    import memory as memory_module
+    mem = memory_module.JarvisMemory(tmp_path / 'mem.db')
+    mem.set_preferences('Mi perfil importante: "lengua materna quechua, prefiero trato formal"\n' + 'x' * 1900)
+    from learning import merge_facts
+    before = mem.get_preferences()
+    # Oldest learned content is discarded first; only 99 chars of learned text fit
+    added = merge_facts(mem, [f'hecho {i} con detalle extenso para ocupar el límite de almacenamiento establecido' for i in range(10)], date='2026-11-16')
+    stored = mem.get_preferences()
+    assert 'Mi perfil importante' in stored
+    assert len(stored) <= 2000

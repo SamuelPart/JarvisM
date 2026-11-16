@@ -439,7 +439,7 @@ class MemoryDialog(QDialog):
         info = QLabel('Se guardan las conversaciones completadas en este equipo. Las últimas intervenciones y estas preferencias se envían al proveedor de IA. No guardes contraseñas ni claves aquí.')
         info.setWordWrap(True)
         layout.addWidget(info)
-        layout.addWidget(QLabel('Preferencias que quieres que JARVIS recuerde:'))
+        layout.addWidget(QLabel('Tus preferencias y lo que JARVIS va aprendiendo de ti (puedes leerlo, editarlo y borrarlo):'))
         self.profile = QPlainTextEdit()
         self.profile.setPlaceholderText('Por ejemplo: Prefiero respuestas breves en español.')
         self.profile.setPlainText(window.brain.memory.get_preferences())

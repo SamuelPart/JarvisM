@@ -125,7 +125,18 @@ En la ventana completa pulse «Ajustes» para elegir el color en espera, su tama
 
 ### Memoria entre sesiones
 
-JARVIS guarda localmente los pares de mensajes y respuestas completadas en `.jarvis-memory.sqlite3`, ignorado por Git. En la ventana completa, pulse **Memoria** para escribir preferencias explícitas (por ejemplo, «prefiero respuestas breves») y guardarlas; no se extraen preferencias automáticamente. El botón de borrado elimina conversaciones y preferencias locales y limpia el contexto de la sesión. No borra ajustes visuales, `.env`, copias de seguridad ni información que ya hayan recibido servicios externos.
+JARVIS guarda localmente los pares de mensajes y respuestas completadas en `.jarvis-memory.sqlite3`, ignorado por Git. En la ventana completa, pulse **Memoria** para ver y editar preferencias (también recoge lo que aprende con el uso; mira más abajo). El botón de borrado elimina conversaciones y preferencias locales y limpia el contexto de la sesión. No borra ajustes visuales, `.env`, copias de seguridad ni información que ya hayan recibido servicios externos.
+
+### Lo que JARVIS aprende con el uso
+
+JARVIS **no se reentrena** ni cambia por sí solo; aprende en el sentido de que recuerda mejor. Cuanto más hablen, más contexto relevante tendrá:
+
+- **Aprendizaje automático (activado por defecto):** cada pocas conversaciones que hagan llegar contenido al modelo, JARVIS extrae de ellas hechos estables y duraderos sobre ti declarados por ti mismo (gustos, rutina, contexto, trato preferido) y los incorpora al perfil. Nada se almacena sin pasar por el filtro: no se guardan estados momentáneos, tareas ni datos que solo dijo el asistente.
+- **Al decir «recuerda que …»** (por voz o chat): JARVIS lo guarda en el acto y confirma con «Hecho, señor».
+- **Todo lo aprendido es visible y editable:** abre **Memoria** → «Preferencias»; ahí aparece junto con lo que escribiste tú (marcado con fecha). Puedes editar o borrar cualquier línea; nada se oculta. «Borrar conversaciones y preferencias» elimina también lo aprendido.
+- **Privacidad:** lo aprendido vive solo en tu equipo. El extractor se ejecuta con el proveedor de IA configurado (Gemini o NVIDIA) y solo sobre conversaciones que llegaron al modelo de todas formas; no sobre acciones locales cortas. Usa tokens solo cuando toque el turno de aprendizaje.
+- **Desactivar:** pon `JARVIS_LEARNING=0` en el entorno para apagar la extracción automática (el «recuerda que …» explícito sigue funcionando). Volver a activarlo: quita esa variable o ponla en 1.
+- Sigue siendo el mismo modelo: más contexto sobre ti, no una mente más inteligente ni capacidades nuevas.
 
 Al iniciar, el chat muestra hasta 20 mensajes recientes. Antes de cada nueva petición se envían al proveedor seleccionado los últimos 20 mensajes y las preferencias, además del nuevo mensaje; la base no está cifrada. Evite introducir claves o datos que no desee almacenar o transmitir; proteja su equipo y sus copias de seguridad. SQLite usa `secure_delete`, pero no se garantiza borrado forense en discos, copias o servicios externos. Las llamadas/resultados internos de herramientas y tareas incompletas no se guardan como tal, por lo que una tarea interrumpida no se reanuda exactamente. Las peticiones fallidas no se guardan como turno completado.
 

@@ -3,6 +3,7 @@ import sqlite3
 import re
 import time
 from datetime import datetime
+import learning
 from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
@@ -140,11 +141,20 @@ class PersistentBrain:
             self.memory.add_turn(text, answer)
         except (sqlite3.Error, OSError):
             return answer + '\n\nAviso: no se pudo guardar esta conversación en la memoria local.'
+        learning.maybe_learn(self.memory, self.brain)
         return answer
 
     def ask(self, text):
         # Handle common automation requests without depending on a model to call tools.
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        remember = learning.explicit_fact(clean)
+        if remember:
+            try:
+                learning.merge_facts(self.memory, [remember])
+                answer = 'Hecho, señor. Lo recordaré.'
+            except (sqlite3.Error, OSError, ValueError):
+                answer = 'No pude guardar eso en la memoria local.'
+            return self._remember_answer(text, answer)
         weather_query = parse_weather_request(clean)
         if self.pending_weather and time.monotonic() > self.pending_weather['deadline']:
             self.pending_weather = None
