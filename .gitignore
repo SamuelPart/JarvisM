@@ -35,3 +35,4 @@ android-app/local.properties
 android-app/app/build/
 .jarvis-crash.log
 .jarvis-actions.jsonl
+.agent-memory/

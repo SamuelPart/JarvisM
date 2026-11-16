@@ -274,6 +274,18 @@ No hace falta saber rutas. Ejemplos:
 
 El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia.
 
+## Arquitectura autónoma (paquete `agent/`)
+
+Además del núcleo ya existente de JARVIS (memoria SQLite, registro de acciones, permisos), `agent/` añade una arquitectura agéntica en cuatro pilares, **sin tocar el flujo de escritorio existente**:
+
+- **`agent/core.py` — Sistema 2 (lento):** `Orchestrator` toma un objetivo, lo descompone en pasos tipados (`GeminiDecomposer`, ≤8 pasos, JSON estricto; sin clave o sin LLM degrada a un único paso honesto) y **lo ejecuta solo cuando se le pide explícitamente**. Cada paso va por el registro de herramientas; los pasos peligrosos requieren tu confirmación (por defecto, denegado). El resultado queda anotado en la memoria como decisión.
+- **`agent/memory.py` — memoria persistente:** `SOUL.md` (identidad, reglas duras) y `MEMORY.md` (Preferencias, Decisiones, Proyectos, Pendiente) en `.agent-memory/` (excluido de Git), editables a mano, escritas de forma atómica. `context_block()` inyecta lo relevante en los prompts. Es inventario de hechos, no instrucciones.
+- **`agent/reflex.py` — Sistema 1 (rápido):** clasificador determinista de decisiones estructuradas (`sí/no`, `selección de N`, `puntuación acotada`) con enums y confianza; nada de texto libre para acciones. Separado de la generación de texto.
+- **`agent/tools.py` + `agent/server.py` — actuación/cuerpo:** registro único de herramientas con destructivas bloqueadas salvo confirmación humana explícita; API REST **opcional** (`python -m agent.server`, token en `.agent-memory/rest-token`, `POST /action` con `"confirmed": true` para peligrosas, localhost por defecto) pensada también para ESP32/Arduino vía HTTP puro, sin que el hardware procese IA.
+- **`agent/heartbeats.py` — heartbeats:** comprobador en segundo plano (jobs registrados, intervalo, pausa/reanudación, registro de errores). No registra nada por defecto: la autonomía exige registrarla tú.
+
+**Estado honesto:** es el esqueleto funcional, con pruebas, no un asistente móvil/mensajería operativo. Nada está cableado a la ventana de escritorio ni a Telegram/WhatsApp/Discord todavía; el canal de mensajería es el siguiente paso y requiere tu elección y tus claves (p. ej. un bot de Telegram). Los datos de `.agent-memory/` no salen del equipo; al llamar al modelo, el contexto incluye solo lo que `context_block()` inyecte.
+
 ## Registro de acciones (memoria de hechos)
 
 JARVIS guarda un **registro local de acciones ejecutadas** en `.jarvis-actions.jsonl` (excluido de Git): nombre de la herramienta, argumentos abreviados y resultado real (OK/FALLO), con hora. Lo rotan a las últimas 200 entradas. Se escriben en él tanto las acciones del chat (las que el modelo pide tras autorización) como los comandos locales directos (música, clima, rutinas, recordatorios, teléfono, Enviados).
