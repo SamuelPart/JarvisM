@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity implements RecognitionListener {
     private TextView history, status;
+    private ScrollView chatScroll;
     private EditText input;
     private SpeechRecognizer recognizer;
     private TextToSpeech voice;
@@ -49,10 +50,10 @@ public final class MainActivity extends Activity implements RecognitionListener 
         root.addView(title);
         orb = new Orb(); root.addView(orb, new LinearLayout.LayoutParams(-1, 160));
         status = text("Listo · funciona sin la laptop", 13, 0xffa6cddd); status.setGravity(Gravity.CENTER); root.addView(status);
-        ScrollView scroll = new ScrollView(this);
+        chatScroll = new ScrollView(this);
         history = text("JARVIS: Hola, señor. Puedo conversar, consultar la hora y la batería, y abrir algunas aplicaciones.\n", 15, Color.WHITE);
         history.setTextIsSelectable(true);
-        scroll.addView(history); root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        chatScroll.addView(history); root.addView(chatScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         input = new EditText(this); input.setSingleLine(false); input.setMaxLines(3); input.setHint("Escribe tu mensaje"); input.setTextColor(Color.WHITE); input.setHintTextColor(0xff8ca3b7); root.addView(input);
         LinearLayout row = new LinearLayout(this);
         Button send = button("Enviar"); send.setOnClickListener(v -> { if (busy) return; String text = input.getText().toString().trim(); input.setText(""); submit(text); });
@@ -87,7 +88,13 @@ public final class MainActivity extends Activity implements RecognitionListener 
           .setMessage("Al activar esta opción, JARVIS mantendrá el micrófono activo con una notificación visible. El reconocimiento de voz del teléfono puede enviar audio a su proveedor. Android puede detenerlo o limitarlo por batería. Puedes apagarlo desde la notificación. ¿Continuar?")
           .setPositiveButton("Activar", (d, w) -> requestAudio("wake")) .setNegativeButton("Cancelar", null).show();
     }
+    private void appendChat(String value) {
+        history.append(value);
+        chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
     private void requestAudio(String action) {
+        if (busy) { status.setText("Espera a que termine la respuesta…"); return; }
         pendingPermission = action;
         ArrayList<String> missing = new ArrayList<>();
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.RECORD_AUDIO);
@@ -122,12 +129,12 @@ public final class MainActivity extends Activity implements RecognitionListener 
         if (text.isEmpty() || busy) return;
         stopService(new Intent(this, WakeService.class));
         if (voice != null) voice.stop();
-        history.append("\nTÚ: " + text + "\n"); input.setEnabled(false); busy = true; status.setText("Pensando…"); orb.setThinking(true);
+        appendChat("\nTÚ: " + text + "\n"); input.setEnabled(false); busy = true; status.setText("Pensando…"); orb.setThinking(true);
         executor.execute(() -> {
             String answer = new JarvisCore(getApplicationContext()).answer(text, true);
             handler.post(() -> {
                 if (destroyed) return;
-                busy = false; input.setEnabled(true); orb.setThinking(false); status.setText("Listo"); history.append("\nJARVIS: " + answer + "\n");
+                busy = false; input.setEnabled(true); orb.setThinking(false); status.setText("Listo"); appendChat("\nJARVIS: " + answer + "\n");
                 if (voiceReady && voice != null) voice.speak(answer, TextToSpeech.QUEUE_FLUSH, null, "chat");
             });
         });

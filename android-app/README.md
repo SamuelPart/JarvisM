@@ -18,6 +18,37 @@ El reconocimiento de voz usa el servicio de Android y **puede enviar el audio a 
 
 Requiere JDK 17, Android SDK con plataforma 35 y herramientas de compilación, Gradle y acceso a Google Maven y repositorios Gradle. En `android-app`, ejecuta `./gradlew assembleDebug`. El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`. El flujo GitHub Actions `Android app` compila y sube ese APK como artefacto temporal cuando está habilitado.
 
-Para compilación continua en GitHub Actions, el repositorio puede añadir `.github/workflows/android-app.yml` que ejecute `./gradlew --no-daemon assembleDebug` con Java 17 y Android SDK 35 y suba `app/build/outputs/apk/debug/app-debug.apk` como artefacto. Esta integración no tiene permiso para crear archivos de flujo de trabajo, por eso no se incluye; la persona administradora puede añadirlo manualmente si lo desea.
+Para compilación continua en GitHub Actions, la persona administradora puede añadir manualmente el archivo `.github/workflows/android-app.yml` (esta integración no tiene permiso para crear archivos de flujo de trabajo, por eso no se incluye en el repositorio):
+
+```yaml
+name: Android app
+on:
+  push:
+    paths: ['android-app/**', '.github/workflows/android-app.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon assembleDebug
+        working-directory: android-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-android-debug
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+```
+
+También puedes abrir la carpeta `android-app/` con Android Studio, esperar la sincronización de Gradle (requiere Internet para Google Maven y la distribución de Gradle) y usar **Run**, o ejecutar `./gradlew assembleDebug` en una máquina con JDK 17 y Android SDK 35.
 
 El APK de depuración es para pruebas; no es una publicación de Play Store. Cada entorno de compilación puede usar una clave de firma distinta, por lo que instalar una versión posterior puede exigir desinstalar la anterior y perder sus datos locales. No distribuya una clave de firma privada ni la clave Gemini. Prueba permisos, voz, pantalla bloqueada, seguridad y consumo de batería en un dispositivo real antes de confiar en ella.

@@ -83,6 +83,7 @@ public final class WakeService extends Service implements RecognitionListener {
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-ES")
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
         try { recognizer.startListening(speech); }
+        catch (SecurityException missingPermission) { stopSelf(); }
         catch (Exception ignored) { schedule(3000); }
     }
     private void say(String text) {
