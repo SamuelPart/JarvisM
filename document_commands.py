@@ -170,15 +170,29 @@ def delete_paths(paths):
     return '. '.join(parts) + '.' if parts else 'No eliminé nada.'
 
 
+def confirm_question(files):
+    listing = ', '.join(f'{index}. {path.name}' for index, path in enumerate(files, 1))
+    if len(files) == 1:
+        return f'Voy a eliminar este archivo: {listing}. ¿Confirmas?'
+    return f'Voy a eliminar estos {len(files)} archivos: {listing}. ¿Confirmas?'
+
+
 def select_delete(command):
-    """Return (paths_to_delete, None) or (candidates, question) when ambiguous."""
+    """Return (paths_to_delete, question, stage).
+
+    stage is None  → delete now (a single, unambiguous target),
+    'confirm'      → list shown, waiting for «sí» before deleting,
+    'choose'       → user must pick which ones before any confirmation.
+    """
     files = delete_candidates(command)
     if not files:
-        return [], 'No hay ningún archivo creado por mí que coincida; no borro archivos que no creé. ¿Necesitas algo más?'
-    if len(files) == 1 or command['plural']:
-        return files, None
+        return [], 'No hay ningún archivo creado por mí que coincida; no borro archivos que no creé.', None
+    if len(files) == 1:
+        return files, None, None
     listing = ', '.join(f'{index}. {path.name}' for index, path in enumerate(files, 1))
-    return files, (f'Hay varios archivos que creé: {listing}. ¿Cuáles elimino: todos, el primero, el segundo…?')
+    if command['plural']:
+        return files, confirm_question(files), 'confirm'
+    return files, (f'Hay varios archivos que creé: {listing}. ¿Cuáles elimino? Di «todos», «el primero», «el segundo»…'), 'choose'
 
 
 def resolve_delete_choice(clean, files):

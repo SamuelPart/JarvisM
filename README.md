@@ -270,9 +270,23 @@ No hace falta saber rutas. Ejemplos:
 
 - **«Créame un archivo pdf de prueba en escritorio»** crea `prueba.pdf` en la carpeta real del escritorio (`xdg-user-dir`); si existe, usa `prueba-2.pdf`, `prueba-3.pdf`… sin sobrescribir nada. Vale igual para Word, Excel, PowerPoint, csv, json, md, txt, rtf y «documentos» (→ **~/Documentos**). Sin ubicación, entiende el escritorio.
 - **«Créame 3 archivos pdf de prueba en escritorio»** crea `prueba.pdf`, `prueba-2.pdf` y `prueba-3.pdf`.
-- **«Elimina el archivo de prueba que creaste»** borra solo archivos que **constan en el registro local** (`.jarvis-actions.jsonl`) como creados por JARVIS (también vale con el nombre exacto: «elimina el archivo prueba.pdf que creaste»). Si la petición no coincide con el atajo determinista, el modelo dispone de la herramienta `delete_created_file`, acotada exactamente igual: acepta solo la ruta registrada al crearlo, te pedirá confirmación (es un borrado) y nunca borrará archivos del usuario ni nada dentro de la carpeta de JARVIS. No borra tus archivos personales, no toca la carpeta del proyecto JARVIS y si no consta ninguno lo dice en vez de tocar nada. Si hay varios coinciden por nombre, pregunta cuáles («todos», «el primero», «el segundo»…).
+- **«Elimina el archivo de prueba que creaste»** borra solo archivos que **constan en el registro local** (`.jarvis-actions.jsonl`) como creados por JARVIS (también vale con el nombre exacto: «elimina el archivo prueba.pdf que creaste»). Si la petición no coincide con el atajo determinista, el modelo dispone de la herramienta `delete_created_file`, acotada exactamente igual: acepta solo la ruta registrada al crearlo, te pedirá confirmación (es un borrado) y nunca borrará archivos del usuario ni nada dentro de la carpeta de JARVIS. No borra tus archivos personales, no toca la carpeta del proyecto JARVIS y si no consta ninguno lo dice en vez de tocar nada. Si hay varios coinciden, la limpieza se hace en **dos pasos fail-closed**: primero pregunta cuáles («todos», «el primero», «el segundo»…) y después, antes de borrar nada, muestra el listado y pide confirmación explícita («sí»). Un «no» o cualquier respuesta ambigua no borra nada; nada se elimina sin ese «sí» (o confirmación equivalente).
 
-El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia.
+El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia (y volverá a pedir tu confirmación).
+
+## HUD futurista (panel local, estilo JARVIS)
+
+[`hud/app.py`](hud/app.py) es un panel de control estilo Iron Man que muestra **datos reales de tu equipo** en tiempo real (sin nube, sin telemetría): fondo negro, neón cyan, Orbitron, 3 columnas (diagnósticos, núcleo ARC + potencia/uptime, módulos/arquitectura/radar).
+
+```bash
+pip install -r requirements.txt   # o: pip install flask psutil
+python hud/app.py                 # abre http://127.0.0.1:5050
+python hud/app.py --host 0.0.0.0  # visible desde la LAN (sin autenticación: úsalo solo en red de confianza)
+```
+
+- La API local es `GET /api/stats` (JSON: CPU total y por núcleo, RAM + SWAP, disco, red up/down en Mb/s calculada por delta entre muestras, batería real, uptime, procesos, «salud» heurística, temperatura si el hardware expone sensores).
+- El frontend (`templates/index.html`) actualiza todo cada **1 s** con `fetch` + `setInterval`, sin recargar; la velocidad de la animación del núcleo reacciona a la carga de CPU.
+- **Límites honestos:** en equipos sin batería (sobremesa) el panel muestra «AC / SIN BATERÍA»; sin sensores, «N/D» en temperatura; los Mb/s de red son el delta entre dos lecturas, no un contador acumulado; el número de barras de CPU es el de núcleos reales de tu máquina; «ACTIVE MODULES» indica disponibilidad de voz/visión/red/memoria local, no es una certificación oficial. Es un HUD decorativo con datos reales, no una herramienta de diagnóstico profesional.
 
 ## Arquitectura autónoma (paquete `agent/`)
 

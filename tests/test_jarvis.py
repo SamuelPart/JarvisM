@@ -2611,8 +2611,8 @@ def test_document_commands_delete_only_ledger(tmp_path, monkeypatch):
     action_log.STATE = state
     candidates = document_commands.delete_candidates({'format': 'pdf', 'plural': True, 'prueba': True})
     assert user_file in candidates and note not in candidates
-    targets, question = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
-    assert question is None and user_file in targets
+    targets, question, stage = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
+    assert question is None and stage is None and targets == [user_file]  # single target: no confirmation needed
     answer = document_commands.delete_paths(targets)
     assert not user_file.exists() and note.exists()
     assert 'Eliminé' in answer
@@ -2629,8 +2629,10 @@ def test_document_commands_delete_ambiguous_and_choice(tmp_path, monkeypatch):
     document_commands.handle_create(document_commands.parse_create('créame 3 archivos pdf de prueba en escritorio'))
     files = document_commands.delete_candidates({'format': 'pdf', 'plural': False, 'prueba': True})
     assert len(files) == 3
-    targets, question = document_commands.select_delete({'format': 'pdf', 'plural': False, 'prueba': True})
-    assert question and '¿Cuáles elimino' in question
+    targets, question, stage = document_commands.select_delete({'format': 'pdf', 'plural': False, 'prueba': True})
+    assert stage == 'choose' and question and '¿Cuáles elimino' in question
+    targets, question, stage = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
+    assert stage == 'confirm' and question and '¿Confirmas?' in question
     picked = document_commands.resolve_delete_choice('todos', files)
     assert picked == files
     picked = document_commands.resolve_delete_choice('el primero', files)
@@ -2650,7 +2652,7 @@ def test_document_commands_delete_refuses_outside_ledger(tmp_path, monkeypatch):
     answer = document_commands.delete_paths([stranger])
     # delete_paths itself only unlinks what it is handed (caller filters by ledger);
     # the stranger is still refused at selection time
-    targets, question = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
+    targets, question, stage = document_commands.select_delete({'format': 'pdf', 'plural': True, 'prueba': True})
     assert targets == [] and 'no borro archivos que no creé' in question
 
 
@@ -2689,7 +2691,7 @@ def test_persistent_brain_deterministic_create_delete(tmp_path, monkeypatch):
     answer = brain.ask('créame un archivo pdf de prueba en escritorio')
     assert str(desktop / 'prueba.pdf') in answer
     assert (desktop / 'prueba.pdf').is_file()
-    answer = brain.ask('elimina el archivo de prueba que creaste')
+    answer = brain.ask('elimina el archivo de prueba que creaste')  # un solo archivo: directo
     assert 'Eliminé' in answer and not (desktop / 'prueba.pdf').exists()
 
 
@@ -2704,9 +2706,88 @@ def test_delete_created_file_natural_phrasing(tmp_path, monkeypatch):
     document_commands.handle_create(document_commands.parse_create('créame un archivo pdf de prueba en escritorio'))
     command = document_commands.parse_delete('elimina el archivo prueba.pdf que creaste')
     assert command and command['filenames'] == ['prueba.pdf']
-    targets, question = document_commands.select_delete(command)
-    assert targets == [desktop / 'prueba.pdf'] and question is None
+    targets, question, stage = document_commands.select_delete(command)
+    assert targets == [desktop / 'prueba.pdf'] and question is None and stage is None
     command = document_commands.parse_delete('elimina el archivo que creaste')
     assert command and command['filenames'] == []
-    targets, question = document_commands.select_delete(command)
+    targets, question, stage = document_commands.select_delete(command)
     assert targets == [desktop / 'prueba.pdf']
+
+
+def _brain_with_tmp_desktop(tmp_path, monkeypatch):
+    import memory
+    import persistent_brain
+    import action_log
+    import documents
+    desktop = tmp_path / 'Escritorio'
+    desktop.mkdir()
+    monkeypatch.setattr(documents, 'desktop_dir', lambda: desktop)
+    monkeypatch.setattr(action_log, 'STATE', tmp_path / 'actions.jsonl')
+    mem = memory.JarvisMemory(tmp_path / 'm.sqlite3')
+
+    class FakeBrain:
+        model = 'fake'
+        class client: pass
+        instructions = 'fake'
+        history = []
+
+    brain = persistent_brain.PersistentBrain.__new__(persistent_brain.PersistentBrain)
+    brain.brain = FakeBrain()
+    brain.memory = mem
+    brain.model = 'fake'
+    brain.pending_reminder_choices = None
+    brain.pending_weather = None
+    brain.pending_delete_created = None
+    brain.weather_event = lambda *_: None
+    brain.pending_reminder_deadline = 0
+    brain.pending_reminder_question = None
+    brain.base_instruction = 'fake'
+    brain.approve = lambda *_, **__: False
+    return brain, desktop
+
+
+def test_delete_multiple_files_waits_for_confirmation(tmp_path, monkeypatch):
+    brain, desktop = _brain_with_tmp_desktop(tmp_path, monkeypatch)
+    brain.ask('créame 2 archivos pdf de prueba en escritorio')
+    assert len(list(desktop.glob('prueba*.pdf'))) == 2
+    answer = brain.ask('elimina los dos archivos pdf de prueba que creaste')
+    assert '¿Confirmas?' in answer
+    assert len(list(desktop.glob('prueba*.pdf'))) == 2  # aún no borra
+    answer = brain.ask('no')
+    assert 'no eliminé' in answer.lower()
+    assert len(list(desktop.glob('prueba*.pdf'))) == 2  # nada borrado
+    answer = brain.ask('elimina los dos archivos pdf de prueba que creaste')
+    assert '¿Confirmas?' in answer
+    answer = brain.ask('sí')
+    assert 'Eliminé' in answer
+    assert len(list(desktop.glob('prueba*.pdf'))) == 0  # confirmado → borrados
+
+
+def test_delete_choose_then_confirm_flow(tmp_path, monkeypatch):
+    brain, desktop = _brain_with_tmp_desktop(tmp_path, monkeypatch)
+    brain.ask('créame 2 archivos pdf de prueba en escritorio')
+    answer = brain.ask('elimina el archivo de prueba que creaste')  # ambiguo en plural/ singular
+    assert '¿Cuáles elimino' in answer
+    answer = brain.ask('todos')
+    assert '¿Confirmas?' in answer
+    assert len(list(desktop.glob('prueba*.pdf'))) == 2
+    answer = brain.ask('vale')
+    assert 'Eliminé' in answer
+    assert len(list(desktop.glob('prueba*.pdf'))) == 0
+
+
+def test_delete_no_candidates_keeps_explicit_message(tmp_path, monkeypatch):
+    brain, desktop = _brain_with_tmp_desktop(tmp_path, monkeypatch)
+    answer = brain.ask('elimina el archivo pdf que creaste')
+    assert 'no borro archivos que no creé' in answer
+    assert brain.pending_delete_created is None
+
+
+def test_confirm_stage_ignores_unrelated_chatter(tmp_path, monkeypatch):
+    brain, desktop = _brain_with_tmp_desktop(tmp_path, monkeypatch)
+    brain.ask('créame 2 archivos pdf de prueba en escritorio')
+    answer = brain.ask('elimina los dos archivos pdf de prueba que creaste')
+    assert '¿Confirmas?' in answer
+    answer = brain.ask('¿qué hora es?')  # no confirma ni cancela: repregunta, fail-closed
+    assert '¿Confirmas' in answer or 'sí' in answer.lower()
+    assert len(list(desktop.glob('prueba*.pdf'))) == 2

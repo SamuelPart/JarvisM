@@ -15,6 +15,7 @@ from google.genai import types
 from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved, authorize_tool
+from approval import is_approved
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
 from weather_commands import parse_weather_request, format_weather
 from phone_commands import parse_phone_request, format_phone_result
@@ -209,15 +210,29 @@ class PersistentBrain:
         if self.pending_delete_created and time.monotonic() > self.pending_delete_created['deadline']:
             self.pending_delete_created = None
         elif self.pending_delete_created:
-            candidates = self.pending_delete_created['files']
+            pending = self.pending_delete_created
+            lowered = re.sub(r'\s+', ' ', (clean or '').lower()).strip()
+            if pending.get('stage') == 'confirm':
+                if is_approved(clean) or re.fullmatch(r'(confirma|confirmado|sip|yes)', lowered):
+                    self.pending_delete_created = None
+                    answer = document_commands.delete_paths(pending['files'])
+                    return self._remember_answer(text, answer + ' ¿Necesitas algo más?')
+                if re.fullmatch(r'(no|cancela|cancelar|ninguno|olv[ií]dalo|mejor no)', lowered):
+                    self.pending_delete_created = None
+                    return self._remember_answer(text, 'De acuerdo, no eliminé ningún archivo.')
+                return self._remember_answer(text, '¿Confirmas el borrado? Di «sí» o «no».')
+            # choose stage: pick which files, then confirm before deleting anything
+            candidates = pending['files']
             picked = document_commands.resolve_delete_choice(clean, candidates)
             if picked is not None:
                 self.pending_delete_created = None
                 if not picked:
-                    answer = 'De acuerdo, no eliminé ningún archivo.'
-                else:
-                    answer = document_commands.delete_paths(picked)
-                return self._remember_answer(text, answer)
+                    return self._remember_answer(text, 'De acuerdo, no eliminé ningún archivo.')
+                self.pending_delete_created = {'files': picked, 'stage': 'confirm',
+                                               'deadline': time.monotonic() + 300}
+                return self._remember_answer(text, document_commands.confirm_question(picked))
+            if is_approved(clean):
+                return self._remember_answer(text, 'Dime cuáles: «todos», «el primero», «el segundo»… o di «no» para cancelar.')
             self.pending_delete_created = None  # abandon and let the model handle the reply
         create_cmd = document_commands.parse_create(clean)
         if create_cmd:
@@ -228,12 +243,15 @@ class PersistentBrain:
             return self._remember_answer(text, answer)
         delete_cmd = document_commands.parse_delete(clean)
         if delete_cmd:
-            targets, question = document_commands.select_delete(delete_cmd)
-            if question:
-                self.pending_delete_created = {'files': targets, 'deadline': time.monotonic() + 300}
+            targets, question, stage = document_commands.select_delete(delete_cmd)
+            if stage:
+                self.pending_delete_created = {'files': targets, 'stage': stage,
+                                               'deadline': time.monotonic() + 300}
+                answer = question
+            elif question:  # sin candidatos: aviso directo, sin pending
                 answer = question
             else:
-                answer = document_commands.delete_paths(targets)
+                answer = document_commands.delete_paths(targets) + ' ¿Necesitas algo más?'
             return self._remember_answer(text, answer)
         plan_request = re.match(r'^(?:planifica|planea|orquesta)\s*[:,-]?\s*(.+)$', clean, re.I | re.S)
         if plan_request:
