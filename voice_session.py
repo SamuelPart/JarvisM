@@ -17,16 +17,60 @@ def wake_request(text):
     match = re.search(r'(?<!\w)jarvis(?!\w)', text, re.IGNORECASE)
     return text[match.end():].strip(' \t,.:;!?¡¿-') if match else None
 
+def _normalize_phrase(text):
+    import unicodedata
+    folded = unicodedata.normalize('NFD', (text or '').casefold())
+    plain = ''.join(char for char in folded if unicodedata.category(char) != 'Mn')
+    words = re.sub(r'[^\w\s]', ' ', plain).split()
+    while words and words[-1] in {'por', 'favor'}:
+        words.pop()
+    return ' '.join(words)
+
+def _is_conversation_on(phrase):
+    norm = _normalize_phrase(phrase)
+    return norm in CONVERSATION_ON
+
+def _is_conversation_off(phrase):
+    norm = _normalize_phrase(phrase)
+    return norm in CONVERSATION_OFF
+
+CONVERSATION_ON = frozenset({
+    'modo conversacion', 'activar conversacion', 'activar el modo conversacion',
+    'activa modo conversacion', 'activa el modo conversacion', 'activa la conversacion',
+    'inicia conversacion', 'inicia el modo conversacion', 'iniciar conversacion',
+    'iniciar el modo conversacion', 'quiero modo conversacion', 'conversa conmigo sin decir jarvis',
+})
+CONVERSATION_OFF = frozenset({
+    'detener conversacion', 'detener la conversacion', 'deten conversacion', 'deten la conversacion', 'desactivar conversacion',
+    'desactivar la conversacion', 'salir de conversacion', 'salir del modo conversacion',
+    'salir de modo conversacion', 'terminar conversacion', 'terminar la conversacion',
+    'finalizar conversacion', 'quiero volver a decir jarvis',
+})
+
 
 class VoiceSession:
-    def __init__(self, brain, voice, listen, status=lambda _: None, connection=lambda _: None):
+    def __init__(self, brain, voice, listen, status=lambda _: None, connection=lambda _: None, conversation_changed=None):
         self.brain, self.voice, self.listen, self.status = brain, voice, listen, status
         self.connection = connection
+        self.conversation_changed = conversation_changed
+        self.conversation_mode = False
         self.stop_event = threading.Event()
         self.reminders = queue.Queue()
 
     def stop(self):
         self.stop_event.set()
+
+    def set_conversation_mode(self, enabled, announce=False):
+        """Live toggle; never persisted across restarts."""
+        enabled = bool(enabled)
+        if enabled == self.conversation_mode:
+            return
+        self.conversation_mode = enabled
+        if callable(self.conversation_changed):
+            try:
+                self.conversation_changed(enabled)
+            except Exception:
+                pass
 
     def queue_reminder(self, title):
         self.queue_announcement('Señor, recordatorio: ' + title)
@@ -126,24 +170,39 @@ class VoiceSession:
 
     def run(self):
         self.brain.approve = self.approve
-        if not self.speak('Señor, micrófono activado. Diga Jarvis para hablar conmigo.'):
+        if not self.speak('Señor, micrófono activado. Diga Jarvis para hablar conmigo, o diga modo conversación para no repetirlo.'):
             self.status('Error: voz no disponible; micrófono apagado')
             return
         while not self.stop_event.is_set():
             self.announce_reminders()
-            self.status('Esperando que digas Jarvis')
+            self.status('Conversación activa · te escucho' if self.conversation_mode else 'Esperando que digas Jarvis')
             try:
                 heard = self.listen()
                 if self.stop_event.is_set():
                     break
-                request = wake_request(heard)
-                if request is None:
-                    continue
-                if not request:
-                    if not self.speak('Le escucho, señor.') or self.stop_event.is_set():
-                        break
-                    self.status('Escuchando tu orden')
-                    request = self.listen().strip()
+                if self.conversation_mode:
+                    stripped = wake_request(heard)
+                    request = stripped if stripped is not None else heard.strip()
+                    norm = _normalize_phrase(request)
+                    if _is_conversation_off(request):
+                        self.set_conversation_mode(False)
+                        self.speak('Modo conversación desactivado. Vuelva a decir Jarvis para hablar conmigo.')
+                        continue
+                    if not norm:
+                        continue
+                else:
+                    request = wake_request(heard)
+                    if request is None:
+                        continue
+                    if _is_conversation_on(request):
+                        self.set_conversation_mode(True)
+                        self.speak('Modo conversación activado. Diga detener conversación para volver a usar el nombre.')
+                        continue
+                    if not request:
+                        if not self.speak('Le escucho, señor.') or self.stop_event.is_set():
+                            break
+                        self.status('Escuchando tu orden')
+                        request = self.listen().strip()
             except TimeoutError:
                 continue
             except Exception as exc:

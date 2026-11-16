@@ -231,6 +231,16 @@ No se han implementado copiar, modificar o borrar archivos, escritura arbitraria
 
 JARVIS puede diagnosticar por voz o chat el micrófono de esta computadora: cuáles dispositivos detecta el sistema (ALSA/PipeWire en Linux), si el micrófono está silenciado, qué volumen tiene y si capta señal. La prueba graba un segundo de audio localmente en un archivo temporal que se borra al terminar; nada se envía a la red ni a ningún proveedor. Solo es lectura: no cambia configuraciones, no repara hardware y no diagnostica otras máquinas; fuera de Linux responde que todavía no está disponible en vez de inventar resultados. Para un micrófono que el sistema no detecta, conectar un micrófono USB o revisar Ajustes de sonido del sistema sigue siendo necesario.
 
+## Modo conversación (escritorio)
+
+Por defecto, JARVIS de escritorio (micrófono activado) exige decir «Jarvis» en cada orden. Si no quieres repetirlo, puedes activar el **modo conversación**: haciendo que JARVIS trate todo lo que escuche como una orden hasta que lo desactives.
+
+- **Activarlo:** con el micrófono encendido di «Jarvis, modo conversación» (también valen variantes como «activa el modo conversación») o marca la casilla **Modo conversación (no decir «Jarvis»)** en Ajustes antes o durante la sesión.
+- **Desactivarlo:** di «detener conversación» (también vale «detén la conversación») o desmarca la casilla en Ajustes. Apagar el micrófono también lo desactiva.
+- **No se guarda:** al cerrar el programa vuelve el requisito de decir «Jarvis»; no hay modo conversación permanente escondido.
+- **Con el modo activo** todo el audio ambiente puede convertirse en una orden, así que no lo actives si hay otras personas hablando cerca; los comandos encienden acciones destructivas o de gasto que dependan del permiso amplio concedido.
+- La escucha, el reconocimiento y la síntesis dependen de los servicios externos configurados (Google y Microsoft Edge); sigue siendo posible preguntar recuperando el micrófono pulsando el botón de micrófono cuando no quieras usarlo.
+
 ## JARVIS independiente para Android
 
 Hay una primera aplicación Android nativa en [`android-app/`](android-app/README.md), independiente de la laptop. Incluye chat, botón para hablar y escucha opcional de «Jarvis» con notificación visible; esta última puede ser interrumpida por Android y el reconocimiento puede enviar audio al proveedor del teléfono. La app permite su propia clave NVIDIA (predeterminada) o Gemini, que se introduce en sus ajustes y se guarda cifrada; no recibe automáticamente la configuración o memoria de escritorio. Por ahora solo incluye acciones locales limitadas, no todas las funciones de escritorio. Consulta sus [limitaciones, privacidad y compilación](android-app/README.md).

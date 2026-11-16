@@ -306,11 +306,13 @@ class ChatHistory(QScrollArea):
 
 class VoiceWorker(QObject):
     status = pyqtSignal(str)
+    conversation_changed = pyqtSignal(bool)
     finished = pyqtSignal()
 
-    def __init__(self, brain, voice):
+    def __init__(self, brain, voice, conversation_changed=True):
         super().__init__()
-        self.session = VoiceSession(brain, voice, listen, self.status.emit)
+        callback = self.conversation_changed.emit if conversation_changed else None
+        self.session = VoiceSession(brain, voice, listen, self.status.emit, conversation_changed=callback)
 
     @pyqtSlot()
     def run(self):
@@ -355,7 +357,7 @@ class ChatWorker(QObject):
 
 
 class VisualSettingsDialog(QDialog):
-    def __init__(self, preferences, parent=None):
+    def __init__(self, preferences, conversation_enabled=False, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Ajustes visuales')
         self.setMinimumWidth(380)
@@ -376,6 +378,10 @@ class VisualSettingsDialog(QDialog):
             form.addRow(label, combo)
             self.fields[key] = combo
         layout.addLayout(form)
+        self.conversation_live = QCheckBox('Modo conversación (no decir «Jarvis»)')
+        self.conversation_live.setChecked(conversation_enabled)
+        self.conversation_live.setToolTip('Solo para esta ejecución del programa; no se guarda al cerrarlo. Con el micrófono encendido, trata todo lo que escuche como una orden hasta que lo desmarques junto con la casilla, apagues el micrófono o digas «detener conversación». También se activa con la voz: «Jarvis, modo conversación». No actives esto si hay otras personas hablando cerca.')
+        layout.addWidget(self.conversation_live)
         self.automation_permission = QCheckBox('Automatización amplia y actualizaciones al iniciar')
         self.automation_permission.setChecked(read_state().get('automation_accepted') is True)
         self.automation_permission.setToolTip('Permite abrir aplicaciones y sitios, crear recordatorios y leer, crear, modificar o mover archivos sin preguntar. Activa actualizaciones automáticas de código. Shell, control de pantalla e imágenes requieren permiso aparte. Desactivar esta opción no revoca Gmail, búsquedas, agenda ni resumen: cambia también esas casillas abajo.')
@@ -1147,6 +1153,11 @@ class JarvisWindow(QMainWindow):
         self.core.set_mode(self.core_state.set_speaking(active))
 
     @pyqtSlot(str)
+    @pyqtSlot(bool)
+    def on_conversation_changed(self, enabled):
+        self.conversation_enabled = enabled
+        self.status.setText('Modo conversación activado · te escucho' if enabled else 'Modo conversación desactivado')
+
     def on_voice_status(self, status):
         self.status.setText(status)
         if status.startswith('Esperando autorización'):
@@ -1248,7 +1259,7 @@ class JarvisWindow(QMainWindow):
             self.status.setText('Revisión inicial disponible en el chat')
 
     def open_visual_settings(self):
-        dialog = VisualSettingsDialog(self.preferences, self)
+        dialog = VisualSettingsDialog(self.preferences, self.conversation_enabled, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
@@ -1261,6 +1272,9 @@ class JarvisWindow(QMainWindow):
             set_agenda_delete_permission(dialog.agenda_delete_permission.isChecked())
             set_scheduled_email_permission(dialog.scheduled_email_permission.isChecked())
             set_briefing_permission(dialog.briefing_permission.isChecked())
+            self.conversation_enabled = dialog.conversation_live.isChecked()
+            if isinstance(self.worker, VoiceWorker):
+                self.worker.session.set_conversation_mode(self.conversation_enabled)
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
             return
@@ -1330,6 +1344,9 @@ class JarvisWindow(QMainWindow):
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self.on_voice_status)
+        self.worker.conversation_changed.connect(self.on_conversation_changed)
+        if self.conversation_enabled:
+            self.worker.session.set_conversation_mode(True)
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.cleanup)
