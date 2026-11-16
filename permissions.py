@@ -10,7 +10,7 @@ GMAIL_TOOLS = frozenset({'search_gmail', 'read_gmail', 'send_gmail', 'reply_gmai
 AGENDA_TOOLS = frozenset({'current_time', 'list_reminders', 'list_calendar_events'})
 # No blanket approval for arbitrary shell, GUI automation, or sending images.
 AUTOMATION_TOOLS = frozenset({'open_url', 'open_app', 'system_stats', 'volume_brightness',
-                              'files', 'create_reminder', 'configure_routine', 'run_routine'})
+                              'files', 'project_location', 'create_reminder', 'configure_routine', 'run_routine'})
 
 
 

@@ -7,6 +7,7 @@ from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved
 from music_commands import parse_music_request, format_result, is_music_action_request, MusicTrace
+from reminder_commands import parse_relative_reminder
 
 
 def natural_time(value):
@@ -62,12 +63,27 @@ class PersistentBrain:
     def ask(self, text):
         # Handle common automation requests without depending on a model to call tools.
         clean = re.sub(r'^\s*jarvis\s*[,!:;-]?\s*', '', text.strip(), flags=re.I).strip(' .!¡?¿')
+        # Moving this live checkout can invalidate the interpreter and launcher.
+        # Recognize the user's plain-language request without asking for paths
+        # that are already known, and do not pretend a move took place.
+        own_project_move = (re.search(r'\b(?:jarvis|jarvis[-_ ]prueba)\b', clean, re.I)
+                            and re.search(r'\b(?:mover|mueve|mueva|mudar|trasladar|traslada|pon(?:er|gas|lo|la)?|fuera)\b', clean, re.I)
+                            and re.search(r'\b(?:personal|home|m3u[_ -]converter)\b', clean, re.I))
+        if own_project_move:
+            answer = ('Entiendo: quieres llevar mi carpeta a tu carpeta personal. '
+                      'No puedo moverla mientras estoy abierto; todavía no tengo un traslado automático seguro.')
+            try:
+                self.memory.add_turn(text, answer)
+            except (sqlite3.Error, OSError):
+                return answer + '\n\nAviso: no se pudo guardar esta conversación en la memoria local.'
+            return answer
         app = re.fullmatch(r'abre\s+(?:la aplicaci[oó]n\s+)?(google chrome|chrome|firefox|whatsapp|archivos)', clean, re.I)
         routine = re.fullmatch(r'(?:buenos d[ií]as|(?:ejecuta|inicia|activa) (?:la )?rutina(?: de buenos d[ií]as)?)', clean, re.I)
         time_request = is_local_time_request(clean)
-        if app or routine or time_request:
-            name = 'open_app' if app else 'run_routine' if routine else 'current_time'
-            args = {'name': app.group(1)} if app else {}
+        reminder = parse_relative_reminder(clean)
+        if app or routine or time_request or reminder:
+            name = 'open_app' if app else 'run_routine' if routine else 'current_time' if time_request else 'create_reminder'
+            args = {'name': app.group(1)} if app else reminder if reminder else {}
             try:
                 if not preapproved(name) and not self.approve(name, args):
                     answer = 'Acción no autorizada, señor.'
@@ -77,6 +93,8 @@ class PersistentBrain:
                         answer = result.get('error') or ('Ya pedí abrir ' + app.group(1) + ', señor.')
                     elif time_request:
                         answer = natural_time(result['local_time'])
+                    elif reminder:
+                        answer = ('Listo, te avisaré: ' + reminder['title'] + '.') if result.get('id') else 'No pude guardar el recordatorio.'
                     else:
                         answer = result.get('summary', 'No pude completar la rutina.')
                         errors = [item.get('error') for item in result.get('applications', []) if item.get('error')]

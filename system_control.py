@@ -49,6 +49,10 @@ class SystemController:
     def run_routine(self) -> dict:
         return routines.run()
 
+    def project_location(self) -> dict:
+        return {'project': str(Path(__file__).resolve().parent), 'home': str(Path.home().resolve()),
+                'note': 'La carpeta personal es home. No muevas el proyecto mientras JARVIS esté en ejecución.'}
+
     def current_time(self) -> dict:
         return {'local_time': datetime.now().astimezone().isoformat(timespec='seconds')}
 
@@ -100,6 +104,10 @@ class SystemController:
         elif action == 'list':
             return {'entries': sorted(item.name for item in p.iterdir())[:200]}
         elif action == 'move':
+            source = p.resolve()
+            project = Path(__file__).resolve().parent
+            if source == project or source in project.parents:
+                raise ValueError('No puedo mover mi propia carpeta mientras estoy ejecutándome; podría interrumpir JARVIS y su entorno.')
             if not destination:
                 raise ValueError('Se requiere destination.')
             return {'destination': shutil.move(str(p), str(Path(destination).expanduser()))}

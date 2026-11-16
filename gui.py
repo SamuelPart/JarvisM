@@ -655,11 +655,14 @@ class JarvisWindow(QMainWindow):
             box.setInformativeText('Aviso de tu agenda local')
             box.setStandardButtons(QMessageBox.StandardButton.Ok)
             box.setWindowModality(Qt.WindowModality.NonModal)
+            box.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
             self.reminder_windows[reminder['id']] = box
             box.finished.connect(lambda _result, key=reminder['id']: self.reminder_windows.pop(key, None))
             box.show()
-            # Never play a reminder into an active microphone/consent session.
-            if not isinstance(self.worker, VoiceWorker):
+            # The voice session speaks between listening cycles, never during consent.
+            if isinstance(self.worker, VoiceWorker):
+                self.worker.session.queue_reminder(title)
+            else:
                 self.voice.speak('Señor, recordatorio: ' + title)
 
     def open_memory(self):
@@ -789,6 +792,16 @@ class JarvisWindow(QMainWindow):
 
     @pyqtSlot()
     def cleanup(self):
+        if isinstance(self.worker, VoiceWorker):
+            # If listening was stopped before queued reminders were spoken,
+            # deliver them after the microphone has actually stopped.
+            import queue
+            while True:
+                try:
+                    title = self.worker.session.reminders.get_nowait()
+                except queue.Empty:
+                    break
+                self.voice.speak('Señor, recordatorio: ' + title)
         self.thread.deleteLater()
         self.thread = None
         self.worker = None

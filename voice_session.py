@@ -2,6 +2,7 @@
 import json
 import re
 import threading
+import queue
 from errors import describe_error
 from text_links import speech_text
 
@@ -22,9 +23,23 @@ class VoiceSession:
         self.brain, self.voice, self.listen, self.status = brain, voice, listen, status
         self.connection = connection
         self.stop_event = threading.Event()
+        self.reminders = queue.Queue()
 
     def stop(self):
         self.stop_event.set()
+
+    def queue_reminder(self, title):
+        self.reminders.put(title)
+
+    def announce_reminders(self):
+        # Only the listening thread speaks these, between capture cycles, never
+        # during an approval or while the microphone is recording.
+        while not self.stop_event.is_set():
+            try:
+                title = self.reminders.get_nowait()
+            except queue.Empty:
+                break
+            self.speak('Señor, recordatorio: ' + title)
 
     def speak(self, text):
         self.status('Hablando')
@@ -84,6 +99,7 @@ class VoiceSession:
             self.status('Error: voz no disponible; micrófono apagado')
             return
         while not self.stop_event.is_set():
+            self.announce_reminders()
             self.status('Esperando que digas Jarvis')
             try:
                 heard = self.listen()

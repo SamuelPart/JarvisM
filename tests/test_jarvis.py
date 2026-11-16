@@ -1330,3 +1330,69 @@ def test_local_time_varied_requests_are_fresh_and_do_not_reuse_history(tmp_path,
     assert agent.ask('¿Me puedes decir qué hora es ahora?') == 'Son las 8:42 de la noche, señor.'
     for text in ('¿qué hora es en Madrid?', '¿qué hora es mañana?', '¿a qué hora es la reunión?'):
         assert not is_local_time_request(text)
+
+
+def test_relative_reminders_interpret_normal_speech_and_local_clock():
+    from datetime import datetime, timezone
+    from reminder_commands import parse_relative_reminder
+    now = datetime(2026, 11, 14, 20, 0, tzinfo=timezone.utc)
+    result = parse_relative_reminder('Jarvis, recuérdame tomar agua dentro de diez minutos', now)
+    assert result['title'] == 'tomar agua'
+    assert datetime.fromisoformat(result['when']).timestamp() == now.timestamp() + 600
+    result = parse_relative_reminder('en un minuto recuérdame tomar agua', now)
+    assert datetime.fromisoformat(result['when']).timestamp() == now.timestamp() + 60
+    assert parse_relative_reminder('recuérdame tomar agua mañana', now) is None
+    assert parse_relative_reminder('recuérdame tomar agua en 0 minutos', now) is None
+
+
+def test_relative_reminder_creates_without_model_and_honors_permission(tmp_path, monkeypatch):
+    import permissions
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
+    calls = []
+    controller = SimpleNamespace(create_reminder=lambda **args: calls.append(args) or {'id': 12})
+    agent = PersistentBrain(NvidiaBrain('fake', controller, lambda *_: False,
+                             post=lambda **_: pytest.fail('No debe llamar al modelo')), JarvisMemory(tmp_path / 'memory.db'))
+    assert 'no autorizada' in agent.ask('recuérdame tomar agua dentro de diez minutos')
+    assert not calls
+    permissions.set_automation_permission(True)
+    assert 'Listo, te avisaré' in agent.ask('recuérdame tomar agua dentro de diez minutos')
+    assert calls[0]['title'] == 'tomar agua' and 'T' in calls[0]['when']
+
+
+def test_voice_reminder_waits_until_listening_cycle_is_clear():
+    from voice_session import VoiceSession
+    spoken = []
+    voice = SimpleNamespace(speak_wait=lambda text: spoken.append(text) or True)
+    session = VoiceSession(None, voice, lambda: '')
+    session.queue_reminder('tomar agua')
+    assert spoken == []
+    session.announce_reminders()
+    assert spoken == ['Señor, recordatorio: tomar agua']
+    session.announce_reminders()
+    assert len(spoken) == 1
+
+
+def test_move_own_project_is_blocked(tmp_path):
+    from pathlib import Path
+    from system_control import SystemController
+    project = Path(__file__).resolve().parents[1]
+    controller = SystemController()
+    assert controller.project_location()['project'] == str(project)
+    with pytest.raises(ValueError, match='mi propia carpeta'):
+        controller.files('move', str(project), str(tmp_path / 'project'))
+    with pytest.raises(ValueError, match='mi propia carpeta'):
+        controller.files('move', str(project.parent), str(tmp_path / 'parent'))
+
+
+def test_project_move_request_does_not_ask_for_known_path_or_claim_success(tmp_path):
+    from persistent_brain import PersistentBrain
+    from nvidia_brain import NvidiaBrain
+    from memory import JarvisMemory
+    agent = PersistentBrain(NvidiaBrain('fake', object(), lambda *_: False,
+                            post=lambda **_: pytest.fail('No se necesita modelo')), JarvisMemory(tmp_path / 'memory.db'))
+    answer = agent.ask('quiero que jarvis prueba esté fuera de m3u_converter y lo pongas en la carpeta personal makao')
+    assert 'carpeta personal' in answer and 'no puedo moverla' in answer.lower()
+    assert 'ruta exacta' not in answer.lower()
