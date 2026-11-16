@@ -252,11 +252,11 @@ def test_visual_preferences_round_trip_and_validation(tmp_path):
     from ui_settings import DEFAULTS, load, save
     path = tmp_path / 'settings.json'
     assert load(path) == DEFAULTS
-    expected = {'color': 'violeta', 'size': 'grande', 'animation': 'reducida'}
+    expected = {'color': 'violeta', 'size': 'grande', 'animation': 'reducida', 'weather_sound': 'activado'}
     assert save(path, expected) == expected
     assert load(path) == expected
     path.write_text('{"color":"invalido","size":"pequeño","animation":null}', encoding='utf-8')
-    assert load(path) == {'color': 'azul', 'size': 'pequeño', 'animation': 'normal'}
+    assert load(path) == {'color': 'azul', 'size': 'pequeño', 'animation': 'normal', 'weather_sound': 'activado'}
     path.write_text('{bad', encoding='utf-8')
     assert load(path) == DEFAULTS
 
@@ -2077,3 +2077,22 @@ def test_weather_animation_delays_fast_success_not_errors_or_slow_requests():
     timing.wait_for_event('error')
     timing.wait_for_event('result')
     assert len(waits) == 1
+
+
+def test_weather_search_sound_is_short_original_wav(tmp_path):
+    import wave
+    from weather_sound import write_search_cue
+    path = tmp_path / 'cue.wav'
+    write_search_cue(path)
+    with wave.open(str(path), 'rb') as sound:
+        assert sound.getnchannels() == 1 and sound.getsampwidth() == 2
+        assert sound.getnframes() / sound.getframerate() == pytest.approx(.78, abs=.001)
+        data = sound.readframes(sound.getnframes())
+        assert any(data)
+
+
+def test_weather_sound_setting_can_be_disabled_and_survives_restart(tmp_path):
+    from ui_settings import load, save
+    path = tmp_path / 'settings.json'
+    save(path, {'weather_sound': 'desactivado'})
+    assert load(path)['weather_sound'] == 'desactivado'

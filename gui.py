@@ -6,11 +6,13 @@ import os
 import sqlite3
 import sys
 import threading
+import tempfile
+from pathlib import Path
 from datetime import datetime
 
 from dotenv import load_dotenv
 from PyQt6.QtCore import QObject, QThread, Qt, QTimer, QPointF, QRectF, QDateTime, QUrl, QPropertyAnimation, QEasingCurve, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QLinearGradient, QPainterPath, QPen
+from PyQt6.QtGui import QDesktopServices, QFont, QColor, QPainter, QRadialGradient, QPen
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox,
                              QComboBox, QDateTimeEdit, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                              QMainWindow, QMessageBox, QPushButton, QPlainTextEdit,
@@ -30,6 +32,7 @@ import startup_briefing
 import scheduled_emails
 from weather_view import WeatherView
 from weather_timing import WeatherLoadingTiming
+from weather_sound import write_search_cue
 from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
@@ -86,43 +89,6 @@ class CoreAnimation(QWidget):
         self.phase += speed * (0.45 if self.preferences['animation'] == 'reducida' else 1.0)
         self.update()
 
-    def paint_weather_search(self, painter):
-        # A cloud-shaped hologram replaces the sphere while the search runs.
-        # Its falling lights are decorative, not a forecast of rain.
-        lift = 4 * math.sin(self.phase * .65)
-        cloud = QPainterPath()
-        cloud.moveTo(-72, 30 + lift)
-        cloud.cubicTo(-108, 29 + lift, -108, -26 + lift, -71, -30 + lift)
-        cloud.cubicTo(-61, -68 + lift, -14, -77 + lift, 8, -47 + lift)
-        cloud.cubicTo(39, -66 + lift, 75, -41 + lift, 73, -19 + lift)
-        cloud.cubicTo(107, -14 + lift, 105, 30 + lift, 70, 30 + lift)
-        cloud.closeSubpath()
-        fill = QLinearGradient(0, -75 + lift, 0, 35 + lift)
-        fill.setColorAt(0, QColor(49, 211, 255, 70))
-        fill.setColorAt(1, QColor(37, 72, 193, 35))
-        painter.setBrush(fill)
-        painter.setPen(QPen(QColor(93, 224, 255, 55), 10, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        painter.drawPath(cloud)
-        painter.setPen(QPen(QColor(127, 237, 255, 230), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-        painter.drawPath(cloud)
-        # A moving horizontal sweep is clipped to the cloud, so the outline
-        # remains recognizable rather than reverting to the old sphere.
-        painter.save()
-        painter.setClipPath(cloud)
-        y = -72 + (self.phase * 12 % 108) + lift
-        painter.setPen(QPen(QColor(158, 248, 255, 45), 9))
-        painter.drawLine(QPointF(-110, y), QPointF(110, y))
-        painter.setPen(QPen(QColor(194, 253, 255, 210), 1.5))
-        painter.drawLine(QPointF(-110, y), QPointF(110, y))
-        painter.restore()
-        painter.setPen(Qt.PenStyle.NoPen)
-        for column, x in enumerate((-60, -30, 0, 30, 60)):
-            for row in range(2):
-                travel = (self.phase * 15 + column * 11 + row * 30) % 60
-                alpha = int(190 * (1 - travel / 60))
-                painter.setBrush(QColor(104, 223, 255, alpha))
-                painter.drawRoundedRect(QRectF(x, 39 + lift + travel, 3, 11), 1.5, 1.5)
-
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -130,11 +96,6 @@ class CoreAnimation(QWidget):
         scale = SCALES[self.preferences['size']] * (0.38 if self.compact_display else 1.0)
         painter.scale(scale, scale)
         radius = 109.0
-        if self.weather_searching:
-            self.paint_weather_search(painter)
-            painter.end()
-            return  # Replace the sphere entirely while looking up weather.
-
         # A dark, transparent glow rather than a rectangular background.
         glow = QRadialGradient(QPointF(0, 0), radius * 1.12)
         if self.mode == 'approval':
@@ -166,21 +127,40 @@ class CoreAnimation(QWidget):
                 screen_y = y * math.cos(tilt) - depth * math.sin(tilt)
                 z = depth * math.cos(tilt) + y * math.sin(tilt)
                 pulse = 1.0
-                if self.mode == 'speaking':
+                if self.weather_searching:
+                    # The same sphere ripples and stretches into an energy core.
+                    pulse += 0.12 * math.sin(self.phase * 2.0 + theta * 4 + angle * 2)
+                elif self.mode == 'speaking':
                     pulse += 0.06 * math.sin(self.phase * 2.5) + 0.025 * math.sin(theta * 8 + self.phase * 3 + angle * 2)
-                px, py = radius * x * pulse, -radius * screen_y * pulse
+                stretch = 1 + 0.18 * math.sin(self.phase * .9) if self.weather_searching else 1
+                px, py = radius * x * pulse * stretch, -radius * screen_y * pulse / stretch
                 alpha = int(105 + 110 * (z + 1) / 2)
                 dot = 0.65 + 0.35 * (z + 1) / 2
                 points.append((z, px, py, dot, alpha))
 
         state_palettes = {'approval': ((255, 140, 32), (255, 195, 100)),
                           'thinking': PALETTES['violeta'], 'speaking': PALETTES['cian']}
-        dim_color, bright_color = state_palettes.get(self.mode, PALETTES[self.preferences['color']])
+        dim_color, bright_color = (PALETTES['cian'] if self.weather_searching else state_palettes.get(self.mode, PALETTES[self.preferences['color']]))
         for _, x, y, dot, alpha in sorted(points):
             painter.setBrush(QColor(*dim_color, max(20, alpha // 5)))
             painter.drawEllipse(QPointF(x, y), dot * 2.3, dot * 2.3)
             painter.setBrush(QColor(*bright_color, alpha))
             painter.drawEllipse(QPointF(x, y), dot, dot)
+        if self.weather_searching:
+            # Moving sparks and brief highlights emerge from the same dots.
+            for i in range(10):
+                angle = i * math.tau / 10 + self.phase * .38
+                intensity = max(0.0, math.sin(self.phase * 2.2 + i * 2.0)) ** 6
+                if intensity < .08:
+                    continue
+                distance = 74 + 30 * math.sin(i * 2.2 + self.phase * .4)
+                x, y = distance * math.cos(angle), distance * math.sin(angle) * .78
+                reduced = self.preferences['animation'] == 'reducida'
+                size = 3 + intensity * (4 if reduced else 10)
+                painter.setPen(QPen(QColor(163, 245, 255, int((85 if reduced else 210) * intensity)), 1.4))
+                painter.drawLine(QPointF(x - size, y), QPointF(x + size, y))
+                painter.drawLine(QPointF(x, y - size), QPointF(x, y + size))
+            painter.setPen(Qt.PenStyle.NoPen)
         painter.end()
 
 
@@ -311,7 +291,7 @@ class VisualSettingsDialog(QDialog):
         layout.addWidget(info)
         form = QFormLayout()
         self.fields = {}
-        for key, label in (('color', 'Color'), ('size', 'Tamaño'), ('animation', 'Animación')):
+        for key, label in (('color', 'Color'), ('size', 'Tamaño'), ('animation', 'Animación'), ('weather_sound', 'Sonido al buscar clima')):
             combo = QComboBox()
             for value in OPTIONS[key]:
                 combo.addItem(value.capitalize(), value)
@@ -492,6 +472,8 @@ class JarvisWindow(QMainWindow):
         self.weather_query = None
         self.weather_generation = 0
         self.weather_refresh_in_flight = False
+        self.weather_sound = None
+        self.weather_sound_dir = None
         self.preferences = load_ui(UI_SETTINGS_PATH)
         self.thread = None
         self.worker = None
@@ -632,7 +614,31 @@ class JarvisWindow(QMainWindow):
         if not read_state().get('startup_briefing_accepted'):
             QTimer.singleShot(0, self.check_reminders)
 
+    def play_weather_sound(self):
+        if self.preferences.get('weather_sound') != 'activado' or self.core_state.speaking:
+            return
+        try:
+            # Qt plays asynchronously and independently of the voice mixer.
+            # Missing multimedia support or an audio device must not block JARVIS.
+            from PyQt6.QtMultimedia import QSoundEffect
+            if self.weather_sound is None:
+                self.weather_sound_dir = tempfile.TemporaryDirectory(prefix='jarvis-weather-')
+                path = Path(self.weather_sound_dir.name) / 'search.wav'
+                write_search_cue(path)
+                self.weather_sound = QSoundEffect(self)
+                self.weather_sound.setSource(QUrl.fromLocalFile(str(path)))
+                self.weather_sound.setVolume(0.35)
+            self.weather_sound.stop()
+            self.weather_sound.play()
+        except Exception:
+            pass  # Weather remains usable without sound hardware or Qt multimedia.
+
+    def stop_weather_sound(self):
+        if self.weather_sound is not None:
+            self.weather_sound.stop()
+
     def dismiss_weather(self):
+        self.stop_weather_sound()
         self.weather_generation += 1
         self.weather_query = None
         self.weather_refresh_timer.stop()
@@ -655,11 +661,13 @@ class JarvisWindow(QMainWindow):
             self.weather_loading.setText('Buscando el clima de ' + location + '…' if location else 'Buscando el clima…')
             self.weather_loading.show()
             self.core.set_weather_searching(True)
+            self.play_weather_sound()
             self.status.setText('Buscando datos del clima…')
             self.set_task_state('thinking')
         elif event == 'result' and isinstance(data, dict) and data.get('ok') is True:
             self.weather_loading.hide()
             self.core.set_weather_searching(False)
+            self.stop_weather_sound()
             try:
                 self.weather_view.show_data(data)
                 self.weather_query = data.get('requested')
@@ -819,6 +827,8 @@ class JarvisWindow(QMainWindow):
 
     @pyqtSlot(bool)
     def on_voice_activity(self, active):
+        if active:
+            self.stop_weather_sound()
         self.core.set_mode(self.core_state.set_speaking(active))
 
     @pyqtSlot(str)
@@ -1044,6 +1054,11 @@ class JarvisWindow(QMainWindow):
             QMessageBox.information(self, 'JARVIS', message)
             event.ignore()
         else:
+            self.stop_weather_sound()
+            if self.weather_sound is not None:
+                self.weather_sound.setSource(QUrl())
+            if self.weather_sound_dir is not None:
+                self.weather_sound_dir.cleanup()
             self.email_scheduler.stop()
             self.voice.on_activity = None
             event.accept()

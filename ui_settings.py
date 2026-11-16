@@ -4,10 +4,11 @@ import os
 import tempfile
 from pathlib import Path
 
-DEFAULTS = {'color': 'azul', 'size': 'mediano', 'animation': 'normal'}
+DEFAULTS = {'color': 'azul', 'size': 'mediano', 'animation': 'normal', 'weather_sound': 'activado'}
 OPTIONS = {'color': ('azul', 'cian', 'violeta', 'verde'),
            'size': ('pequeño', 'mediano', 'grande'),
-           'animation': ('reducida', 'normal')}
+           'animation': ('reducida', 'normal'),
+           'weather_sound': ('activado', 'desactivado')}
 PALETTES = {
     'azul': ((70, 81, 255), (128, 136, 255)),
     'cian': ((27, 180, 220), (115, 240, 255)),
