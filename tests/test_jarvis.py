@@ -872,8 +872,23 @@ def test_elevenlabs_http_error_never_leaks_key_or_provider_message(monkeypatch):
     with pytest.raises(voice_module.VoiceError) as error:
         voice._elevenlabs('Hola')
     message = str(error.value)
-    assert 'HTTP 401' in message and 'clave' in message
+    assert 'HTTP 401' in message and 'clave' in message  # allowlisted body hint, no provider text
     assert 'supersecretkey123' not in message
+
+
+def test_elevenlabs_string_detail_and_429_hint():
+    import voice as voice_module
+
+    class _Response:
+        def __init__(self, status, body):
+            self.status_code = status
+            self._body = body
+        def iter_content(self, chunk_size=4096):
+            yield self._body
+
+    assert 'cuota' in voice_module.elevenlabs_error(_Response(429, b'{"detail": "quota_exceeded"}'))
+    assert 'clave' in voice_module.elevenlabs_error(_Response(401, b'{"detail": "invalid_api_key"}'))
+    assert 'voz o modelo' in voice_module.elevenlabs_error(_Response(404, b'{}')).lower()
 
 
 def test_edge_mode_skips_elevenlabs(monkeypatch):

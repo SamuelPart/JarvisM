@@ -26,9 +26,19 @@ _ELEVENLABS_ERRORS = {
 }
 
 
+_HTTP_HINTS = {
+    400: 'la solicitud es inválida (revisa el modelo y los parámetros).',
+    401: 'la clave de API parece inválida o revocada; crea una nueva en tu cuenta y ponla en .env.',
+    402: 'tu plan de ElevenLabs requiere pago para esta solicitud o la cuota se agotó.',
+    403: 'sin permiso para este recurso (la voz puede estar restringida a su creador o al plan).',
+    404: 'voz o modelo no encontrado; revisa ELEVENLABS_VOICE_ID y ELEVENLABS_MODEL_ID.',
+    429: 'se agotó la cuota de caracteres o el límite de peticiones de tu plan.',
+}
+
+
 def elevenlabs_error(response):
     """Diagnóstico seguro: lista blanca fija; nunca expone mensajes del proveedor, claves ni texto."""
-    explanation = None
+    explanation = _HTTP_HINTS.get(response.status_code)
     try:
         data = bytearray()
         for chunk in response.iter_content(chunk_size=4096):
@@ -39,8 +49,15 @@ def elevenlabs_error(response):
             payload = json.loads(data)
             detail = payload.get('detail', {}) if isinstance(payload, dict) else {}
             code = detail.get('status') if isinstance(detail, dict) else None
+            if not isinstance(code, str) and isinstance(detail, str):
+                # ElevenLabs también devuelve detail como cadena; busca el código en la lista blanca.
+                lowered = detail.lower()
+                for known in _ELEVENLABS_ERRORS:
+                    if known in lowered:
+                        code = known
+                        break
             if isinstance(code, str):
-                explanation = _ELEVENLABS_ERRORS.get(code)
+                explanation = _ELEVENLABS_ERRORS.get(code, explanation)
     except (ValueError, TypeError, OSError):
         pass
     generic = 'revisa la voz, el modelo, la clave y la cuota; la causa exacta no está disponible.'
