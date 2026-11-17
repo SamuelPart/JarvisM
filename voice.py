@@ -23,11 +23,18 @@ _ELEVENLABS_ERRORS = {
     'only_for_creator': 'esta voz puede estar restringida a su creador.',
     'too_many_concurrent_requests': 'hay demasiadas solicitudes simultáneas a ElevenLabs.',
     'payment_required': 'tu plan de ElevenLabs requiere pago para esta solicitud.',
+    'voice_not_found': 'la voz (ELEVENLABS_VOICE_ID) no existe o no pertenece a tu cuenta.',
+    'model_not_found': 'el modelo (ELEVENLABS_MODEL_ID) no está disponible en tu cuenta.',
+    'output_format_not_allowed': 'el formato de salida no está permitido en tu plan (prueba ELEVENLABS_OUTPUT_FORMAT=mp3_22050_32).',
+    'output_format_not_supported': 'el formato de salida no está soportado para este modelo.',
+    'text_too_long': 'el texto supera el límite permitido para una sola petición.',
+    'invalid_text': 'el texto de la petición no es válido.',
+    'max_character_limit_exceeded': 'se superó el límite de caracteres de tu plan.',
 }
 
 
 _HTTP_HINTS = {
-    400: 'la solicitud es inválida (revisa el modelo y los parámetros).',
+    400: 'la petición fue rechazada; las causas habituales son un voice_id ajeno/inexistente o un formato de salida no permitido para tu plan (prueba ELEVENLABS_OUTPUT_FORMAT=mp3_22050_32).',
     401: 'la clave de API parece inválida o revocada; crea una nueva en tu cuenta y ponla en .env.',
     402: 'tu plan de ElevenLabs requiere pago para esta solicitud o la cuota se agotó.',
     403: 'sin permiso para este recurso (la voz puede estar restringida a su creador o al plan).',
@@ -208,19 +215,22 @@ class Voice:
         key = os.getenv('ELEVENLABS_API_KEY', '').strip()
         voice_id = os.getenv('ELEVENLABS_VOICE_ID', 'JBFqnCBsd6RMkjVDRZzb').strip()  # George (británica, profunda)
         model = os.getenv('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2').strip()
+        output_format = os.getenv('ELEVENLABS_OUTPUT_FORMAT', 'mp3_44100_128').strip()
         if not key:
             raise VoiceError('Falta ELEVENLABS_API_KEY en .env (o usa JARVIS_VOICE_MODE=edge para Edge TTS).')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', voice_id):
             raise VoiceError('ELEVENLABS_VOICE_ID no es válido.')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', model):
             raise VoiceError('ELEVENLABS_MODEL_ID no es válido.')
+        if not re.fullmatch(r'[a-z0-9_]{1,40}', output_format):
+            raise VoiceError('ELEVENLABS_OUTPUT_FORMAT no es válido (p. ej. mp3_44100_128 o mp3_22050_32).')
         session = requests.Session()
         session.trust_env = False
         try:
             with session.post('https://api.elevenlabs.io/v1/text-to-speech/' + voice_id,
                               headers={'xi-api-key': key, 'Accept': 'audio/mpeg'},
                               json={'text': text, 'model_id': model},
-                              params={'output_format': 'mp3_44100_128'},
+                              params={'output_format': output_format},
                               timeout=(10, 90), allow_redirects=False, stream=True) as response:
                 if not 200 <= response.status_code < 300:
                     raise VoiceError(elevenlabs_error(response))

@@ -876,6 +876,33 @@ def test_elevenlabs_http_error_never_leaks_key_or_provider_message(monkeypatch):
     assert 'supersecretkey123' not in message
 
 
+def test_elevenlabs_output_format_env_passthrough(monkeypatch):
+    import voice as voice_module
+
+    seen = {}
+
+    class _Response:
+        status_code = 200
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def iter_content(self, chunk_size=65536):
+            yield b'ID3-x'
+
+    class _Session:
+        trust_env = True
+        def post(self, url, headers=None, json=None, params=None, timeout=None, allow_redirects=None, stream=None):
+            seen['params'] = params
+            return _Response()
+        def close(self): pass
+
+    monkeypatch.setenv('ELEVENLABS_API_KEY', 'secret-key')
+    monkeypatch.setenv('ELEVENLABS_OUTPUT_FORMAT', 'mp3_22050_32')
+    monkeypatch.setattr('requests.Session', _Session)
+    monkeypatch.setattr(voice_module.Voice, '_play_file', lambda self, path: None)
+    voice_module.Voice()._elevenlabs('Hola')
+    assert seen['params'] == {'output_format': 'mp3_22050_32'}
+
+
 def test_elevenlabs_string_detail_and_429_hint():
     import voice as voice_module
 
