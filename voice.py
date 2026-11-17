@@ -18,8 +18,6 @@ _ELEVENLABS_ERRORS = {
     'invalid_api_key': 'la clave de API no es válida.',
     'missing_api_key': 'falta la clave de API.',
     'quota_exceeded': 'se agotó la cuota de tu plan de ElevenLabs.',
-    'voice_not_found': 'la voz configurada (ELEVENLABS_VOICE_ID) no existe en tu cuenta.',
-    'model_not_found': 'el modelo configurado (ELEVENLABS_MODEL_ID) no está disponible.',
     'only_for_creator': 'esta voz puede estar restringida a su creador.',
     'too_many_concurrent_requests': 'hay demasiadas solicitudes simultáneas a ElevenLabs.',
     'payment_required': 'tu plan de ElevenLabs requiere pago para esta solicitud.',
