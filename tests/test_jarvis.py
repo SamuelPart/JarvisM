@@ -2904,9 +2904,49 @@ def test_confirm_stage_ignores_unrelated_chatter(tmp_path, monkeypatch):
     assert len(list(desktop.glob('prueba*.pdf'))) == 2
 
 
-def test_nvidia_byok_takes_precedence_over_proxy(monkeypatch):
+
+
+
+
+def test_provider_settings_roundtrip_and_format_guard(tmp_path):
+    import provider_settings
+    path = tmp_path / '.jarvis-provider.json'
+    assert provider_settings.load_key(path=path) == ''
+    provider_settings.save_key('nvapi-test-12345', path=path)
+    assert provider_settings.load_key(path=path) == 'nvapi-test-12345'
+    with pytest.raises(ValueError):
+        provider_settings.save_key('mala clave con espacios!', path=path)
+    provider_settings.clear_key(path=path)
+    assert provider_settings.load_key(path=path) == ''
+
+
+def test_resolve_api_key_settings_wins_over_env(tmp_path, monkeypatch):
+    import provider_settings
+    path = tmp_path / '.jarvis-provider.json'
+    monkeypatch.setenv('NVIDIA_API_KEY', 'nvapi-env-key')
+    assert provider_settings.resolve_api_key('', path=path) == 'nvapi-env-key'
+    provider_settings.save_key('nvapi-ajustes-key', path=path)
+    assert provider_settings.resolve_api_key('', path=path) == 'nvapi-ajustes-key'
+    assert provider_settings.resolve_api_key('nvapi-static-key', path=path) == 'nvapi-static-key'
+
+
+def test_nvidia_missing_key_raises_not_silent(tmp_path, monkeypatch):
+    import provider_settings
+    import nvidia_brain
+    from nvidia_brain import NvidiaBrain, ProviderNotConfigured
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    path = tmp_path / '.jarvis-provider.json'
+    monkeypatch.setattr(provider_settings, 'PATH', path)
+    monkeypatch.setattr(nvidia_brain, 'resolve_api_key', lambda static='': provider_settings.resolve_api_key(static, path=path))
+    brain = NvidiaBrain(None, object(), lambda *_: False)
+    with pytest.raises(ProviderNotConfigured):
+        brain.ask('hola')
+    from errors import describe_error
+    assert 'Ajustes' in describe_error(ProviderNotConfigured())
+
+
+def test_nvidia_explicit_static_key_used_directly(monkeypatch):
     from nvidia_brain import NvidiaBrain
-    monkeypatch.setenv('JARVIS_PROXY_URL', 'https://proxy.example.com/v1/chat/completions')
     seen = {}
     def post(url, headers, json, timeout):
         seen['url'] = url; seen['headers'] = headers
@@ -2915,44 +2955,3 @@ def test_nvidia_byok_takes_precedence_over_proxy(monkeypatch):
     assert brain.ask('hola') == 'ok'
     assert seen['url'].endswith('integrate.api.nvidia.com/v1/chat/completions')
     assert seen['headers']['Authorization'] == 'Bearer test-only-key'
-
-
-def test_nvidia_proxy_mode_without_key(monkeypatch):
-    from nvidia_brain import NvidiaBrain
-    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
-    monkeypatch.delenv('JARVIS_PROXY_TOKEN', raising=False)
-    monkeypatch.setenv('JARVIS_PROXY_URL', 'https://proxy.example.com/v1/chat/completions')
-    seen = {}
-    def post(url, headers, json, timeout):
-        seen['url'] = url; seen['headers'] = headers
-        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'ok'}}]})
-    brain = NvidiaBrain(None, object(), lambda *_: False, post=post)
-    assert brain.ask('hola') == 'ok'
-    assert seen['url'] == 'https://proxy.example.com/v1/chat/completions'
-    assert 'Authorization' not in seen['headers']
-
-
-def test_nvidia_proxy_mode_with_shared_token(monkeypatch):
-    from nvidia_brain import NvidiaBrain
-    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
-    monkeypatch.setenv('JARVIS_PROXY_URL', 'https://proxy.example.com/v1/chat/completions')
-    monkeypatch.setenv('JARVIS_PROXY_TOKEN', 'shared-token')
-    seen = {}
-    def post(url, headers, json, timeout):
-        seen['headers'] = headers
-        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'ok'}}]})
-    brain = NvidiaBrain(None, object(), lambda *_: False, post=post)
-    brain.ask('hola')
-    assert seen['headers']['Authorization'] == 'Bearer shared-token'
-
-
-def test_nvidia_missing_key_and_proxy_is_clear_error(monkeypatch):
-    import nvidia_brain
-    from nvidia_brain import NvidiaBrain
-    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
-    monkeypatch.delenv('JARVIS_PROXY_URL', raising=False)
-    monkeypatch.delenv('JARVIS_PROXY_TOKEN', raising=False)
-    monkeypatch.setattr(nvidia_brain, 'DEFAULT_PROXY_URL', '')
-    with pytest.raises(ValueError) as error:
-        NvidiaBrain(None, object(), lambda *_: False)
-    assert 'NVIDIA_API_KEY' in str(error.value)

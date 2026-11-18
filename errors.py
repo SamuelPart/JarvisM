@@ -1,8 +1,11 @@
 """Safe, actionable error messages without exposing provider responses or keys."""
-from nvidia_brain import NvidiaError
+from nvidia_brain import NvidiaError, ProviderNotConfigured
 
 
 def describe_error(exc):
+    if isinstance(exc, ProviderNotConfigured):
+        return ('Falta tu NVIDIA_API_KEY. Ponla en Ajustes → «Proveedor de IA» (aplicación de escritorio) '
+                'o como NVIDIA_API_KEY en .env (consola); se aplica al instante, sin reiniciar.')
     if isinstance(exc, NvidiaError):
         code = exc.status
         if code in (401, 403):

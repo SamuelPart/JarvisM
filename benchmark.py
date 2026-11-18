@@ -76,7 +76,8 @@ def main():
             check(f'import {module}', True)
         except Exception as exc:
             check(f'import {module}', False, f'{type(exc).__name__}: {exc}')
-    check('NVIDIA_API_KEY configurada (no se muestra)', bool(os.environ.get('NVIDIA_API_KEY')) or (ROOT / '.env').exists(),
+    from provider_settings import resolve_api_key
+    check('NVIDIA_API_KEY configurada (no se muestra)', bool(resolve_api_key('')),
           optional=True)
     check('whatsapp configurado (opcional)', __import__('whatsapp_cloud').is_configured(),
           'sin WHATSAPP_*; el resto funciona igual', optional=True)

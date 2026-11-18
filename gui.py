@@ -41,6 +41,7 @@ from orb_motion import approach
 from permissions import read_state, set_network_permission, set_gmail_permission, set_agenda_permission, set_briefing_permission, set_automation_permission, set_agenda_delete_permission, set_scheduled_email_permission, set_phone_permission
 from text_links import markup, speech_text
 from ui_settings import DEFAULTS, OPTIONS, PALETTES, SCALES, load as load_ui, save as save_ui
+from provider_settings import load_key, save_key, clear_key, resolve_api_key
 
 UI_SETTINGS_PATH = ROOT / '.jarvis-ui.json'
 
@@ -444,12 +445,39 @@ class ChatWorker(QObject):
 class VisualSettingsDialog(QDialog):
     def __init__(self, preferences, conversation_enabled=False, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Ajustes visuales')
-        self.setMinimumWidth(380)
+        self.setWindowTitle('Ajustes')
+        self.setMinimumWidth(420)
         layout = QVBoxLayout(self)
-        title = QLabel('Personaliza el núcleo')
+        title = QLabel('Ajustes de JARVIS')
         title.setObjectName('dialogTitle')
         layout.addWidget(title)
+        provider_sep = QFrame()
+        provider_sep.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(provider_sep)
+        provider_title = QLabel('Proveedor de IA (NVIDIA)')
+        provider_title.setObjectName('dialogTitle')
+        layout.addWidget(provider_title)
+        provider_info = QLabel('JARVIS habla con NVIDIA NIM con tu propia clave. Se guarda solo en este equipo (archivo oculto .jarvis-provider.json) y viaja únicamente a NVIDIA en la cabecera Authorization. Nunca se imprime ni se sube a Git.')
+        provider_info.setWordWrap(True)
+        layout.addWidget(provider_info)
+        saved = bool(load_key())
+        self.provider_status = QLabel('Estado: ● clave guardada (oculta)' if saved else 'Estado: ○ sin clave configurada')
+        layout.addWidget(self.provider_status)
+        self.nvidia_key_field = QLineEdit()
+        self.nvidia_key_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self.nvidia_key_field.setPlaceholderText('Pega tu clave nvapi-…')
+        self.nvidia_key_field.setToolTip('La clave no se muestra al escribirla. Guardarla la aplica al instante; no hace falta reiniciar.')
+        layout.addWidget(self.nvidia_key_field)
+        self.nvidia_clear_key = QCheckBox('Borrar la clave guardada')
+        self.nvidia_clear_key.setEnabled(saved)
+        self.nvidia_clear_key.setToolTip('JARVIS dejará de hablar con NVIDIA hasta que pongas otra clave.')
+        layout.addWidget(self.nvidia_clear_key)
+        provider_sep = QFrame()
+        provider_sep.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(provider_sep)
+        customize = QLabel('Personaliza el núcleo')
+        customize.setObjectName('dialogTitle')
+        layout.addWidget(customize)
         info = QLabel('El color ámbar se reserva para solicitudes de autorización.')
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -504,6 +532,14 @@ class VisualSettingsDialog(QDialog):
 
     def values(self):
         return {key: combo.currentData() for key, combo in self.fields.items()}
+
+    def provider_key_result(self):
+        if self.nvidia_clear_key.isChecked():
+            return ('clear', '')
+        text = self.nvidia_key_field.text().strip()
+        if text:
+            return ('set', text)
+        return ('unchanged', '')
 
 
 class MemoryDialog(QDialog):
@@ -1418,7 +1454,22 @@ class JarvisWindow(QMainWindow):
         except OSError:
             QMessageBox.warning(self, 'Ajustes', 'No se pudieron guardar los ajustes visuales.')
             return
+        self._apply_provider_key(dialog)
         self.core.configure(self.preferences)
+
+    def _apply_provider_key(self, dialog):
+        action, payload = dialog.provider_key_result()
+        try:
+            if action == 'clear':
+                clear_key()
+                self.append_chat('JARVIS', 'Clave NVIDIA borrada de este equipo.')
+            elif action == 'set':
+                save_key(payload)
+                self.append_chat('JARVIS', 'Clave NVIDIA guardada y aplicada. Ya puedes hablar con JARVIS.')
+        except ValueError:
+            QMessageBox.warning(self, 'Ajustes', 'Formato de clave no válido: se esperan letras, dígitos, guiones y guiones bajos (mínimo 8). La clave anterior no se ha tocado.')
+        except OSError:
+            QMessageBox.warning(self, 'Ajustes', 'No se pudo guardar la clave en este equipo.')
 
     def show_subtitle(self, text):
         clean = speech_text(text).strip()
@@ -1796,6 +1847,8 @@ def main():
         QMessageBox.critical(None, 'JARVIS', 'No se pudo abrir la agenda o la memoria local.')
         return 1
     window.show()
+    if not resolve_api_key(''):
+        window.append_chat('JARVIS', 'Falta tu NVIDIA_API_KEY. Ábrela en Ajustes → «Proveedor de IA» y pégala; se aplica al instante.')
     QTimer.singleShot(0, window.start_greeting)
     return app.exec()
 

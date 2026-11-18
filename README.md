@@ -19,7 +19,7 @@ JARVIS se distribuye como **código fuente** (no hay instalador empaquetado `.ex
 
 **Windows (tú, ahora)**
 1. Ve a https://github.com/SamuelPart/JarvisM y pulsa **Code → Download ZIP** (o clona: `git clone https://github.com/SamuelPart/JarvisM.git`). Descomprime en, por ejemplo, `C:\JARVIS`.
-2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala dependencias y te pide tu `NVIDIA_API_KEY` (opcional; Enter la omite si tu build trae el proxy del desarrollador)).
+2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv` e instala las dependencias; **no pide claves**: la clave NVIDIA se pone luego en Ajustes).
 3. Arranca con `venv\Scripts\python.exe gui.py`.
 
 **Linux**
@@ -58,7 +58,7 @@ JARVIS_VOICE_MODE=edge
 JARVIS_TTS_VOICE=es-MX-JorgeNeural
 ```
 
-Se puede usar otro modelo NIM disponible para su cuenta con `NVIDIA_MODEL`. La clave es local y debe protegerse como un secreto; no la distribuya en un ejecutable ni la suba al repositorio. No hay autenticación remota ni proxy incluidos.
+Se puede usar otro modelo NIM disponible para su cuenta con `NVIDIA_MODEL`. La clave es local y debe protegerse como un secreto; no la distribuya en un ejecutable ni la suba al repositorio. No hay autenticación remota ni servicios incluidos. En la aplicación de escritorio, la clave vive en **Ajustes → Proveedor de IA**, no en `.env`.
 
 ## Uso y seguridad
 
@@ -130,26 +130,13 @@ Los destinatarios, asuntos, mensajes y fechas pendientes se guardan sin cifrar e
 
 ## Proveedor NVIDIA NIM
 
-NVIDIA NIM es el proveedor de IA de JARVIS, tanto en chat como en voz. Cree una clave nueva en [build.nvidia.com](https://build.nvidia.com) (API Keys) y añada en su `.env` local:
+NVIDIA NIM es el proveedor de IA de JARVIS, tanto en chat como en voz. Cree una clave nueva en [build.nvidia.com](https://build.nvidia.com) (API Keys).
 
-```dotenv
-JARVIS_PROVIDER=nvidia
-NVIDIA_API_KEY=su_clave_nueva
-NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
-```
+**En la aplicación de escritorio, la clave va en Ajustes → «Proveedor de IA», no en `.env`.** Abra JARVIS, abra **Ajustes**, pegue su clave `nvapi-…` en el campo «Proveedor de IA (NVIDIA)» y pulse **Guardar**: se aplica al instante, sin reiniciar. Se guarda únicamente en este equipo, en el archivo oculto `.jarvis-provider.json` (permisos de solo-dueño cuando el sistema lo permite; está excluido de Git por `.gitignore`) y viaja solo a `integrate.api.nvidia.com` dentro de la cabecera `Authorization`. El campo nunca la muestra; para cambiarla, pegue otra; para borrarla, marque «Borrar la clave guardada».
 
-No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Los permisos de herramientas son los mismos que siempre. **NVIDIA NIM es el único proveedor en el código**; la memoria local de conversaciones es local y no depende del proveedor. WhatsApp abre un borrador; no lo envía automáticamente.
+La consola (`main.py`) y `benchmark.py` pueden usar `NVIDIA_API_KEY` en `.env` como alternativa; si existen ambas, **Ajustes tiene prioridad** sobre `.env`. `NVIDIA_MODEL` sigue viniendo del entorno si desea cambiarlo (`NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b` por defecto). La visión (imágenes y capturas, `NVIDIA_VISION_MODEL` aparte) usa la misma clave de Ajustes, o `NVIDIA_VISION_API_KEY`/`NVIDIA_API_KEY` del entorno si las define.
 
-## Que el usuario solo instale: dos modos de proveedor
-
-JARVIS soporta dos modos; el usuario no tiene que elegir:
-
-- **Proxy del desarrollador (build distribuido):** si el build trae configurado `JARVIS_PROXY_URL` (por ejemplo, el desarrollador edita `DEFAULT_PROXY_URL` en `nvidia_brain.py` antes de empaquetar) o el paquete incluye un `.env` con `JARVIS_PROXY_URL`, las peticiones de IA van a tu relay y **el usuario no pone ninguna clave**. El relay vive en `server/` (ver [`server/README.md`](server/README.md)): guarda tu `NVIDIA_API_KEY` en el servidor, reenvía a NVIDIA NIM, limita por IP y nunca expone la clave al cliente. Hostearlo es cosa tuya: dominio, TLS, hosting y cuota (tus usuarios consumen **tu** cuota).
-- **Tu propia clave (por usuario):** si el usuario pone `NVIDIA_API_KEY` en su `.env` (o la escribe en `install.bat`, que la pide como opcional — Enter la omite), JARVIS habla directo con NVIDIA con su clave y no usa el proxy. Tiene prioridad sobre el proxy.
-
-Sin clave ni proxy configurado, JARVIS explica con un mensaje claro qué falta; nada se cuelga ni inventa. Ninguna clave se incrusta en el repositorio por defecto.
-
-**Honestidad:** el modo proxy no está probado contra tu despliegue real (depende de dónde y cómo lo alojes); la suite cubre la resolución de ambos modos con HTTP simulado, y el relay superó en local arranque, `/healthz`, auth por token, rate-limit y rechazo de modelo no permitido. La primera prueba contra tu relay real es tuya.
+No comparta ni suba la clave. Si se expone, revóquela y cree otra. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. **NVIDIA NIM es el único proveedor en el código**; la memoria local de conversaciones es local y no depende del proveedor. WhatsApp abre un borrador; no lo envía automáticamente.
 
 ### Núcleo expresivo
 
@@ -159,9 +146,9 @@ La esfera clásica indica el estado mediante color y movimiento: paleta elegida 
 
 Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y los iconos de chat y micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Las acciones críticas siguen requiriendo confirmación.
 
-### Ajustes visuales
+### Ajustes
 
-En la ventana completa pulse «Ajustes» para elegir el color en espera, su tamaño, animación normal o reducida y activar o desactivar los sonidos tecnológicos al pensar y buscar el clima. El sonido se detiene al hablar para no tapar la voz; si no hay soporte de audio Qt, JARVIS continúa sin él. La esfera se mueve siempre; una preferencia antigua de animación desactivada se convierte a reducida. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
+En la ventana completa pulse «Ajustes». La pantalla tiene dos zonas: **Proveedor de IA (NVIDIA)** — pegue ahí su clave `nvapi-…` (oculta; se guarda y aplica al instante; puede borrarla con «Borrar la clave guardada») — y la personalización del núcleo: color en espera, tamaño, animación normal o reducida y sonidos tecnológicos al pensar y buscar el clima. El sonido se detiene al hablar para no tapar la voz; si no hay soporte de audio Qt, JARVIS continúa sin él. La esfera se mueve siempre; una preferencia antigua de animación desactivada se convierte a reducida. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
 
 ### Memoria entre sesiones
 
@@ -210,9 +197,9 @@ Pida, por ejemplo, «Analiza la imagen /home/usuario/Imágenes/foto.png». JARVI
 
 Para una imagen abierta en WhatsApp, Gmail u otra aplicación, pida «Analiza la imagen visible en mi pantalla». `inspect_screen` solicita permiso para capturar la **pantalla completa** y enviarla a NVIDIA; puede incluir otros datos privados. No accede directamente a cuentas, mensajes o adjuntos. La imagen debe estar visible; capturar puede fallar en Wayland o sesiones sin pantalla, y la ventana de JARVIS puede tapar el contenido. Alternativamente, guarde el adjunto localmente e indique su ruta.
 
-Requiere conexión, `NVIDIA_VISION_API_KEY` o `NVIDIA_API_KEY` en `.env`, y acceso al modelo `mistralai/mistral-large-4-1t-a52b`; puede cambiarse con `NVIDIA_VISION_MODEL`. Cada envío de imagen o captura requiere aprobación separada y no se incluye en los permisos únicos de búsqueda/música. No comparta claves ni imágenes privadas sin entender que se envían a NVIDIA. Las capturas no se guardan como archivos en disco.
+Requiere conexión, la clave NVIDIA (Ajustes → Proveedor de IA, o `NVIDIA_VISION_API_KEY`/`NVIDIA_API_KEY` en el entorno), y acceso al modelo `mistralai/mistral-large-4-1t-a52b`; puede cambiarse con `NVIDIA_VISION_MODEL`. Cada envío de imagen o captura requiere aprobación separada y no se incluye en los permisos únicos de búsqueda/música. No comparta claves ni imágenes privadas sin entender que se envían a NVIDIA. Las capturas no se guardan como archivos en disco.
 
-Si aparece un error de conexión, el detalle distingue TLS, tiempo de espera, conexión de red y respuesta HTTP cuando sea posible, sin mostrar la clave. La llamada de visión no usa variables de proxy ni sigue redirecciones; redes que requieren proxy podrían no funcionar. Una falla de conexión no confirma que la clave o la ruta sean incorrectas.
+Si aparece un error de conexión, el detalle distingue TLS, tiempo de espera, conexión de red y respuesta HTTP cuando sea posible, sin mostrar la clave. La llamada de visión no sigue redirecciones; redes que requieren proxy podrían no funcionar. Una falla de conexión no confirma que la clave o la ruta sean incorrectas.
 
 ### Gmail: buscar, leer, enviar y organizar
 

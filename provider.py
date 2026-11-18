@@ -1,4 +1,9 @@
-"""Create the NVIDIA NIM brain; the single AI provider of JARVIS (no silent switching)."""
+"""Create the NVIDIA NIM brain; the single AI provider of JARVIS.
+
+The API key lives in the desktop app's Ajustes (local settings file managed
+by provider_settings, gitignored, owner-only) or, for the console, in
+NVIDIA_API_KEY from .env. It is never embedded in the repository.
+"""
 import os
 import sqlite3
 from pathlib import Path
@@ -9,10 +14,7 @@ from nvidia_brain import NvidiaBrain, DEFAULT_MODEL
 
 def create_brain(controller, approve):
     name = os.getenv('JARVIS_NAME', 'Señor')
-    provider = os.getenv('JARVIS_PROVIDER', 'nvidia').strip().lower()
-    if provider != 'nvidia':
-        raise ValueError('JARVIS_PROVIDER debe ser nvidia; Gemini fue retirado del proyecto.')
-    brain = NvidiaBrain(os.getenv('NVIDIA_API_KEY'), controller, approve, name=name,
+    brain = NvidiaBrain(None, controller, approve, name=name,
                         model=os.getenv('NVIDIA_MODEL', DEFAULT_MODEL))
     path = os.getenv('JARVIS_MEMORY_PATH', str(Path(__file__).resolve().parent / '.jarvis-memory.sqlite3'))
     try:
