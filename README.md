@@ -13,21 +13,38 @@ JARVIS separa la conversación y las herramientas Gemini (`brain.py`), las opera
 
 Cree un repositorio en GitHub, añada estos archivos, revise `git status`, cree un commit y configure su remoto y rama de seguimiento con Git. No incluya `.env`, `venv/` ni `.jarvis-state.json`; están ignorados. La actualización requiere una rama con upstream configurado y acceso al remoto.
 
-## Instalación
+## Descargar e instalar (por máquina)
 
-Clone el repositorio confiable en su máquina. Desde la carpeta clonada:
+JARVIS se distribuye como **código fuente** (no hay instalador empaquetado `.exe`/`.dmg` todavía); la «descarga» es el botón **Code → Download ZIP** de GitHub o `git clone`. El flujo es el mismo en todas las máquinas: descargar → instalar con el script de tu plataforma → abrir. Requisito común: **Python 3.11+** y **Git** opcional (solo si quieres actualizar con `git pull --ff-only`).
+
+**Windows (tú, ahora)**
+1. Ve a https://github.com/SamuelPart/JarvisM y pulsa **Code → Download ZIP** (o clona: `git clone https://github.com/SamuelPart/JarvisM.git`). Descomprime en, por ejemplo, `C:\JARVIS`.
+2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala dependencias y te pide tu `GEMINI_API_KEY`).
+3. Arranca con `venv\Scripts\python.exe gui.py`.
 
 **Linux**
 ```bash
+git clone https://github.com/SamuelPart/JarvisM.git
+cd JarvisM
 chmod +x install.sh
 ./install.sh
-venv/bin/python main.py
+venv/bin/python gui.py
 ```
 
-**Windows (CMD)**
-```bat
-install.bat
-venv\Scripts\python.exe main.py
+**macOS**
+No hay instalador ni se ha verificado en macOS; el proyecto declara soporte para **Linux y Windows**. Puede que gran parte funcione sobre Python 3.11+, pero no lo uses donde necesites garantías.
+
+**ZIP por rama (importante ahora):** el botón *Download ZIP* descarga la rama por defecto (`main`), que aún **no** incluye el trabajo más reciente (HUD, subtítulos, voz, corrector) mientras el PR `arena/b8eb0d31-jarvism` siga abierto. Para probar el estado actual sin Git: descarga `https://github.com/SamuelPart/JarvisM/archive/refs/heads/arena/b8eb0d31-jarvism.zip`. Cuando el PR se fusione, el ZIP normal de `main` ya traerá todo.
+
+Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
+
+```dotenv
+GEMINI_API_KEY=su_clave
+GEMINI_MODEL=gemini-2.5-flash
+JARVIS_NAME=Señor
+JARVIS_AUTO_UPDATE=0
+JARVIS_VOICE_MODE=edge
+JARVIS_TTS_VOICE=es-MX-JorgeNeural
 ```
 
 Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
