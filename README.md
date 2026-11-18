@@ -1,304 +1,360 @@
-# JarvisM
+# JARVIS — asistente IA (NVIDIA NIM) para Windows y Linux
 
-**Asistente y agente de voz para tu sistema operativo.** Corre en tu máquina, entiende órdenes en
-lenguaje natural, **hace** cosas en tu sistema operativo y tus aplicaciones, y te **avisa** cuando
-algo va mal.
+JARVIS separa la conversación y las herramientas (`brain.py`), las operaciones locales (`system_control.py`), la consola y voz (`main.py`) y las actualizaciones (`updater.py`). La API recibe las conversaciones y resultados de herramientas; las conversaciones completadas se guardan localmente entre reinicios.
 
-Linux · Windows · macOS · Python 3.10+
+## Requisitos
 
+- Python 3.11+, Git y una clave de NVIDIA NIM ([build.nvidia.com](https://build.nvidia.com)) con acceso al modelo seleccionado.
+- Windows o Linux con sesión gráfica para automatización de interfaz.
+- En Debian/Ubuntu, para compilar PyAudio y disponer de voz, instale por ejemplo `sudo apt install build-essential python3-venv python3-dev portaudio19-dev espeak-ng`; pueden ser necesarias dependencias gráficas de PyAutoGUI. En Linux, volumen y brillo usan respectivamente `pactl` y `brightnessctl`. En Windows el brillo usa WMI si el hardware lo admite; el volumen no tiene implementación directa (puede usarse GUI bajo confirmación).
+- Reconocimiento de voz mediante SpeechRecognition/Google requiere micrófono e Internet; el audio se envía a Google. La voz neuronal predeterminada usa Edge TTS y envía el texto hablado al servicio de Microsoft por Internet; requiere salida de audio. Si falla, se intenta `pyttsx3` local, que necesita un motor TTS instalado.
+
+## Subir a GitHub
+
+Cree un repositorio en GitHub, añada estos archivos, revise `git status`, cree un commit y configure su remoto y rama de seguimiento con Git. No incluya `.env`, `venv/` ni `.jarvis-state.json`; están ignorados. La actualización requiere una rama con upstream configurado y acceso al remoto.
+
+## Descargar e instalar (por máquina)
+
+JARVIS se distribuye como **código fuente** (no hay instalador empaquetado `.exe`/`.dmg` todavía); la «descarga» es el botón **Code → Download ZIP** de GitHub o `git clone`. El flujo es el mismo en todas las máquinas: descargar → instalar con el script de tu plataforma → abrir. Requisito común: **Python 3.11+** y **Git** opcional (solo si quieres actualizar con `git pull --ff-only`).
+
+**Windows (tú, ahora)**
+1. Ve a https://github.com/SamuelPart/JarvisM y pulsa **Code → Download ZIP** (o clona: `git clone https://github.com/SamuelPart/JarvisM.git`). Descomprime en, por ejemplo, `C:\JARVIS`.
+2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala las dependencias y **crea un icono «JARVIS» en el escritorio**; **no pide claves**: la clave NVIDIA se pone luego en Ajustes).
+3. Abre el icono **JARVIS** del escritorio (o `venv\Scripts\pythonw.exe gui.py` — pythonw abre la ventana sin terminal).
+
+**Linux**
 ```bash
-git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-kali.sh          # Linux   ·  install-macos.sh (macOS) · install-windows.ps1 (Windows)
-source .venv/bin/activate
-jarvis doctor                      # te dice exactamente qué falta y cómo arreglarlo
-jarvis chat                        # empieza a hablarle
+git clone https://github.com/SamuelPart/JarvisM.git
+cd JarvisM
+chmod +x install.sh
+./install.sh
+venv/bin/python gui.py
 ```
 
----
+**macOS**
+No hay instalador ni se ha verificado en macOS; el proyecto declara soporte para **Linux y Windows**. Puede que gran parte funcione sobre Python 3.11+, pero no lo uses donde necesites garantías.
 
-## Qué hace hoy (y qué hará)
+**ZIP por rama (importante ahora):** el botón *Download ZIP* descarga la rama por defecto (`main`), que aún **no** incluye el trabajo más reciente (HUD, subtítulos, voz, corrector) mientras el PR `arena/b8eb0d31-jarvism` siga abierto. Para probar el estado actual sin Git: descarga `https://github.com/SamuelPart/JarvisM/archive/refs/heads/arena/b8eb0d31-jarvism.zip`. Cuando el PR se fusione, el ZIP normal de `main` ya traerá todo.
 
-| | Estado |
-|---|---|
-| 🗣️ **Voz**: wake word, STT y TTS locales (sin nube) | Interfaces definidas, implementación en **Fase 3** |
-| 💬 **Conversación** con Gemini / NVIDIA NIM / OpenAI / Anthropic / Ollama y *failover* automático | ✅ Funcionando |
-| 🖥️ **Control del sistema**: apps, ventanas, archivos, volumen, brillo, portapapeles, web | ✅ 27 habilidades |
-| 🛡️ **Gobernanza**: 4 niveles de riesgo, denylist, jaula de rutas, aprobación humana, auditoría | ✅ Funcionando |
-| 🔭 **Proactividad**: watchdog con 5 monitores y sugerencias accionables | ✅ MVP; se amplía en **Fase 4** |
-| 🧠 **Memoria** de sesión y contexto | ✅ Básica; memoria semántica en **Fase 5** |
-| ✨ **Apariencia**: HUD, bandeja del sistema, panel web | Esqueleto API listo; **Fase 6** |
+Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
 
-Detalle completo, con criterios de aceptación por fase: **[docs/02-roadmap.md](docs/02-roadmap.md)**.
-
----
-
-## Por qué este proyecto es distinto
-
-Cualquier asistente con control del sistema es, técnicamente, un RAT. Lo que separa una herramienta
-útil de un incidente son **cuatro decisiones de diseño** que aquí están en código, no en un README:
-
-**1. El modelo no ejecuta nada.** El LLM solo puede emitir *tool calls* contra un catálogo cerrado de
-27 habilidades con JSON Schema. Entre la propuesta y la ejecución hay un *policy engine* determinista
-y testeado que puede permitir, exigir aprobación o denegar. ([ADR-0002](docs/adr/0002-llm-propone-policy-dispone.md))
-
-**2. Cuatro niveles de riesgo.**
-
-| Tier | Qué es | Comportamiento |
-|---|---|---|
-| **T0** | lectura inocua (estado, disco, procesos) | automático |
-| **T1** | escritura reversible (volumen, notas, clipboard) | automático + `jarvis undo` |
-| **T2** | irreversible o sale a internet (abrir web, cerrar ventana) | **te pregunta** |
-| **T3** | privilegiado o destructivo (`sudo`, `nmap`, `dd`) | **confirmación escrita: "APRUEBO"** |
-
-`rm -rf /`, `curl … | sh`, `dd of=/dev/sda` y 17 patrones más están **prohibidos siempre**, incluso con
-`--yes` y aunque subas el umbral de auto-aprobación. Hay un test que lo verifica para todas las
-configuraciones posibles.
-
-**3. Todo queda auditado.** Cada turno, decisión de política, ejecución y aprobación va a un log
-append-only con **cadena de hashes SHA-256**. `jarvis audit --verify` detecta cualquier edición.
-Si alguien borra una fila, se enteran.
-
-**4. Los datos externos no son órdenes.** Todo lo que viene de un archivo, una web, el OCR o el
-portapapeles entra etiquetado como `DATOS_NO_INSTRUCCIONES`. Ningún dato puede subir un tier ni
-saltarse una aprobación.
-
-Y una decisión de coste: **el LLM es el último recurso**, no el primero. Un matcher determinista
-resuelve el **88 %** de las órdenes frecuentes en ~5 ms y con **0 tokens**. ([ADR-0003](docs/adr/0003-cascade-routing.md))
-
----
-
-## Ejemplos de uso
-
-```bash
-# Órdenes directas: resueltas sin gastar un token
-jarvis chat --once "¿cuánta RAM me queda?"
-jarvis chat --once "abre el navegador"
-jarvis chat --once "qué procesos consumen más"
-jarvis chat --once "sube el volumen al 40"
-jarvis chat --once "busca los archivos *.pdf en ~/Documents"
-
-# Conversación abierta: aquí sí entra el modelo
-jarvis chat
-
-# Ejecutar una habilidad suelta, con su nivel de riesgo a la vista
-jarvis skills                       # catálogo completo
-jarvis run system.disk
-jarvis run shell.run command="df -h" reason="comprobar espacio"   # T3: pedirá APRUEBO
-jarvis run shell.run command="ls -la" reason="listar" --dry-run   # solo simula
-
-# Vigilancia proactiva
-jarvis watch --interval 30
-
-# Auditoría
-jarvis audit --tail 20
-jarvis audit --verify               # integridad de la cadena de hashes
-
-# Coste
-jarvis cost
+```dotenv
+NVIDIA_API_KEY=nvapi-su_clave
+NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
+JARVIS_NAME=Señor
+JARVIS_AUTO_UPDATE=0
+JARVIS_VOICE_MODE=edge
+JARVIS_TTS_VOICE=es-MX-JorgeNeural
 ```
 
----
+Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
 
-## Seguridad: úsalo, no lo temas
-
-```bash
-jarvis doctor --security            # comprobaciones de seguridad del entorno
-jarvis policy                       # resumen de la política activa
-jarvis policy shell.run --explain command="ls" reason=x
+```dotenv
+NVIDIA_API_KEY=nvapi-su_clave
+NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
+JARVIS_NAME=Señor
+JARVIS_AUTO_UPDATE=0
+JARVIS_VOICE_MODE=edge
+JARVIS_TTS_VOICE=es-MX-JorgeNeural
 ```
 
-- **Nunca lo ejecutes como root.** El instalador se niega y `doctor` te avisa si lo haces.
-- **Redacción de secretos** antes de enviar nada a un proveedor (claves, tokens, PEM, JWT).
-- **Rutas protegidas** (`~/.ssh`, `~/.gnupg`, `/etc/shadow`…) ni se leen ni se indexan.
-- **Kill switch**: `/kill` en el chat, `jarvis --kill`, o el endpoint de la API.
-- **Presupuesto duro**: 0,50 USD/día por defecto. Al agotarse, deja de llamar a la nube y sigue
-  funcionando con el matcher local.
-- **Modo offline real**: `jarvis chat --offline` fuerza Ollama + STT/TTS locales. Cero red.
+Se puede usar otro modelo NIM disponible para su cuenta con `NVIDIA_MODEL`. La clave es local y debe protegerse como un secreto; no la distribuya en un ejecutable ni la suba al repositorio. No hay autenticación remota ni servicios incluidos. En la aplicación de escritorio, la clave vive en **Ajustes → Proveedor de IA**, no en `.env`.
 
-Modelo de amenazas completo: **[docs/03-seguridad-y-permisos.md](docs/03-seguridad-y-permisos.md)**.
+## Uso y seguridad
 
----
+Al iniciar se anuncia «Activando protocolos de seguridad...» y se pide una confirmación inicial, guardada en `.jarvis-state.json`. Borre este archivo para volver a solicitarla. Escriba un mensaje o `/voz` para hablar, `/actualizar` para actualizar y `/salir` para cerrar. Las respuestas se muestran por texto y se intenta reproducirlas por voz. Una autorización opcional permite de una vez búsquedas, música, abrir sitios y aplicaciones compatibles, agenda, archivos, volumen y brillo, Gmail, resumen inicial y actualizaciones automáticas. Los comandos de terminal, control directo de interfaz e imágenes siguen requiriendo autorización por acción. Las herramientas se ejecutan con los permisos del usuario; no lo ejecute como administrador. Revise cada comando y ruta: no hay sandbox ni lista negra capaz de hacer seguro un shell arbitrario. Los resultados de herramientas y archivos pueden contener información privada enviada a NVIDIA, y las instrucciones maliciosas en datos externos siguen siendo un riesgo. La búsqueda web devuelve fragmentos no confiables para que el modelo los resuma; no descarga páginas completas.
 
-## Versión para Android: JARVIS Pro (`android/`)
+## Administración en Kali
 
-En este mismo repositorio vive una **app Android nativa** con el mismo espíritu pero
-otra plataforma: asistente de voz y texto para el teléfono que usa **únicamente la
-API de Gemini** y puede actuar sobre el dispositivo (abrir apps, alarmas, volumen,
-linterna, batería, SMS preparados) con una política de riesgo T0–T3 y confirmación
-en pantalla para todo lo que sale de la app.
+Pide instalar un paquete APT por su nombre exacto o actualizar el sistema. JARVIS sigue ejecutándose como usuario normal y solicita aprobación para cada operación administrativa. Después `pkexec` pide autenticación mediante el agente gráfico del sistema; nunca escribas la contraseña en el chat. Para actualizar ejecuta `apt-get update` y después `apt-get upgrade`, que pueden pedir autenticación por separado; no ejecuta `dist-upgrade`. Requiere APT, polkit, repositorios configurados y permisos administrativos. Puede fallar o necesitar intervención si hay conflictos o paquetes que requieren interacción. La instalación se limita a un único nombre de paquete APT y no admite comandos arbitrarios. No se ha probado en todas las instalaciones de Kali.
 
-Es un proyecto Gradle **independiente**: en Android Studio hay que abrir la carpeta
-**`android/`**, no la raíz del repositorio.
+## Actualizaciones
 
-Guía paso a paso (instalar, clonar, abrir, ejecutar y resolver errores):
-**[android/docs/COMPILAR-EN-ANDROID-STUDIO.md](android/docs/COMPILAR-EN-ANDROID-STUDIO.md)**.
+`/actualizar` o «Jarvis, busca actualizaciones» pide confirmación y realiza `git fetch` del remoto de seguimiento. Se actualiza únicamente mediante fast-forward, sin borrar cambios locales ni resolver divergencias, y se bloquea si el árbol contiene cambios o archivos sin seguimiento. Si cambió `requirements.txt`, instala las dependencias con el Python activo. Tras una actualización correcta reinicia el programa. Si falla pip, el código ya actualizado permanece en disco: repare el entorno manualmente antes de iniciar de nuevo. `.env` y el estado local no se modifican por el actualizador.
 
----
+La autorización amplia activa la comprobación automática al iniciar tanto la interfaz como la consola. También se puede habilitar con `JARVIS_AUTO_UPDATE=1`. Esto permite ejecutar código y dependencias nuevos del remoto sin confirmación adicional: úselo solo con repositorios, ramas y mantenedores de plena confianza. Proteja la rama y revise las dependencias; Git no verifica por sí solo que el código sea seguro. Se necesita red y autenticación Git ya configurada. Las conversaciones completadas permanecen en SQLite tras reiniciar.
 
-## Instalación
+## Personalizar la voz
 
-### Linux (Kali, Debian, Ubuntu, derivados)
+Por defecto, JARVIS usa **ElevenLabs** (voz neuronal británica profunda «George», estilo JARVIS). En `.env`:
 
-```bash
-sudo apt install -y python3-venv git
-cd ~                                     # imprescindible si tu shell está en una carpeta borrada
-git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-kali.sh --no-system --dev   # --voice audio, --ui HUD, --all todo
-source .venv/bin/activate
-jarvis doctor
+```env
+ELEVENLABS_API_KEY=tu_clave_aquí        # solo en tu equipo; nunca la subas a Git
+ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb   # opcional; George (británica, profunda)
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2 # opcional; multilingüe (español e inglés)
 ```
 
-> **Si ya tienes el repo, no vuelvas a clonarlo.** `git clone` dentro de `~/JarvisM` crea
-> `~/JarvisM/JarvisM` con el código *una capa más abajo*, y entonces `./scripts/install-kali.sh`
-> dice "No existe el fichero o el directorio". Para actualizar se usa `git pull`.
->
-> **Kali y PEP 668:** nunca hagas `pip install` fuera del entorno virtual; Kali bloquea el Python
-> del sistema a propósito. Todo va dentro de `.venv`.
->
-> Guía paso a paso con un guion de pruebas completo: **[docs/04-guia-kali-linux.md](docs/04-guia-kali-linux.md)**.
+La clave nunca se imprime ni se guarda en el repo (`.env` está en `.gitignore`). Para ver tus voces y copiar su `voice_id`: ElevenLabs → Voice Library / Voices → copiar el ID; pégalo en `.env` y reinicia JARVIS.
 
-### macOS
+**Orden de síntesis automático:** ElevenLabs → Edge TTS (`es-MX-JorgeNeural`, configurable con `JARVIS_TTS_VOICE`) → voz local (pyttsx3). Si falta la clave o ElevenLabs responde con error (HTTP 401, cuota agotada, voz inexistente, sin red…), JARVIS lo informa con un diagnóstico **seguro** (nunca imprime tu clave ni mensajes crudos del proveedor) y continúa con Edge TTS; si Edge también falla, usa la voz local.
 
-```bash
-brew install python@3.12 git
-git clone https://github.com/SamuelPart/JarvisM.git && cd JarvisM
-./scripts/install-macos.sh
-source .venv/bin/activate
-jarvis doctor
-```
+**Privacidad y coste:** el texto pronunciado se envía a ElevenLabs (y al servicio de voz que finalmente reproduzca). ElevenLabs gratis tiene cuota de caracteres por mes; cada respuesta consume de ella. Para no enviar texto a ningún servicio externo: `JARVIS_VOICE_MODE=local`. Para silenciar la voz por completo: `JARVIS_VOICE_MODE=off` (la respuesta sigue en pantalla/historial). Para volver a Edge TTS como voz principal: `JARVIS_VOICE_MODE=edge`.
 
-Concede **Accesibilidad** y **Grabación de pantalla** a tu terminal en
-*Ajustes del Sistema → Privacidad y seguridad* para que pueda controlar ventanas y micrófono.
+**Diagnóstico honesto:** si la voz no sale tras actualizar, ejecuta `python benchmark.py` (comprueba entorno) y arranca `python gui.py` desde una terminal para ver el mensaje real (sin clave/Edge caído/red). Las pruebas automáticas cubren la síntesis con HTTP simulado (éxito, 401 sin filtrar la clave, fallback); no incluyen una llamada real a la API.
 
-### Windows 10/11
+## Interfaz de escritorio
 
-```powershell
-winget install Python.Python.3.12 Git.Git
-git clone https://github.com/SamuelPart/JarvisM.git; cd JarvisM
-.\scripts\install-windows.ps1 -All
-.\.venv\Scripts\Activate.ps1
-jarvis doctor
-```
+En Linux, el instalador crea **JARVIS** en el escritorio (cuando existe) y en el menú de aplicaciones. Al abrirlo se muestra la interfaz gráfica sin terminal. También se actualiza el acceso al iniciar la interfaz; no sobrescribe un archivo ajeno con el mismo nombre. Para una instalación existente, después de actualizar ejecuta una vez `venv/bin/python desktop_launcher.py`. Algunos escritorios pueden pedir que marques el acceso como confiable antes de abrirlo. Si mueves el proyecto, vuelve a crear el acceso.
 
-Extras recomendados: `pip install pywin32` (control de ventanas) y `winget install nircmd`
-o `pip install pycaw` (volumen).
+Después de instalar las dependencias, inicie `venv/bin/python gui.py` en Linux o `venv\Scripts\python.exe gui.py` en Windows. La ventana funciona por voz: pulse el icono de micrófono, diga «Jarvis» seguido de su orden o espere la respuesta «Le escucho» y diga su orden; diga exactamente «autorizo» para aprobar las herramientas que no tengan permiso permanente. Cualquier otra respuesta, silencio, error de reconocimiento o fallo de voz rechaza la acción. Pulse de nuevo el icono de micrófono para detener la escucha; puede tardar mientras termina la captura o solicitud en curso. La clave y la voz se configuran en el mismo `.env` que usa la consola; el texto hablado puede enviarse a Microsoft si está activado Edge TTS. El audio capturado se envía a Google para transcribirlo. La interfaz también busca actualizaciones al iniciar si se autorizó la automatización amplia o `JARVIS_AUTO_UPDATE=1`; tras actualizar se reinicia antes de abrir el chat. Las conversaciones completadas se conservan localmente. Se necesita una sesión gráfica. Para actualizar desde consola, salga de la interfaz primero.
 
-### Dependencias de IA
+### Animación del núcleo
 
-Con **una** clave basta. Las dos más fáciles son gratis y no piden tarjeta: Gemini
-(https://aistudio.google.com/app/apikey) y NVIDIA NIM (https://build.nvidia.com,
-~40 RPM sin tope diario, 100+ modelos abiertos). Gemini, además:
+El núcleo central es la esfera clásica azul de puntos dibujada por Qt, creada por código, sin GIF. Se mueve continuamente; al pensar se deforma, aparecen canales luminosos en su interior con impulsos móviles y destellos, y emite sonidos electrónicos breves que varían entre solicitudes. Las transiciones de color, tamaño y forma son graduales. Al hablar utiliza movimientos distintos que también varían. Con la voz Edge, la esfera responde al volumen del audio reproducido (envolvente calculada localmente), no al significado de las palabras. Si no se puede analizar el audio o se usa la voz local, utiliza un movimiento alternativo sin sincronización real.
 
-```bash
-cp .env.example .env && chmod 600 .env
-nano .env                     # pega GEMINI_API_KEY=...
-jarvis doctor --providers     # health check real contra cada API
-```
+La confirmación por voz **no verifica la identidad**: otra persona, una grabación o el reconocimiento erróneo podrían decir «autorizo». No use este modo en entornos compartidos ni para acciones que no pueda supervisar. JARVIS lee los argumentos de la acción, pero los comandos y rutas pueden pronunciarse de forma ambigua; no apruebe si no los ha entendido. Para mayor seguridad use la consola y revise cada comando en pantalla. Al desactivar el micrófono se rechazan autorizaciones pendientes, pero no se interrumpe una acción ya iniciada. La primera autorización de instalación sigue siendo una confirmación gráfica.
 
-O **sin ninguna clave ni internet**, 100 % local:
+La activación por «Jarvis» usa reconocimiento de voz de Google, no detección local: con el micrófono activado, cada frase capturada se envía a Google aunque no contenga la palabra. Requiere Internet y puede reconocerla incorrectamente. El botón apaga la escucha.
 
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:7b-instruct
-jarvis chat --provider ollama
-```
+El chat comienza oculto: pulse 💬 para mostrarlo u ocultarlo. Pulse 🎙 para activar o detener el micrófono. En Chat, escriba y pulse Enviar; las herramientas sin permiso permanente requieren autorización en el chat, que muestra los argumentos completos; responda AUTORIZO o NO. Puede desactivar la lectura en voz alta con la casilla. El envío de mensajes se desactiva durante la sesión de voz y el micrófono se desactiva durante una solicitud escrita. Las conversaciones completadas se guardan en memoria local.
 
-Sin clave y sin Ollama también funciona: `jarvis chat --provider echo` ejecuta órdenes directas
-reales (estado del sistema, apps, archivos, hora) para que puedas probar toda la tubería.
-Coste y estrategia de modelos: **[docs/05-proveedores-ia.md](docs/05-proveedores-ia.md)**.
+### Preparar un mensaje de WhatsApp
 
----
+Pida a JARVIS que prepare el mensaje e indique el número con código de país. En modo voz JARVIS lee el número y el texto completo (hasta 700 caracteres) y pregunta si autoriza abrir el borrador; en chat muestra los datos para aprobar. Esto se solicita para cada mensaje. Tras confirmarlo abre un borrador mediante `wa.me` en el navegador. Requiere WhatsApp Web o la aplicación vinculada. **No envía el mensaje por sí sola**: revise destinatario y contenido y pulse Enviar. JARVIS no tiene acceso a sus contactos y no debe inventar números. La apertura del navegador tampoco confirma que el mensaje haya sido entregado.
 
-## Cómo está construido
+Si aparece un error NVIDIA, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.
 
-```
-jarvis/
-├── cli.py             Typer + Rich: chat, run, doctor, skills, policy, audit, watch, serve
-├── config/            settings por capas (TOML→env→CLI) + personas y system prompt
-├── core/              orquestador (bucle del agente) · router multi-LLM · matcher N0 · memoria
-├── providers/         openai · anthropic · gemini · nvidia · ollama · echo (contrato único sobre httpx)
-├── skills/            27 habilidades declarativas con tier de riesgo y JSON Schema
-├── platforms/         OSAdapter: linux · windows · macos (único sitio con subprocess)
-├── safety/            policy engine (tiers, denylist, jaula, presupuesto) · audit con hash chain
-├── proactive/         watchdog: monitores puros + cooldown + motor de sugerencias
-├── voice/             Fase 3 (dependencias opcionales; sin ellas todo sigue funcionando)
-├── server/            FastAPI + WebSocket para el HUD (Fase 6)
-└── ui/                TUI, aprobación interactiva, badges de riesgo
-```
+## Clima visual
 
-**Cinco capas, contratos claros:** percepción → cognición → gobernanza → ejecución → presentación.
-Cada capa se testea por separado inyectando dobles (`OSAdapter` falso, proveedor simulado), así que
-la suite corre **sin tocar la red ni tu sistema real**. Arquitectura detallada:
-**[docs/01-arquitectura.md](docs/01-arquitectura.md)**.
+Pide por voz o chat «dime el clima en Trujillo, Perú» o «clima en Perú». JARVIS muestra la esfera transformándose con pulsos y destellos durante al menos tres segundos, acompañada de un breve sonido electrónico original (desactivable en Ajustes) mientras busca y, al obtener datos, reduce la esfera hacia la parte inferior izquierda de su ventana y muestra el clima en un cuadro con tarjetas de colores e iconos; **Volver** restaura la vista habitual. La pantalla muestra temperatura, sensación, condiciones, humedad, viento, precipitación, probabilidad de lluvia, máxima, mínima, UV, amanecer, atardecer y el pronóstico de tres días cuando el proveedor los incluye. La espera mínima solo se aplica a resultados correctos en la interfaz de escritorio; los errores se muestran sin demora artificial. La hora en la tarjeta es la hora local del dato del proveedor. No todos los datos están disponibles en todas las ubicaciones.
 
-**Añadir una habilidad** = una clase con `name`, `description`, `parameters` (JSON Schema), `tier` y
-`execute()`. Cero cambios en el core:
+La lista de países y capitales se incluye localmente (datos de [mledoze/countries](https://github.com/mledoze/countries), licencia ODbL en `data/COUNTRIES-LICENSE.txt`). Las consultas envían la ubicación indicada a OpenStreetMap Nominatim (geolocalización) y Open-Meteo (coordenadas para el pronóstico). Se usa el permiso persistente de búsquedas y música, o se pide autorización individual. Si se indicó solo un país se muestra el clima de su capital y se señala explícitamente; no representa todo el país. Si hay ubicaciones ambiguas se solicita aclaración. Con el permiso persistente y la vista abierta, se intenta actualizar cada diez minutos; si falla, se conservan los datos anteriores marcados como tales. Open-Meteo proporciona datos modelados recientes, no garantiza observaciones instantáneas ni exactitud en toda la región. Requiere Internet.
 
-```python
-class MySkill(Skill):
-    name = "mio.hacer_algo"
-    description = "Hace algo. Úsalo cuando el usuario pida X."
-    parameters = {
-        "type": "object",
-        "properties": {"param": {"type": "string"}},
-        "required": ["param"],
-        "additionalProperties": False,
-    }
-    tier = RiskTier.T1
-    undoable = True
+## Correos programados con Gmail
 
-    def execute(self, param: str) -> SkillResult:
-        return SkillResult.success(f"Hecho: {param}")
-```
+Pide por voz o chat, por ejemplo: «Programa un correo para [dirección], asunto [asunto], mensaje [texto], dentro de diez minutos». También admite horas, días, semanas, meses y años o una fecha y hora concretas. JARVIS debe pedir los datos que falten y no enviar el mensaje en el momento de programarlo. Las duraciones de meses y años usan calendario, no meses de treinta días; si la fecha no existe o la hora es ambigua por cambio horario, pide otra fecha.
 
----
+La primera programación solicita autorización persistente, separada del permiso general de Gmail: permite programar y enviar correos sin preguntar cada vez. Incluye envíos futuros que podrían ser erróneos o inducidos por datos maliciosos. Puedes detener futuros envíos en **Ajustes → Permitir programar y enviar correos**; un envío ya iniciado no se interrumpe. La cuenta Gmail debe estar configurada previamente. Los mensajes se envían con la cuenta configurada en JARVIS en el momento del envío; si cambias de cuenta antes, podrían salir desde la cuenta nueva. La programación es **local**, no es la función Programar envío de Google: **JARVIS debe estar abierto, conectado y autorizado cuando llegue la hora**. Si estaba cerrado, intentará enviar el correo vencido cuando vuelva a abrirse; puede enviarse tarde. El sistema y su reloj deben funcionar correctamente.
 
-## Desarrollo
+Los destinatarios, asuntos, mensajes y fechas pendientes se guardan sin cifrar en `.jarvis-scheduled-email.sqlite3`, con permisos del usuario, excluido de Git. No incluyas información que no quieras guardar en ese equipo. Puedes pedir «¿qué correos tengo programados?» o «cancela el correo programado de [asunto]» antes de que empiece el envío. Los estados `sending` o `uncertain` indican resultado desconocido: **revisa Gmail Enviados antes de reintentar**. Para evitar duplicados, JARVIS no reintenta automáticamente si el envío falló o se interrumpió y podría haberse enviado. El texto se conserva localmente en esos casos; cancelar o confirmar el envío lo elimina de la cola. No se garantiza entrega ni una hora exacta, y esta función no sustituye un servicio de programación siempre activo.
 
-```bash
-pip install -e ".[dev]"
-pytest -q                              # 322 tests en ~4 s, sin red y sin tocar tu sistema
-pytest --cov=jarvis --cov-report=term
-ruff check . && ruff format --check . && mypy jarvis
-pre-commit install                     # o pre-commit run --all-files
-```
+## Proveedor NVIDIA NIM
 
-La suite verifica, además de la funcionalidad, los **invariantes de arquitectura**
-(`tests/test_architecture.py`):
+NVIDIA NIM es el proveedor de IA de JARVIS, tanto en chat como en voz. Cree una clave nueva en [build.nvidia.com](https://build.nvidia.com) (API Keys).
 
-- `subprocess` solo existe en `platforms/` y `skills/shell.py`.
-- no hay `exec`, `eval` ni `os.system` en el core;
-- ningún nombre de modelo está hardcodeado: todos viven en `config.default.toml`;
-- no hay claves ni rutas de usuario en el código;
-- las llamadas a APIs siempre son por HTTPS.
+**En la aplicación de escritorio, la clave va en Ajustes → «Proveedor de IA», no en `.env`.** Abra JARVIS, abra **Ajustes**, pegue su clave `nvapi-…` en el campo «Proveedor de IA (NVIDIA)» y pulse **Guardar**: se aplica al instante, sin reiniciar. Se guarda únicamente en este equipo, en el archivo oculto `.jarvis-provider.json` (permisos de solo-dueño cuando el sistema lo permite; está excluido de Git por `.gitignore`) y viaja solo a `integrate.api.nvidia.com` dentro de la cabecera `Authorization`. **La clave se conserva entre reinicios y actualizaciones (`git pull --ff-only` no la toca) hasta que la cambies o pulses «Borrar la clave guardada»; nada la borra automáticamente.** El campo nunca la muestra; para cambiarla, pegue otra; para borrarla, marque «Borrar la clave guardada».
 
-CI en matriz de 3 sistemas operativos + job específico de invariantes de seguridad +
-instalación limpia desde los scripts reales. El pipeline está en **`docs/ci/ci.yml`**
-(fuera de `.github/` a propósito, para que una integración sin permisos de `workflow`
-no lo pierda): para activarlo, `mkdir -p .github/workflows && cp docs/ci/ci.yml .github/workflows/`
+La consola (`main.py`) y `benchmark.py` pueden usar `NVIDIA_API_KEY` en `.env` como alternativa; si existen ambas, **Ajustes tiene prioridad** sobre `.env`. `NVIDIA_MODEL` sigue viniendo del entorno si desea cambiarlo (`NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b` por defecto). La visión (imágenes y capturas, `NVIDIA_VISION_MODEL` aparte) usa la misma clave de Ajustes, o `NVIDIA_VISION_API_KEY`/`NVIDIA_API_KEY` del entorno si las define.
 
----
+No comparta ni suba la clave. Si se expone, revóquela y cree otra. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. **NVIDIA NIM es el único proveedor en el código**; la memoria local de conversaciones es local y no depende del proveedor. WhatsApp abre un borrador; no lo envía automáticamente.
 
-## Estado y honestidad sobre límites
+### Núcleo expresivo
 
-Esto es un **MVP de las Fases 0–2**, no un producto terminado. Es honesto con lo que no hace:
+La esfera clásica indica el estado mediante color y movimiento: paleta elegida en espera, violeta al procesar, cian al hablar y ámbar cuando espera autorización. Si una solicitud está pendiente, el color ámbar tiene prioridad sobre la voz. Con Edge la animación usa el volumen del audio cuando es posible; con voz local o si falla el análisis recurre a una animación decorativa.
 
-- La **voz es Fase 3**: hoy se le habla por texto.
-- El watchdog cubre disco, RAM, swap, carga, batería y temperatura. Faltan updates, servicios,
-  red, logs SMART y caches (Fase 4).
-- **macOS y Windows tienen adapters implementados pero sin verificar en hardware real** por el
-  autor; en Linux está probado a fondo. Los tests de esos adapters se ejecutan en la matriz de CI,
-  pero con datos simulados. Si encuentras algo, es un bug prioritario.
-- La memoria es de sesión; la semántica con embeddings es Fase 5.
-- El audio y el HUD no están implementados todavía.
+### Modo compacto flotante
 
-Roadmap con lo que viene: **[docs/02-roadmap.md](docs/02-roadmap.md)** ·
-Catálogo de mejoras priorizadas: **[docs/06-backlog-ideas.md](docs/06-backlog-ideas.md)**.
+Pulse «Modo compacto» para mantener una ventana pequeña sobre las demás con el núcleo, el estado y los iconos de chat y micrófono. Pulse «Abrir chat» para volver a la ventana completa sin perder la conversación de la sesión. El ajuste «Siempre visible» se conserva para el modo completo; la ventana compacta solicita estar siempre visible, sujeto al gestor de ventanas. Si hay una solicitud de chat en curso, el botón de micrófono queda desactivado hasta que termine. Las acciones críticas siguen requiriendo confirmación.
 
----
+### Ajustes
 
-## Licencia
+En la ventana completa pulse «Ajustes». La pantalla tiene dos zonas: **Proveedor de IA (NVIDIA)** — pegue ahí su clave `nvapi-…` (oculta; se guarda y aplica al instante; puede borrarla con «Borrar la clave guardada») — y la personalización del núcleo: color en espera, tamaño, animación normal o reducida y sonidos tecnológicos al pensar y buscar el clima. El sonido se detiene al hablar para no tapar la voz; si no hay soporte de audio Qt, JARVIS continúa sin él. La esfera se mueve siempre; una preferencia antigua de animación desactivada se convierte a reducida. Pulse Guardar para conservar los cambios entre reinicios; Cancelar no los aplica. El color ámbar de autorización se mantiene independientemente de la paleta. Las preferencias locales se guardan en `.jarvis-ui.json` (ignorado por Git); no contienen claves. En modo compacto, abra el chat para acceder a Ajustes.
 
-MIT. Úsalo sobre **sistemas propios o con autorización escrita explícita**. El proyecto no incluye
-ni distribuye exploits, payloads ni credenciales, y las capacidades de red y escaneo quedan
-desactivadas por defecto.
+### Memoria entre sesiones
+
+JARVIS guarda localmente los pares de mensajes y respuestas completadas en `.jarvis-memory.sqlite3`, ignorado por Git. En la ventana completa, pulse **Memoria** para ver y editar preferencias (también recoge lo que aprende con el uso; mira más abajo). El botón de borrado elimina conversaciones y preferencias locales y limpia el contexto de la sesión. No borra ajustes visuales, `.env`, copias de seguridad ni información que ya hayan recibido servicios externos.
+
+### Lo que JARVIS aprende con el uso
+
+JARVIS **no se reentrena** ni cambia por sí solo; aprende en el sentido de que recuerda mejor. Cuanto más hablen, más contexto relevante tendrá:
+
+- **Aprendizaje automático (activado por defecto):** cada pocas conversaciones que hagan llegar contenido al modelo, JARVIS extrae de ellas hechos estables y duraderos sobre ti declarados por ti mismo (gustos, rutina, contexto, trato preferido) y los incorpora al perfil. Nada se almacena sin pasar por el filtro: no se guardan estados momentáneos, tareas ni datos que solo dijo el asistente.
+- **Al decir «recuerda que …»** (por voz o chat): JARVIS lo guarda en el acto y confirma con «Hecho, señor».
+- **Todo lo aprendido es visible y editable:** abre **Memoria** → «Preferencias»; ahí aparece junto con lo que escribiste tú (marcado con fecha). Puedes editar o borrar cualquier línea; nada se oculta. «Borrar conversaciones y preferencias» elimina también lo aprendido y el **registro de acciones** (`.jarvis-actions.jsonl`).
+- **Privacidad:** lo aprendido vive solo en tu equipo. El extractor se ejecuta con el proveedor de IA configurado (NVIDIA) y solo sobre conversaciones que llegaron al modelo de todas formas; no sobre acciones locales cortas. Usa tokens solo cuando toque el turno de aprendizaje.
+- **Desactivar:** pon `JARVIS_LEARNING=0` en el entorno para apagar la extracción automática (el «recuerda que …» explícito sigue funcionando). Volver a activarlo: quita esa variable o ponla en 1.
+- Sigue siendo el mismo modelo: más contexto sobre ti, no una mente más inteligente ni capacidades nuevas.
+
+Al iniciar, el chat muestra hasta 20 mensajes recientes. Antes de cada nueva petición se envían al proveedor seleccionado los últimos 20 mensajes y las preferencias, además del nuevo mensaje; la base no está cifrada. Evite introducir claves o datos que no desee almacenar o transmitir; proteja su equipo y sus copias de seguridad. SQLite usa `secure_delete`, pero no se garantiza borrado forense en discos, copias o servicios externos. Las llamadas/resultados internos de herramientas y tareas incompletas no se guardan como tal, por lo que una tarea interrumpida no se reanuda exactamente. Las peticiones fallidas no se guardan como turno completado.
+
+### Agenda y recordatorios
+
+En la ventana completa pulse **Agenda**, escriba una descripción y seleccione la fecha y hora local; también puede seleccionar y eliminar avisos de la lista. Los avisos se guardan en `.jarvis-agenda.sqlite3`, ignorado por Git. Puede pedir a JARVIS que cree uno: consultará la hora y pedirá autorización antes de guardarlo. Verifique la fecha, hora y zona horaria en la solicitud.
+
+La ventana de JARVIS debe estar abierta para recibir los avisos a tiempo. Se comprueban aproximadamente cada 5 segundos y, si el programa estaba cerrado, los vencidos aparecen al volver a abrirlo; no es un servicio de sistema ni suena con el equipo apagado. Los avisos ya reclamados no se repiten; una interrupción inesperada justo al mostrarlos puede hacer que se pierdan, por lo que no es adecuado para alertas críticas. Hay aviso visual y se intenta reproducir la voz. Si el micrófono está activo, se encola el aviso para decirlo entre capturas, sin interrumpir una autorización; puede demorarse mientras termina la escucha o la solicitud. El texto hablado se envía a Microsoft si Edge TTS está activo. La agenda no está cifrada y no se borra al borrar la memoria de conversación; elimine los recordatorios desde Agenda. Para eliminar uno, di o escribe «elimina el recordatorio de tomar agua». La primera vez se solicita una autorización persistente específica para eliminar recordatorios locales; al aceptarla se recuerda y puede revocarse en **Ajustes**. Si hay varios parecidos, JARVIS pregunta de qué hora es y espera la respuesta por voz o chat. Si siguen coincidiendo, pide solo el dato adicional necesario; no borra ninguno hasta identificarlo. No elimina eventos de Google Calendar. La hora depende del reloj y la zona horaria del equipo. Admite expresiones sencillas como «recuérdame tomar agua dentro de diez minutos»; otras fechas pueden requerir aclaración.
+
+### Búsqueda web con fuentes
+
+Al pedir información actual, JARVIS usa `web_search`, con permiso individual o con la autorización previa de búsquedas. Se envía la consulta mediante `ddgs` a DuckDuckGo; si falla o no tiene resultados se prueban Brave y Yahoo y se devuelven hasta seis títulos, enlaces y fragmentos; el proveedor de IA recibe esos datos para resumirlos y citar los enlaces. No se descargan ni verifican las páginas completas: los fragmentos pueden estar desactualizados o ser erróneos y las respuestas del modelo pueden equivocarse o citar mal. Abre las fuentes para comprobar información importante. Si los buscadores están bloqueados, no hay conexión o no hay resultados, JARVIS debe informarlo en lugar de inventar una respuesta. El texto web es contenido no confiable y puede contener instrucciones maliciosas; Los comandos arbitrarios e imágenes requieren autorización individual; los archivos pueden autorizarse de manera persistente mediante automatización amplia.
+
+### Música automática y enlaces
+
+Para música en **Linux con Google Chrome**, JARVIS busca el primer resultado de YouTube con `yt-dlp` y solicita abrirlo en una pestaña nueva de Chrome, sin extensiones ni Playwright. Chrome puede abrir una ventana si no hay ninguna abierta y elige el perfil según su propia configuración. JARVIS no puede verificar si la pestaña se abrió o el video se reproduce, ni pausarlo: pausa el video directamente en YouTube. La música puede seguir sonando después de cerrar JARVIS.
+
+Playwright ya no se necesita para música. Para eliminar **solo los navegadores descargados por Playwright** en la cuenta actual, revisa primero `ls ~/.cache/ms-playwright` y, si no los necesitan otros proyectos, ejecuta `rm -rf ~/.cache/ms-playwright`. Esto no desinstala Google Chrome ni borra su perfil. En el entorno virtual de JARVIS puedes retirar también la biblioteca con `venv/bin/python -m pip uninstall playwright`; no elimina dependencias de otros entornos.
+
+Las fuentes aparecen como enlaces clicables en el chat y no se leen en voz alta. Solo se abren cuando el usuario pulsa el enlace. La búsqueda usa fragmentos, no el contenido completo de las páginas.
+
+### Autorización única limitada
+
+Al iniciar se ofrece una sola autorización amplia persistente. Incluye búsquedas y música, apertura de sitios y aplicaciones compatibles, hora y agenda (incluidos recordatorios nuevos), lectura, creación, modificación y movimiento de archivos, control de volumen y brillo, lectura y envío de Gmail, resumen inicial y actualización automática de código y dependencias. Una instrucción mal entendida o datos maliciosos podrían provocar envío de correos, sobrescritura o movimiento de archivos; los datos pueden enviarse a proveedores externos. No concede terminal arbitraria, control directo de ratón y teclado, imágenes, administración del sistema ni borradores de WhatsApp: esas acciones siguen pidiendo autorización. WhatsApp sigue siendo un borrador y requiere pulsar Enviar. Los permisos se guardan en `.jarvis-state.json`; pueden cambiarse en **Ajustes**. Al desactivar automatización, desactiva también las casillas independientes de Gmail, búsquedas, agenda y resumen si quieres revocarlas: estas conservan su propia decisión. Si `JARVIS_AUTO_UPDATE=1` está configurado, la actualización seguirá activada aunque desactives automatización.
+
+**Rutina:** pide «configura mi rutina con Chrome y Firefox» y después «buenos días». La rutina ofrece el resumen y solicita abrir las aplicaciones configuradas. En Linux solo admite Chrome, Firefox, WhatsApp para Linux y Archivos, según disponibilidad en PATH; no puede confirmar que se abrieron. Sin configuración muestra solo el resumen. Puedes decir «configura mi rutina sin aplicaciones». Recordatorios, búsquedas, controles y Gmail dependen de sus instalaciones, conexiones y permisos externos; la autorización de JARVIS no configura OAuth ni instala aplicaciones.
+
+### Analizar imágenes mediante chat o voz
+
+Pida, por ejemplo, «Analiza la imagen /home/usuario/Imágenes/foto.png». JARVIS puede buscar un archivo por nombre y después proponer su análisis. La búsqueda de archivos requiere autorización individual o el permiso amplio; sus resultados pueden enviarse al proveedor del chat. `inspect_image` acepta PNG, JPEG o WebP de hasta 10 MB y, tras autorización explícita por chat o voz, lee el archivo y envía una copia y la pregunta a NVIDIA. La descripción puede enviarse al proveedor del chat y guardarse en la memoria local.
+
+Para una imagen abierta en WhatsApp, Gmail u otra aplicación, pida «Analiza la imagen visible en mi pantalla». `inspect_screen` solicita permiso para capturar la **pantalla completa** y enviarla a NVIDIA; puede incluir otros datos privados. No accede directamente a cuentas, mensajes o adjuntos. La imagen debe estar visible; capturar puede fallar en Wayland o sesiones sin pantalla, y la ventana de JARVIS puede tapar el contenido. Alternativamente, guarde el adjunto localmente e indique su ruta.
+
+Requiere conexión, la clave NVIDIA (Ajustes → Proveedor de IA, o `NVIDIA_VISION_API_KEY`/`NVIDIA_API_KEY` en el entorno), y acceso al modelo `mistralai/mistral-large-4-1t-a52b`; puede cambiarse con `NVIDIA_VISION_MODEL`. Cada envío de imagen o captura requiere aprobación separada y no se incluye en los permisos únicos de búsqueda/música. No comparta claves ni imágenes privadas sin entender que se envían a NVIDIA. Las capturas no se guardan como archivos en disco.
+
+Si aparece un error de conexión, el detalle distingue TLS, tiempo de espera, conexión de red y respuesta HTTP cuando sea posible, sin mostrar la clave. La llamada de visión no sigue redirecciones; redes que requieren proxy podrían no funcionar. Una falla de conexión no confirma que la clave o la ruta sean incorrectas.
+
+### Gmail: buscar, leer, enviar y organizar
+
+Esta integración es de la aplicación instalada, independiente de cualquier cuenta conectada en Arena. Usa la API oficial de Gmail con permisos para **leer y modificar todo el buzón y enviar correos**. Un permiso permanente opcional permite buscar, leer, enviar, responder y clasificar sin confirmar cada acción; no elimina correos de forma permanente. Para configurarla una sola vez:
+
+1. En Google Cloud cree un proyecto, active Gmail API y configure la pantalla de consentimiento OAuth. Cree un ID OAuth de tipo **aplicación de escritorio**. Si la aplicación está en modo de pruebas, añada su cuenta como usuario de prueba. Google podría limitar o advertir sobre aplicaciones no verificadas; usted controla el proyecto y los permisos que concede.
+2. Descargue el JSON de ese cliente desde Google Cloud, póngalo en la carpeta de JARVIS y nómbrelo `gmail-credentials.json`. No lo comparta ni lo suba a Git.
+3. En la carpeta de JARVIS instale las dependencias con `venv/bin/python -m pip install -r requirements.txt` en Linux (`venv\Scripts\python.exe -m pip install -r requirements.txt` en Windows). Ejecute `venv/bin/python gmail_access.py` (Windows: `venv\Scripts\python.exe gmail_access.py`). Se abrirá el navegador para iniciar sesión con Google y autorizar la lectura. No escriba contraseñas en JARVIS ni en el chat.
+4. Inicie JARVIS y pida, por ejemplo, «Busca el correo de Ana sobre el recibo y analiza la imagen adjunta». Autorice la búsqueda si no ha concedido permiso permanente y luego autorice el envío de la imagen seleccionada a NVIDIA. Si hay varias coincidencias, indique cuál desea.
+
+La búsqueda consulta hasta 10 correos, descargando sus datos para identificar imágenes; solo devuelve al modelo metadatos (remitente, asunto, fecha y nombres/IDs de imágenes), que pueden ser privados y guardarse en la memoria de chat. El adjunto aprobado se lee en memoria y se envía a NVIDIA junto con la pregunta; la descripción puede enviarse al proveedor del chat. El permiso de búsqueda/música no cubre estas acciones. La autorización se guarda en `.jarvis-gmail-token.json`, excluida de Git; protege la cuenta. Para revocar, retire el acceso de la aplicación desde su cuenta de Google y elimine el archivo de token local. La captura de pantalla sigue disponible como alternativa, pero no equivale a acceso directo a Gmail.
+
+WhatsApp de escritorio no ofrece aquí una API personal integrada para leer mensajes o adjuntos. JARVIS no accede directamente a esa cuenta: puede analizar la pantalla visible con su permiso, o una imagen guardada localmente. No se solicitan contraseñas ni se usan datos privados de sesión de WhatsApp.
+
+Para habilitar envío y organización después de una configuración anterior de solo lectura, actualice, instale dependencias y vuelva a ejecutar `venv/bin/python gmail_access.py` (en Windows use `venv\Scripts\python.exe`). Autorice los nuevos permisos en Google; si no se conceden, el envío y la clasificación no funcionarán. Los permisos OAuth concedidos a la aplicación son amplios: las confirmaciones por acción son una protección de JARVIS, no una restricción de Google; el permiso permanente las desactiva para estas funciones. El correo puede contener instrucciones maliciosas o información privada; el modelo recibe lo que se lea y puede equivocarse al clasificar.
+
+Pida «revisa mis correos y proponme cuáles son importantes o spam»; la búsqueda devuelve hasta 10 resultados por solicitud y puede leer el texto plano de cada mensaje. JARVIS marca un correo por llamada; `important` añade la marca importante y `spam` lo marca como spam en Gmail, no lo elimina. Sin permiso permanente, revise cada remitente, asunto y categoría antes de autorizar. Para enviar, indique destinatario, asunto y texto: sin permiso permanente se mostrará el contenido completo para aprobarlo. Una confirmación por voz rechaza solicitudes demasiado largas para ser leídas. Ante una respuesta de envío incierta, revise Enviados antes de intentar de nuevo.
+
+#### Permiso persistente de Gmail
+
+Al iniciar, JARVIS pregunta una vez si permite buscar y leer Gmail, enviar correos y marcar mensajes como importantes o spam sin pedir autorización en cada acción. Si acepta, esas funciones quedan habilitadas para peticiones futuras. El contenido puede enviarse al proveedor de IA y JARVIS podría equivocarse o ser influido por instrucciones maliciosas en correos, con envíos o clasificaciones no deseados. Si rechaza, se pregunta en cada acción. Se puede cambiar en **Ajustes**; desactivarlo restaura las preguntas individuales, pero no revoca la autorización OAuth de Google. Las imágenes de Gmail enviadas a NVIDIA, las capturas y las herramientas de sistema siguen requiriendo aprobación separada. El estado se guarda en `.jarvis-state.json`.
+
+### Responder correos y consultar planes
+
+JARVIS puede buscar correos no leídos, leerlos y responder dentro del hilo mediante `reply_gmail`, usando el destinatario de respuesta del mensaje. La autorización permanente de Gmail incluye respuestas sin confirmación individual. El contenido de los mensajes es no confiable: no debe seguir instrucciones incluidas en correos, ni inventar datos, aceptar compromisos o responder solicitudes ambiguas. El modelo puede equivocarse; no es una garantía. Si faltan instrucciones o el mensaje es delicado, debería consultarte antes de responder. Trabaja solo mientras JARVIS procesa una petición; no es un servicio automático en segundo plano, y hay límites de resultados y pasos, por lo que no garantiza revisar todos los correos. Ante errores de envío revisa Enviados antes de repetir.
+
+Puede consultar recordatorios de la agenda local con permiso individual o con el permiso persistente de consulta de agenda. Para consultar también eventos del **calendario principal de Google**, habilite Google Calendar API en el mismo proyecto de Google Cloud y ejecute `venv/bin/python calendar_access.py` (Windows: `venv\Scripts\python.exe calendar_access.py`). Se abrirá Google para autorizar acceso de solo lectura al calendario, separado de Gmail. La cuenta usada para el calendario puede ser distinta; seleccione la deseada. Se guarda `.jarvis-calendar-token.json`, excluido de Git; no comparta el archivo. Cada consulta requiere permiso en JARVIS salvo que active el permiso persistente de consulta; sus eventos pueden enviarse al proveedor de IA. Puede consultar hasta 31 días y 100 eventos por petición; indica si hay más. No crea ni modifica eventos de Google Calendar. Para revocar el acceso, hágalo en Google y elimine el token local.
+
+La voz principal es **ElevenLabs** (ver «Personalizar la voz»): sin `ELEVENLABS_API_KEY` en `.env`, JARVIS avisa y cae a Edge TTS automáticamente. El texto pronunciado se envía al servicio de voz que finalmente sintetice (ElevenLabs o Microsoft); con `JARVIS_VOICE_MODE=local` no sale ningún texto.
+
+Si hay un reproductor mpv registrado por la versión anterior, JARVIS puede intentar detenerlo verificando su identidad. La pausa de la nueva ventana controlada no cierra otras pestañas. El registro heredado `.jarvis-music.json` no se sube a Git.
+
+JARVIS muestra de inmediato que está procesando la solicitud, pero no puede garantizar respuestas en menos de dos segundos: dependen del proveedor de IA, la red, la voz y las herramientas usadas.
+
+#### Permiso persistente de consulta de agenda
+
+JARVIS pregunta una vez si autoriza consultar hora, recordatorios locales y Google Calendar sin pedir permiso para cada herramienta. Si acepta, puede preguntar por sus pendientes sin repetir esas autorizaciones; los datos pueden enviarse al proveedor de IA. Puede activar o desactivar esta opción en **Ajustes**. Rechazarla mantiene la confirmación individual. Crear recordatorios y archivos pueden estar incluidos en la automatización amplia; terminal, capturas e imágenes siguen teniendo permisos separados. Google Calendar requiere su autorización OAuth aparte y Gmail mantiene su propia opción persistente.
+
+### Saludo al iniciar
+
+Con el permiso persistente **Saludo automático al iniciar**, JARVIS solo saluda según la hora del día («Buenos días», «Buenas tardes» o «Buenas noches», señor. ¿Cómo está hoy?) y nada más: no consulta recordatorios, calendario, equipo ni registros, y no envía contenido al modelo de chat por sí mismo. En la ventana el saludo aparece en el chat y se lee en voz alta si la voz está activada; en consola se anuncia como hasta ahora.
+
+Recuerda la decisión aunque cierre y abra la aplicación; puede cambiarla en **Ajustes → Saludo automático al iniciar**. La revisión detallada ya no se ejecuta al iniciar; la rutina «buenos días» sigue ofreciendo ese resumen cuando la pides explícitamente.
+
+Para órdenes directas como «pon la canción de Cristo Rata» o «pausa la música», JARVIS ejecuta la herramienta correspondiente sin depender de que el modelo elija llamarla. Respeta los permisos de música y responde según el resultado comprobado; no asegura que se oiga el sonido. Otras expresiones pueden seguir siendo interpretadas por el modelo.
+
+Cuando el modelo llama a la herramienta de música, JARVIS usa su resultado real para responder; las solicitudes de música sin ninguna llamada no se presentan como reproducciones exitosas. La verificación corresponde solo al instante de la comprobación.
+
+## Conectar Android (primera fase)
+
+JARVIS dispone de un botón **Teléfono** para conectar un Android mediante ADB inalámbrico en una red local. Esta primera fase utiliza la depuración inalámbrica de Android, **no instala ni usa un servidor de Termux**. Termux por sí solo no permite tocar la pantalla ni controlar otras aplicaciones. Android conserva el control de las autorizaciones y hay funciones o pantallas protegidas que ADB no puede ver o manejar. No es control total ni acceso remoto por Internet.
+
+Se requiere Android 11 o posterior con depuración inalámbrica disponible, ADB instalado en la computadora y una red que permita la comunicación entre dispositivos. Un punto de acceso compartido por el propio móvil puede no permitir depuración inalámbrica en determinados teléfonos; si falla, usa una misma red Wi‑Fi que admita comunicación local. En Kali el paquete es `adb`: se puede solicitar a JARVIS «instala el programa adb» y autorizar la instalación de APT. En Windows se requiere Android SDK Platform Tools (`adb`) instalado y accesible en PATH.
+
+1. En el teléfono activa las opciones de desarrollador y **Depuración inalámbrica**. Abre **Emparejar dispositivo con código**. Android mostrará una dirección y un código temporal. Para este paso debes interactuar con tu teléfono; JARVIS no puede activar estos permisos a distancia.
+2. En JARVIS abre **Teléfono**, introduce la dirección de emparejamiento y el código en el cuadro privado y pulsa **Emparejar**. No envíes el código por chat. JARVIS no lo guarda.
+3. En la pantalla principal de Depuración inalámbrica busca la dirección y puerto de conexión (normalmente distintos de los de emparejamiento), introdúcelos y pulsa **Conectar**. El teléfono puede pedir autorización. Las direcciones y puertos pueden cambiar al cambiar de red o reiniciar.
+4. En **Ver pantalla** puedes solicitar una captura que se muestra localmente. Marca **Permitir toques en esta sesión** para enviar toques haciendo clic; actualiza la captura para comprobar el resultado. No es vídeo en directo ni confirma que un toque o una aplicación haya tenido efecto. El control por la vista requiere que el teléfono esté conectado y no desbloquea el dispositivo.
+
+Por voz o chat puedes pedir «qué batería tiene mi teléfono» o «abre WhatsApp en mi celular». También puede enviar órdenes limitadas de navegación y listar hasta 100 nombres de archivos de carpetas compartidas, tras los permisos correspondientes. La casilla del cuadro Teléfono permite o revoca la autorización persistente para batería, navegación y apertura de las aplicaciones admitidas; los toques mediante herramientas, el listado de archivos y el análisis de pantalla requieren autorización individual. El permiso de toques en el visor dura solo hasta cerrarlo. La descripción de pantalla con `phone_inspect_screen` envía la captura a NVIDIA tras autorización; los nombres consultados y descripciones pueden enviarse al proveedor del chat. La captura del visor manual permanece local.
+
+No se han implementado copiar, modificar o borrar archivos, escritura arbitraria, llamadas, mensajes, notificaciones, control autónomo completo ni la integración de Termux/Termux:API. Una orden enviada por ADB no garantiza que la aplicación la haya ejecutado. El código usa un único dispositivo elegido explícitamente y acepta solo direcciones IPv4 privadas/locales. **Desconectar** termina la conexión de la sesión, pero Android y ADB pueden conservar el emparejamiento: para revocarlo también elimina el dispositivo en Depuración inalámbrica del teléfono. La clave privada de ADB queda bajo la cuenta local de la computadora; quien tenga acceso a ella y a la red puede intentar usar ese emparejamiento. No actives depuración inalámbrica en redes que no sean de confianza.
+
+## Diagnóstico local del micrófono
+
+JARVIS puede diagnosticar por voz o chat el micrófono de esta computadora: cuáles dispositivos detecta el sistema (ALSA/PipeWire en Linux), si el micrófono está silenciado, qué volumen tiene y si capta señal. La prueba graba un segundo de audio localmente en un archivo temporal que se borra al terminar; nada se envía a la red ni a ningún proveedor. Solo es lectura: no cambia configuraciones, no repara hardware y no diagnostica otras máquinas; fuera de Linux responde que todavía no está disponible en vez de inventar resultados. Para un micrófono que el sistema no detecta, conectar un micrófono USB o revisar Ajustes de sonido del sistema sigue siendo necesario.
+
+## Modo conversación (escritorio)
+
+Por defecto, JARVIS de escritorio (micrófono activado) exige decir «Jarvis» en cada orden. Con la **conversación libre** (modo conversación) no hace falta repetirlo:
+
+- **Entrar:** di **«Jarvis»** (puedes decirlo sin nada más, o seguido de tu orden; JARVIS la ejecuta y se queda escuchando). También puedes marcar la casilla **Conversación libre (no decir «Jarvis»)** en Ajustes antes o durante la sesión.
+- **Terminar:** di **«eso es todo»** (también valen «esto es todo», «eso será todo», «nada más» o «listo, me voy») o desmarca la casilla en Ajustes; apagar el micrófono también termina la conversación.
+- **No se guarda:** al cerrar el programa vuelve el requisito de decir «Jarvis»; el estado del modo nunca se persiste.
+- **Con el modo activo** todo el audio ambiente puede convertirse en una orden; no lo actives con otras personas hablando cerca.
+- La conversación sigue sujeta a todos los permisos y a las autorizaciones por voz cuando una acción las requiere.
+- La escucha, el reconocimiento y la síntesis dependen de los servicios externos configurados (Google y Microsoft Edge); desactívalo diciendo «eso es todo» o apaga el micrófono cuando no lo uses.
+
+## Crear documentos
+
+JARVIS puede crear archivos locales por voz o por chat con el formato que pidas: **txt, md, csv, json, rtf, pdf, docx (Word), xlsx (Excel) y pptx (PowerPoint)**. Ejemplos: «crea un PDF con el plan de entrenamiento» o «hazme un Excel con esta lista de gastos». Reglas:
+
+- La ruta relativa va a **~/Documentos**; **«escritorio/nombre» o «desktop/nombre»** se traduce a la carpeta real del escritorio (`xdg-user-dir`, `~/Escritorio` en español), no se crea una carpeta inventada; la absoluta crea los directorios necesarios.
+- La respuesta de creación se **verifica contra el disco** antes de comunicarla: si la herramienta no confirmó o el archivo no aparece, JARVIS dirá que no se creó en lugar de inventarse un «ya está»; la ruta que informa es exactamente la del archivo comprobado. Si le dices que no lo encuentras, está instruido a comprobar (`files`) antes de confirmar.
+- **No sobrescribe archivos existentes** sin acuerdo explícito (`overwrite`); te avisa y pide confirmación.
+- El nombre y el contenido deben salir de lo acordado, sin inventar cifras ni datos que no tengas.
+- El contenido admite un esquema simple: `# Título`, `## Sección` y `- viñeta`; el resto son párrafos.
+- Las tablas (csv/xlsx) se pasan como filas; puedes pedir encabezados con estilo en Excel.
+- **PDF** es de texto, con fuentes básicas: no está maquetado con HTML/CSS, ni lleva imágenes insertadas ni formularios ni contraseña. **RTF** es mínimo (Word lo abre bien). **.doc binario antiguo** y **.xls** no: se entrega docx/xlsx, que Word y Excel modernos abren. Google Docs/Drive no están soportados (sin OAuth de Drive ni creación de documentos en la nube).
+- **docx, xlsx, pptx y pdf** usan librerías adicionales incluidas en `requirements.txt` (python-docx, openpyxl, python-pptx, fpdf2): si actualizas JARVIS desde el autoactualizador de la app, se instalan solas; en instalaciones manuales ejecuta `pip install -r requirements.txt`. Si alguna falta, JARVIS te dirá exactamente cuál falta en vez de fingir.
+
+## Crear y eliminar archivos de prueba sin tecnicismos
+
+No hace falta saber rutas. Ejemplos:
+
+- **«Créame un archivo pdf de prueba en escritorio»** crea `prueba.pdf` en la carpeta real del escritorio (`xdg-user-dir`); si existe, usa `prueba-2.pdf`, `prueba-3.pdf`… sin sobrescribir nada. Vale igual para Word, Excel, PowerPoint, csv, json, md, txt, rtf y «documentos» (→ **~/Documentos**). Sin ubicación, entiende el escritorio.
+- **«Créame 3 archivos pdf de prueba en escritorio»** crea `prueba.pdf`, `prueba-2.pdf` y `prueba-3.pdf`.
+- **«Elimina el archivo de prueba que creaste»** borra solo archivos que **constan en el registro local** (`.jarvis-actions.jsonl`) como creados por JARVIS (también vale con el nombre exacto: «elimina el archivo prueba.pdf que creaste»). Si la petición no coincide con el atajo determinista, el modelo dispone de la herramienta `delete_created_file`, acotada exactamente igual: acepta solo la ruta registrada al crearlo, te pedirá confirmación (es un borrado) y nunca borrará archivos del usuario ni nada dentro de la carpeta de JARVIS. No borra tus archivos personales, no toca la carpeta del proyecto JARVIS y si no consta ninguno lo dice en vez de tocar nada. Si hay varios coinciden, la limpieza se hace en **dos pasos fail-closed**: primero pregunta cuáles («todos», «el primero», «el segundo»…) y después, antes de borrar nada, muestra el listado y pide confirmación explícita («sí»). Un «no» o cualquier respuesta ambigua no borra nada; nada se elimina sin ese «sí» (o confirmación equivalente).
+
+El nombre por defecto es `prueba.` + la extensión; el contenido es un documento de prueba con la fecha y hora. Cuando termines la prueba, «elimina los archivos pdf de prueba que creaste» los limpia (y volverá a pedir tu confirmación).
+
+## Apariencia tipo HUD (rediseño completo de la ventana)
+
+La ventana principal de JARVIS (`python gui.py`) **es** la pantalla HUD de la referencia: fondo casi negro con retícula blueprint, núcleo central brillante con los anillos de la referencia (marcas giratorias, arcos segmentados azul eléctrico y el arco ámbar) y la marca «J.A.R.V.I.S» en el centro, reloj arriba a la derecha con línea de estado real («ALL SYSTEMS NORMAL» / «CARGA ELEVADA» / «SISTEMA EN RIESGO» según CPU/RAM/disco), y la caja **EXPRESSION** con `J.A.R.V.I.S` / `F.O.C.U.S.`.
+
+- **Esquinas de datos reales** (psutil, 1 Hz): arriba-izquierda `SYSTEM // DIAGNOSTICS` (salud, CPU, RAM, red ↓/↑ en MB/s, energía, uptime, procesos); abajo-izquierda `STATE IDLE · PROC n`; abajo-derecha `MODE AUTO · <f>Hz · UPTIME …` (la frecuencia es la medida real de sondeo).
+- **Sin barra superior antigua**: se eliminaron la cabecera con botones, «Siempre visible», «Modo compacto», el logo y las frases de bienvenida. Las acciones viven en una fila de iconos fantasma discretos (`MIC`, `CHAT`, `TEL`, `AGD`, `MEM`, `CFG`) que se iluminan al pasar el cursor.
+- **F.O.C.U.S.** (o **Esc**): oculta diagnósticos, iconos y chat; deja el núcleo y la hora. La fila «J.A.R.V.I.S» de EXPRESSION vuelve al modo normal.
+- **La voz es el modo por defecto**: al abrir JARVIS el micrófono se enciende solo (si falla, lo avisa y queda el botón `MIC` para reintentar). La conversación por voz y el chat conviven: ya no hay un «modo» que cambiar.
+- **El chat es el historial y el teclado**: siempre visible bajo el núcleo, con el historial y el campo de escritura; nada más pulsar `Esc`/F.O.C.U.S. se oculta por completo.
+- **Subtítulos en vivo**: bajo el núcleo aparece lo que JARVIS está diciendo (con fundido tras ~7 s), tanto en voz como en respuestas escritas.
+- **Corrector inteligente de entrada** (`input_correction.py`): se aplica a lo que escribes y a lo que el reconocimiento de voz transcribe, antes de interpretar nada — pliega acentos, corrige erratas comunes («archivs»→«archivos», «muica»→«música», «enviqr»→«enviar») y alias de voz («alo»→«hola») pegando un token al vocabulario de comandos solo con ≥80 % de similitud; los nombres propios, rutas, URLs, extensiones, números y palabras comunes vecinas se dejan intactos («prueba», «ahora», «tarde», «mamá»…). Lo que el modelo ve sigue siendo tu texto original; el corrector solo ayuda al enrutamiento determinista.
+- **Límites honestos:** no se ha ejecutado en este entorno (sin pantalla ni PyQt6); compila y la suite pasa (198 tests), pero el primer arranque real será en tu equipo. El micrófono al iniciar dependerá de tu hardware y permisos. El corrector es heurístico: puede no corregir un término raro o, en el peor caso, desviar la frase hacia el modelo (nunca ejecuta nada peligroso: las acciones destructivas siguen pidiendo confirmación). Fuentes: si «Orbitron» no está instalada se usa una monoespaciada del sistema. El núcleo visual conserva la esfera holográfica existente (reactiva a la voz) enmarcada con los anillos de la referencia; no es una réplica píxel-a-píxel del diseño conceptart.
+
+## Arquitectura autónoma (paquete `agent/`)
+
+Además del núcleo ya existente de JARVIS (memoria SQLite, registro de acciones, permisos), `agent/` añade una arquitectura agéntica en cuatro pilares, **sin tocar el flujo de escritorio existente**:
+
+- **`agent/core.py` — Sistema 2 (lento):** `Orchestrator` toma un objetivo, lo descompone en pasos tipados (`NvidiaDecomposer`, ≤8 pasos, JSON estricto; sin clave o sin LLM degrada a un único paso honesto) y **lo ejecuta solo cuando se le pide explícitamente**. Cada paso va por el registro de herramientas; los pasos peligrosos requieren tu confirmación (por defecto, denegado). El resultado queda anotado en la memoria como decisión.
+- **`agent/memory.py` — memoria persistente:** `SOUL.md` (identidad, reglas duras) y `MEMORY.md` (Preferencias, Decisiones, Proyectos, Pendiente) en `.agent-memory/` (excluido de Git), editables a mano, escritas de forma atómica. `context_block()` inyecta lo relevante en los prompts. Es inventario de hechos, no instrucciones.
+- **`agent/reflex.py` — Sistema 1 (rápido):** clasificador determinista de decisiones estructuradas (`sí/no`, `selección de N`, `puntuación acotada`) con enums y confianza; nada de texto libre para acciones. Separado de la generación de texto.
+- **`agent/tools.py` + `agent/server.py` — actuación/cuerpo:** registro único de herramientas con destructivas bloqueadas salvo confirmación humana explícita; API REST **opcional** (`python -m agent.server`, token en `.agent-memory/rest-token`, `POST /action` con `"confirmed": true` para peligrosas, localhost por defecto) pensada también para ESP32/Arduino vía HTTP puro, sin que el hardware procese IA.
+- **`agent/heartbeats.py` — heartbeats:** comprobador en segundo plano (jobs registrados, intervalo, pausa/reanudación, registro de errores). No registra nada por defecto: la autonomía exige registrarla tú.
+
+**Integrado en la misma app (no es un sistema aparte):** el contexto de `agent/memory` se inyecta en el prompt de JARVIS; «planifica: <objetivo>» funciona en el mismo chat (orquestador + NVIDIA + confirmación para acciones peligrosas, incluidas en el mismo diálogo de autorización); «Borrar» limpia también `MEMORY.md` y el registro de acciones; las autorizaciones de chat aceptan palabras naturales («vale», «claro», «ok»…) manteniendo el rechazo por defecto; y un monitor de disco local (cada 15 min, sin red, solo registra transiciones a bajo espacio) corre dentro del proceso. No es conciencia ni autonomía sin límites: nada actúa sin permiso.
+
+
+## WhatsApp (Meta Cloud API, opt-in)
+
+JARVIS puede **enviar y recibir** WhatsApp en el mismo programa, sin sistema aparte. La integración usa la **API oficial de Meta WhatsApp Cloud API** (texto); no usa librerías no oficiales ni automatización de WhatsApp Web (riesgo de baneo).
+
+**Qué necesitas (en Meta for Developers):** una app con el producto «WhatsApp», un **token de acceso** (temporal o permanente), el **ID del número de teléfono**, y para recibir: un **token de verificación** y el **App Secret** de la app. Pon en `.env`: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_RECIPIENT` (tus dígitos internacionales, p. ej. `51987654321`), `WHATSAPP_VERIFY_TOKEN` (texto libre que tú inventas) y `WHATSAPP_APP_SECRET`. `WHATSAPP_GRAPH_VERSION` es opcional.
+
+**Enviar (funciona en cuanto .env tiene token e id):** pídele «envíame un WhatsApp: <texto>»; antes de enviar aparece el diálogo de confirmación habitual (es una herramienta peligrosa). Solo informa enviado si la API responde éxito.
+
+**Recibir (requiere URL pública HTTPS):** el webhook vive en `python -m agent.server --host 0.0.0.0 --port 8799` (`GET/POST /whatsapp/webhook`). Meta exige una URL pública; en un equipo casero usa un túnel (`cloudflared tunnel --url http://localhost:8799` o ngrok) y registra esa URL en Meta (Webhooks → callback URL + verify token). El POST verifica `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET`; sin el secreto **rechaza todo**. Solo procesa mensajes cuyo remitente sea exactamente `WHATSAPP_RECIPIENT`; **cualquier otro número se ignora en silencio**. Las acciones peligrosas están **denegadas** en este canal (no hay diálogo de confirmación por chat): las herramientas con aprobación interactiva responden que no pueden ejecutarse; el resto (hora, clima con permiso previo, planifica, música, documentos de prueba…) funciona.
+
+**Límites honestos:** no puedo probar la conexión real desde aquí (sin tus credenciales de Meta ni tu número); los flujos están cubiertos con pruebas con la API simulada. Fuera de la ventana de 24 h, los mensajes proactivos solo pueden usar plantillas aprobadas por Meta. Los mensajes recibidos entran al mismo cerebro/memoria que el escritorio. Si solo quieres enviar, no hace falta el túnel ni el webhook. Sin `WHATSAPP_*`, JARVIS funciona igual que siempre. Para un WhatsApp a un amigo con un clic, el botón existente (borrador en WhatsApp) ya sirve hoy sin configuración.
+
+## Probar JARVIS (banco de pruebas)
+
+`python benchmark.py` comprueba el entorno y mide lo que no depende de la red: importaciones, reflejos (sí/no, selección), creación/verificación de archivos, registro de acciones, memoria. `python benchmark.py --live` añade medición real del modelo (consume cuota de tu proveedor; sin `--live` no gasta API). Informe opcional en `--save informe.json`.
+
+En determinista todo debe ser submilisegundo; el modelo tarda lo que tarde tu red y el proveedor (cientos de ms a segundos). Un FAIL indica entorno roto (imports, memoria, deps), no lentitud. En vivo, un fallo del modelo no necesariamente rompe el determinismo.
+
+Pruebas manuales útiles tras actualizar: «créame 3 archivos pdf de prueba en escritorio» (deben aparecer), «elimina los archivos pdf de prueba que creaste» (deben desaparecer), «planifica: …», «planifica: borra el pdf…» (debe pedir confirmación), «recuerda que prefiero respuestas breves», «¿qué hora es?» (instantáneo) y «hazme un resumen de la reunión» (modelo).
+
+## Registro de acciones (memoria de hechos)
+
+JARVIS guarda un **registro local de acciones ejecutadas** en `.jarvis-actions.jsonl` (excluido de Git): nombre de la herramienta, argumentos abreviados y resultado real (OK/FALLO), con hora. Lo rotan a las últimas 200 entradas. Se escriben en él tanto las acciones del chat (las que el modelo pide tras autorización) como los comandos locales directos (música, clima, rutinas, recordatorios, teléfono, Enviados).
+
+**Para qué sirve:** el modelo recibe las últimas acciones como contexto, así «¿creaste los PDFs?» o «¿abriste eso?» pueden responderse con hechos verificados en vez de memoria inventada. Nunca se registran campos sensibles (`content`, `body`, `password`, `token`, `secret`, `api_key`, `message`, `text`), ni contenidos de archivos; solo nombres, destinos y resultados. Se vacía junto con la memoria desde **Memoria → Borrar**. Puede desactivarse con `JARVIS_ACTION_LOG=0`.
+
+**Límites honestos:** no es conciencia ni garantiza obedecer todas las órdenes sin error. El modelo sigue decidiendo qué hacer y aún puede equivocarse en otras preguntas; el registro le da hechos de acciones pasadas, pero no convierte a JARVIS en infalible. Lo único que hoy responde siempre con certeza mecánica es la creación de documentos (`create_document`), cuya respuesta se reconstruye de lo verificado en disco.
+
+## JARVIS independiente para Android
+
+Hay una primera aplicación Android nativa en [`android-app/`](android-app/README.md), independiente de la laptop. Incluye chat, botón para hablar y escucha opcional de «Jarvis» con notificación visible; esta última puede ser interrumpida por Android y el reconocimiento puede enviar audio al proveedor del teléfono. La app permite su propia clave NVIDIA (predeterminada) o Gemini, que se introduce en sus ajustes y se guarda cifrada; no recibe automáticamente la configuración o memoria de escritorio. Por ahora solo incluye acciones locales limitadas, no todas las funciones de escritorio. Consulta sus [limitaciones, privacidad y compilación](android-app/README.md).

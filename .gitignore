@@ -1,81 +1,40 @@
-# Python
+venv/
+.venv/
+.env
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Entornos
-.venv/
-venv/
-env/
-ENV/
-.uv/
-uv.lock
-
-# Secretos: NUNCA se versionan
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-id_rsa*
-secrets.toml
-
-# Datos locales de Jarvis (bd, logs, memoria, audio, modelos)
-# OJO: la barra inicial es obligatoria. Sin ella, este patrón ignora CUALQUIER
-# carpeta llamada "data" de cualquier nivel, incluido el paquete Kotlin
-# `android/app/src/main/java/com/samuelpart/jarvispro/data/` — y la app Android
-# dejaría de compilar en un clon nuevo sin que se vea el motivo.
-/data/
-*.sqlite
-*.sqlite3
-*.db
-*.log
-jarvis.local.toml
-
-# Audio y modelos descargados (pesados)
-models/
-*.onnx
-*.pt
-*.bin
-*.gguf
-
-# Tooling
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
-.tox/
-.nox/
+.jarvis-state.json
 
-# IDE / SO
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
-desktop.ini
+.jarvis-core.gif
 
-# Empaquetado
-*.spec.bak
-packaging/out/
-pyinstaller-build/
+.jarvis-ui.json
+
+.jarvis-memory.sqlite3*
+
+.jarvis-agenda.sqlite3*
+
+# Gmail OAuth credentials and refresh token
+.gmail-token.json
+.jarvis-gmail-token.json
+gmail-credentials.json
+
+.jarvis-calendar-token.json
+
+.jarvis-music.json
+
+.jarvis-briefing.json
+
+.jarvis-routine.json
+
+.jarvis-scheduled-email.sqlite3*
+
+# Native Android app build outputs and local SDK settings
+android-app/.gradle/
+android-app/local.properties
+android-app/app/build/
+.jarvis-crash.log
+.jarvis-actions.jsonl
+.agent-memory/
+
+.jarvis-provider.json

@@ -1,0 +1,26 @@
+name: Android app
+on:
+  push:
+    paths: ['android-app/**', '.github/workflows/android-app.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon assembleDebug
+        working-directory: android-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-android-debug
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
