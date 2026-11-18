@@ -19,7 +19,7 @@ JARVIS se distribuye como **código fuente** (no hay instalador empaquetado `.ex
 
 **Windows (tú, ahora)**
 1. Ve a https://github.com/SamuelPart/JarvisM y pulsa **Code → Download ZIP** (o clona: `git clone https://github.com/SamuelPart/JarvisM.git`). Descomprime en, por ejemplo, `C:\JARVIS`.
-2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala dependencias y te pide tu `NVIDIA_API_KEY`).
+2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala dependencias y te pide tu `NVIDIA_API_KEY` (opcional; Enter la omite si tu build trae el proxy del desarrollador)).
 3. Arranca con `venv\Scripts\python.exe gui.py`.
 
 **Linux**
@@ -139,6 +139,17 @@ NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
 ```
 
 No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Los permisos de herramientas son los mismos que siempre. **NVIDIA NIM es el único proveedor en el código**; la memoria local de conversaciones es local y no depende del proveedor. WhatsApp abre un borrador; no lo envía automáticamente.
+
+## Que el usuario solo instale: dos modos de proveedor
+
+JARVIS soporta dos modos; el usuario no tiene que elegir:
+
+- **Proxy del desarrollador (build distribuido):** si el build trae configurado `JARVIS_PROXY_URL` (por ejemplo, el desarrollador edita `DEFAULT_PROXY_URL` en `nvidia_brain.py` antes de empaquetar) o el paquete incluye un `.env` con `JARVIS_PROXY_URL`, las peticiones de IA van a tu relay y **el usuario no pone ninguna clave**. El relay vive en `server/` (ver [`server/README.md`](server/README.md)): guarda tu `NVIDIA_API_KEY` en el servidor, reenvía a NVIDIA NIM, limita por IP y nunca expone la clave al cliente. Hostearlo es cosa tuya: dominio, TLS, hosting y cuota (tus usuarios consumen **tu** cuota).
+- **Tu propia clave (por usuario):** si el usuario pone `NVIDIA_API_KEY` en su `.env` (o la escribe en `install.bat`, que la pide como opcional — Enter la omite), JARVIS habla directo con NVIDIA con su clave y no usa el proxy. Tiene prioridad sobre el proxy.
+
+Sin clave ni proxy configurado, JARVIS explica con un mensaje claro qué falta; nada se cuelga ni inventa. Ninguna clave se incrusta en el repositorio por defecto.
+
+**Honestidad:** el modo proxy no está probado contra tu despliegue real (depende de dónde y cómo lo alojes); la suite cubre la resolución de ambos modos con HTTP simulado, y el relay superó en local arranque, `/healthz`, auth por token, rate-limit y rechazo de modelo no permitido. La primera prueba contra tu relay real es tuya.
 
 ### Núcleo expresivo
 

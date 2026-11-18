@@ -2902,3 +2902,57 @@ def test_confirm_stage_ignores_unrelated_chatter(tmp_path, monkeypatch):
     answer = brain.ask('¿qué hora es?')  # no confirma ni cancela: repregunta, fail-closed
     assert '¿Confirmas' in answer or 'sí' in answer.lower()
     assert len(list(desktop.glob('prueba*.pdf'))) == 2
+
+
+def test_nvidia_byok_takes_precedence_over_proxy(monkeypatch):
+    from nvidia_brain import NvidiaBrain
+    monkeypatch.setenv('JARVIS_PROXY_URL', 'https://proxy.example.com/v1/chat/completions')
+    seen = {}
+    def post(url, headers, json, timeout):
+        seen['url'] = url; seen['headers'] = headers
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'ok'}}]})
+    brain = NvidiaBrain('test-only-key', object(), lambda *_: False, post=post)
+    assert brain.ask('hola') == 'ok'
+    assert seen['url'].endswith('integrate.api.nvidia.com/v1/chat/completions')
+    assert seen['headers']['Authorization'] == 'Bearer test-only-key'
+
+
+def test_nvidia_proxy_mode_without_key(monkeypatch):
+    from nvidia_brain import NvidiaBrain
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    monkeypatch.delenv('JARVIS_PROXY_TOKEN', raising=False)
+    monkeypatch.setenv('JARVIS_PROXY_URL', 'https://proxy.example.com/v1/chat/completions')
+    seen = {}
+    def post(url, headers, json, timeout):
+        seen['url'] = url; seen['headers'] = headers
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'ok'}}]})
+    brain = NvidiaBrain(None, object(), lambda *_: False, post=post)
+    assert brain.ask('hola') == 'ok'
+    assert seen['url'] == 'https://proxy.example.com/v1/chat/completions'
+    assert 'Authorization' not in seen['headers']
+
+
+def test_nvidia_proxy_mode_with_shared_token(monkeypatch):
+    from nvidia_brain import NvidiaBrain
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    monkeypatch.setenv('JARVIS_PROXY_URL', 'https://proxy.example.com/v1/chat/completions')
+    monkeypatch.setenv('JARVIS_PROXY_TOKEN', 'shared-token')
+    seen = {}
+    def post(url, headers, json, timeout):
+        seen['headers'] = headers
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': {'content': 'ok'}}]})
+    brain = NvidiaBrain(None, object(), lambda *_: False, post=post)
+    brain.ask('hola')
+    assert seen['headers']['Authorization'] == 'Bearer shared-token'
+
+
+def test_nvidia_missing_key_and_proxy_is_clear_error(monkeypatch):
+    import nvidia_brain
+    from nvidia_brain import NvidiaBrain
+    monkeypatch.delenv('NVIDIA_API_KEY', raising=False)
+    monkeypatch.delenv('JARVIS_PROXY_URL', raising=False)
+    monkeypatch.delenv('JARVIS_PROXY_TOKEN', raising=False)
+    monkeypatch.setattr(nvidia_brain, 'DEFAULT_PROXY_URL', '')
+    with pytest.raises(ValueError) as error:
+        NvidiaBrain(None, object(), lambda *_: False)
+    assert 'NVIDIA_API_KEY' in str(error.value)
