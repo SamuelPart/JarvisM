@@ -7,11 +7,11 @@ python3 -m venv venv
 venv/bin/python -m pip install --upgrade pip
 venv/bin/python -m pip install -r requirements.txt
 if [[ ! -f .env ]]; then
-  read -r -s -p 'Introduzca GEMINI_API_KEY (no se mostrará): ' key; echo
+  read -r -s -p 'Introduzca NVIDIA_API_KEY (no se mostrará): ' key; echo
   if [[ -z "$key" || "$key" == *$'\n'* || "$key" == *$'\r'* ]]; then echo 'Clave inválida.'; exit 1; fi
-  # Gemini keys do not contain shell quoting characters. Reject them rather than writing unsafe dotenv syntax.
+  # NVIDIA keys (nvapi-...) do not contain shell quoting characters. Reject them rather than writing unsafe dotenv syntax.
   if [[ ! "$key" =~ ^[A-Za-z0-9_-]+$ ]]; then echo 'Formato de clave inválido.'; exit 1; fi
-  (umask 077; printf 'GEMINI_API_KEY=%s\n' "$key" > .env)
+  (umask 077; printf 'NVIDIA_API_KEY=%s\n' "$key" > .env)
   unset key
 fi
 venv/bin/python desktop_launcher.py || echo 'No se pudo crear el acceso directo; puedes intentarlo después.'

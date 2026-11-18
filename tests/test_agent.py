@@ -289,7 +289,7 @@ def test_planifica_shortcut(tmp_path, monkeypatch):
     brain.pending_reminder_question = None
     brain.base_instruction = 'fake'
     brain.approve = lambda *_, **__: False
-    monkeypatch.setenv('GEMINI_API_KEY', '')  # sin clave → descomposición honesta de un paso
+    monkeypatch.setenv('NVIDIA_API_KEY', '')  # sin clave → descomposición honesta de un paso
     answer = brain.ask('planifica: revisar el estado de las pruebas')
     assert 'Plan' in answer and 'revisar el estado' in answer and '¿Necesitas algo más?' in answer
 

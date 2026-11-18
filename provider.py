@@ -1,24 +1,19 @@
-"""Create the selected provider; no implicit cross-provider fallback."""
+"""Create the NVIDIA NIM brain; the single AI provider of JARVIS (no silent switching)."""
 import os
 import sqlite3
 from pathlib import Path
 from memory import JarvisMemory
 from persistent_brain import PersistentBrain
-from brain import Brain
 from nvidia_brain import NvidiaBrain, DEFAULT_MODEL
 
 
 def create_brain(controller, approve):
-    provider = os.getenv('JARVIS_PROVIDER', 'gemini').strip().lower()
     name = os.getenv('JARVIS_NAME', 'Señor')
-    if provider == 'gemini':
-        brain = Brain(os.getenv('GEMINI_API_KEY'), controller, approve, name=name,
-                      model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
-    elif provider == 'nvidia':
-        brain = NvidiaBrain(os.getenv('NVIDIA_API_KEY'), controller, approve, name=name,
-                            model=os.getenv('NVIDIA_MODEL', DEFAULT_MODEL))
-    else:
-        raise ValueError('JARVIS_PROVIDER debe ser gemini o nvidia.')
+    provider = os.getenv('JARVIS_PROVIDER', 'nvidia').strip().lower()
+    if provider != 'nvidia':
+        raise ValueError('JARVIS_PROVIDER debe ser nvidia; Gemini fue retirado del proyecto.')
+    brain = NvidiaBrain(os.getenv('NVIDIA_API_KEY'), controller, approve, name=name,
+                        model=os.getenv('NVIDIA_MODEL', DEFAULT_MODEL))
     path = os.getenv('JARVIS_MEMORY_PATH', str(Path(__file__).resolve().parent / '.jarvis-memory.sqlite3'))
     try:
         return PersistentBrain(brain, JarvisMemory(path))

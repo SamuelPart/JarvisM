@@ -2,8 +2,6 @@ import json
 from types import SimpleNamespace
 from pathlib import Path
 import pytest
-from google.genai import types
-from brain import Brain
 from system_control import SystemController
 import main
 
@@ -19,18 +17,20 @@ def test_files_and_stats(tmp_path):
 
 
 def test_function_denial_and_protocol():
-    class Models:
-        calls = 0
-        def generate_content(self, **kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                content = types.Content(role='model', parts=[types.Part(function_call=types.FunctionCall(name='terminal', args={'command': 'echo hi'}))])
-            else:
-                assert 'rechazó' in str(kwargs['contents'][-1])
-                content = types.Content(role='model', parts=[types.Part.from_text(text='Rechazado')])
-            return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+    from nvidia_brain import NvidiaBrain
+    state = {'step': 0, 'bodies': []}
+    def post(url, headers, json, timeout):
+        state['step'] += 1
+        state['bodies'].append(json)
+        if state['step'] == 1:
+            message = {'content': None, 'tool_calls': [{'id': '1', 'type': 'function', 'function':
+                       {'name': 'terminal', 'arguments': '{"command": "echo hi"}'}}]}
+        else:
+            assert 'rechazó' in json['messages'][-1]['content']
+            message = {'content': 'Rechazado'}
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': message}]})
     controller = SimpleNamespace(terminal=lambda **kwargs: pytest.fail('No debía ejecutarse'))
-    brain = Brain('', controller, lambda name, args: False, client=SimpleNamespace(models=Models()))
+    brain = NvidiaBrain('test-only-key', controller, lambda name, args: False, post=post)
     assert brain.ask('ejecuta') == 'Rechazado'
 
 
@@ -169,10 +169,9 @@ def test_whatsapp_draft(monkeypatch):
 
 
 def test_error_message_no_secrets():
-    from google.genai import errors as genai_errors
+    from nvidia_brain import NvidiaError
     from errors import describe_error
-    exc = genai_errors.ClientError(429, {'error': {'message': 'secret-api-key'}})
-    text = describe_error(exc)
+    text = describe_error(NvidiaError(429))
     assert '429' in text and 'secret-api-key' not in text
 
 
@@ -299,24 +298,6 @@ def test_memory_is_shared_across_providers_and_no_duplicate_turn(tmp_path):
     assert 'Prefiero español' not in agent.brain.history[0]['content']
 
 
-def test_gemini_memory_context(tmp_path):
-    from memory import JarvisMemory
-    from persistent_brain import PersistentBrain
-    memory = JarvisMemory(tmp_path / 'local.sqlite3')
-    memory.add_turn('Me llamo Ana', 'Hola Ana')
-    memory.set_preferences('Me gusta el ajedrez')
-    class Models:
-        def generate_content(self, **kwargs):
-            assert kwargs['contents'][0].role == 'user'
-            assert kwargs['contents'][1].role == 'model'
-            assert 'ajedrez' in kwargs['config'].system_instruction
-            return SimpleNamespace(candidates=[SimpleNamespace(content=types.Content(role='model', parts=[types.Part.from_text(text='Ana')]))])
-    brain = Brain('', object(), lambda *_: False, client=SimpleNamespace(models=Models()))
-    agent = PersistentBrain(brain, memory)
-    assert agent.ask('¿Cómo me llamo?') == 'Ana'
-    assert len(memory.recent()) == 4
-
-
 def test_reminder_lifecycle_and_restart(tmp_path):
     from agenda import Agenda
     path = tmp_path / 'agenda.sqlite3'
@@ -434,20 +415,23 @@ def test_network_preapproval_applies_to_agent_but_not_terminal(tmp_path, monkeyp
     import permissions
     monkeypatch.setattr(permissions, 'STATE', tmp_path / 'state.json')
     permissions.set_network_permission(True)
+    from nvidia_brain import NvidiaBrain
     seen = []
-    def call_part(name, args):
-        return types.Part(function_call=types.FunctionCall(name=name, args=args))
-    class Models:
-        step = 0
-        def generate_content(self, **kwargs):
-            self.step += 1
-            parts = ([call_part('web_search', {'query': 'noticias'})] if self.step == 1 else
-                     [call_part('terminal', {'command': 'echo hello'})] if self.step == 2 else
-                     [types.Part.from_text(text='Listo')])
-            return SimpleNamespace(candidates=[SimpleNamespace(content=types.Content(role='model', parts=parts))])
+    state = {'step': 0}
+    def post(url, headers, json, timeout):
+        state['step'] += 1
+        step = state['step']
+        if step == 1:
+            message = {'content': None, 'tool_calls': [{'id': '1', 'type': 'function',
+                        'function': {'name': 'web_search', 'arguments': '{"query": "noticias"}'}}]}
+        elif step == 2:
+            message = {'content': None, 'tool_calls': [{'id': '2', 'type': 'function',
+                        'function': {'name': 'terminal', 'arguments': '{"command": "echo hello"}'}}]}
+        else:
+            message = {'content': 'Listo'}
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': message}]})
     controller = SimpleNamespace(web_search=lambda query: {'results': []}, terminal=lambda command: pytest.fail('terminal no autorizado'))
-    agent = Brain('', controller, lambda name, args: seen.append(name) or False,
-                  client=SimpleNamespace(models=Models()))
+    agent = NvidiaBrain('test-only-key', controller, lambda name, args: seen.append(name) or False, post=post)
     assert agent.ask('Busca') == 'Listo'
     assert seen == ['terminal']
 
@@ -535,20 +519,22 @@ def test_inspect_image_reads_selected_path_and_calls_vision(tmp_path, monkeypatc
 
 def test_image_tool_never_preapproved_and_denial_skips_io(tmp_path, monkeypatch):
     import permissions
-    from google.genai import types as genai_types
+    from nvidia_brain import NvidiaBrain
     monkeypatch.setattr(permissions, 'STATE', tmp_path / 'permissions.json')
     permissions.set_network_permission(True)
     assert not permissions.preapproved('inspect_image')
     approvals = []
-    class Models:
-        step = 0
-        def generate_content(self, **kwargs):
-            self.step += 1
-            part = (genai_types.Part(function_call=genai_types.FunctionCall(name='inspect_image', args={'path': '/private.png'}))
-                    if self.step == 1 else genai_types.Part.from_text(text='Rechazado'))
-            return SimpleNamespace(candidates=[SimpleNamespace(content=genai_types.Content(role='model', parts=[part]))])
+    state = {'step': 0}
+    def post(url, headers, json, timeout):
+        state['step'] += 1
+        if state['step'] == 1:
+            message = {'content': None, 'tool_calls': [{'id': '1', 'type': 'function',
+                        'function': {'name': 'inspect_image', 'arguments': '{"path": "/private.png"}'}}]}
+        else:
+            message = {'content': 'Rechazado'}
+        return SimpleNamespace(status_code=200, json=lambda: {'choices': [{'message': message}]})
     controller = SimpleNamespace(inspect_image=lambda **kwargs: pytest.fail('No se debe leer ni enviar imagen'))
-    brain = Brain('', controller, lambda name, args: approvals.append(name) or False, client=SimpleNamespace(models=Models()))
+    brain = NvidiaBrain('test-only-key', controller, lambda name, args: approvals.append(name) or False, post=post)
     assert brain.ask('analiza la imagen') == 'Rechazado'
     assert approvals == ['inspect_image']
 

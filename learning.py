@@ -134,35 +134,21 @@ def extract_facts(complete, messages):
 def complete_with(brain, prompt):
     """One plain completion without tools; returns None on any failure."""
     try:
-        from brain import Brain
         from nvidia_brain import NvidiaBrain
     except Exception:
         return None
+    if not isinstance(brain, NvidiaBrain):
+        return None
     try:
-        if isinstance(brain, Brain):
-            from google.genai import types
-            response = brain.client.models.generate_content(
-                model=brain.model,
-                contents=[types.Content(role='user', parts=[types.Part.from_text(text=prompt)])])
-            texts = []
-            for candidate in getattr(response, 'candidates', None) or []:
-                content = getattr(candidate, 'content', None)
-                for part in getattr(content, 'parts', None) or []:
-                    text = getattr(part, 'text', None)
-                    if text:
-                        texts.append(text)
-            return '\n'.join(texts) or None
-        if isinstance(brain, NvidiaBrain):
-            from nvidia_brain import NVIDIA_URL
-            payload = {'model': brain.model,
-                       'messages': [{'role': 'user', 'content': prompt}],
-                       'temperature': 0, 'top_p': 1, 'max_tokens': 400, 'stream': False}
-            response = brain.post(NVIDIA_URL, headers={'Authorization': 'Bearer ' + brain.api_key,
-                                                       'Accept': 'application/json'}, json=payload, timeout=45)
-            return response.json()['choices'][0]['message']['content']
+        from nvidia_brain import NVIDIA_URL
+        payload = {'model': brain.model,
+                   'messages': [{'role': 'user', 'content': prompt}],
+                   'temperature': 0, 'top_p': 1, 'max_tokens': 400, 'stream': False}
+        response = brain.post(NVIDIA_URL, headers={'Authorization': 'Bearer ' + brain.api_key,
+                                                   'Accept': 'application/json'}, json=payload, timeout=45)
+        return response.json()['choices'][0]['message']['content']
     except Exception:
         return None
-    return None
 
 
 _counter = {'turns': 0}

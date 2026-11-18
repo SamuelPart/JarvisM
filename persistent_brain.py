@@ -12,8 +12,6 @@ try:
     from agent.memory import PersistentMemory
 except Exception:
     PersistentMemory = None
-from google.genai import types
-from brain import Brain
 from nvidia_brain import NvidiaBrain
 from permissions import preapproved, authorize_tool
 from approval import is_approved
@@ -91,10 +89,10 @@ def _journal(name, args, result):
 def _run_plan_text(goal, approve):
     """Execute an explicitly requested plan via the agent orchestrator."""
     try:
-        from agent.core import Orchestrator, GeminiDecomposer
+        from agent.core import Orchestrator, NvidiaDecomposer
         from agent.tools import build_default_registry
         orchestrator = Orchestrator(registry=build_default_registry(),
-                                    decomposer=GeminiDecomposer(),
+                                    decomposer=NvidiaDecomposer(),
                                     approve=approve)
         plan = orchestrator.execute(orchestrator.plan(goal))
     except Exception:
@@ -119,8 +117,7 @@ class PersistentBrain:
         self.pending_reminder_deadline = 0
         self.pending_reminder_question = None
         self.pending_delete_created = None
-        self.base_instruction = (brain.instructions if isinstance(brain, Brain)
-                                 else brain.history[0]['content'])
+        self.base_instruction = brain.history[0]['content']
 
     @property
     def approve(self):
@@ -149,11 +146,7 @@ class PersistentBrain:
         if ledger:
             instructions += ('\n' + ledger +
                              '\nNunca afirmes que una acción se completó si el registro indica lo contrario; ante la duda comprueba con la herramienta adecuada antes de responder.')
-        if isinstance(self.brain, Brain):
-            self.brain.instructions = instructions
-            self.brain.history = [types.Content(role='user' if m['role'] == 'user' else 'model',
-                                  parts=[types.Part.from_text(text=m['content'])]) for m in messages]
-        elif isinstance(self.brain, NvidiaBrain):
+        if isinstance(self.brain, NvidiaBrain):
             self.brain.history = [{'role': 'system', 'content': instructions}] + messages
         else:
             raise TypeError('Proveedor de memoria no compatible')

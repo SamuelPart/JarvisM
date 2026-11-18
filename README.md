@@ -1,10 +1,10 @@
-# JARVIS — asistente Gemini para Windows y Linux
+# JARVIS — asistente IA (NVIDIA NIM) para Windows y Linux
 
-JARVIS separa la conversación y las herramientas Gemini (`brain.py`), las operaciones locales (`system_control.py`), la consola y voz (`main.py`) y las actualizaciones (`updater.py`). La API recibe las conversaciones y resultados de herramientas; las conversaciones completadas se guardan localmente entre reinicios.
+JARVIS separa la conversación y las herramientas (`brain.py`), las operaciones locales (`system_control.py`), la consola y voz (`main.py`) y las actualizaciones (`updater.py`). La API recibe las conversaciones y resultados de herramientas; las conversaciones completadas se guardan localmente entre reinicios.
 
 ## Requisitos
 
-- Python 3.11+, Git y una clave de Google Gemini con acceso al modelo seleccionado.
+- Python 3.11+, Git y una clave de NVIDIA NIM ([build.nvidia.com](https://build.nvidia.com)) con acceso al modelo seleccionado.
 - Windows o Linux con sesión gráfica para automatización de interfaz.
 - En Debian/Ubuntu, para compilar PyAudio y disponer de voz, instale por ejemplo `sudo apt install build-essential python3-venv python3-dev portaudio19-dev espeak-ng`; pueden ser necesarias dependencias gráficas de PyAutoGUI. En Linux, volumen y brillo usan respectivamente `pactl` y `brightnessctl`. En Windows el brillo usa WMI si el hardware lo admite; el volumen no tiene implementación directa (puede usarse GUI bajo confirmación).
 - Reconocimiento de voz mediante SpeechRecognition/Google requiere micrófono e Internet; el audio se envía a Google. La voz neuronal predeterminada usa Edge TTS y envía el texto hablado al servicio de Microsoft por Internet; requiere salida de audio. Si falla, se intenta `pyttsx3` local, que necesita un motor TTS instalado.
@@ -19,7 +19,7 @@ JARVIS se distribuye como **código fuente** (no hay instalador empaquetado `.ex
 
 **Windows (tú, ahora)**
 1. Ve a https://github.com/SamuelPart/JarvisM y pulsa **Code → Download ZIP** (o clona: `git clone https://github.com/SamuelPart/JarvisM.git`). Descomprime en, por ejemplo, `C:\JARVIS`.
-2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala dependencias y te pide tu `GEMINI_API_KEY`).
+2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala dependencias y te pide tu `NVIDIA_API_KEY`).
 3. Arranca con `venv\Scripts\python.exe gui.py`.
 
 **Linux**
@@ -39,8 +39,8 @@ No hay instalador ni se ha verificado en macOS; el proyecto declara soporte para
 Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
 
 ```dotenv
-GEMINI_API_KEY=su_clave
-GEMINI_MODEL=gemini-2.5-flash
+NVIDIA_API_KEY=nvapi-su_clave
+NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
 JARVIS_NAME=Señor
 JARVIS_AUTO_UPDATE=0
 JARVIS_VOICE_MODE=edge
@@ -50,19 +50,19 @@ JARVIS_TTS_VOICE=es-MX-JorgeNeural
 Los instaladores crean `venv`, instalan `requirements.txt` y solicitan la clave solo si no existe `.env`. También puede crear ese archivo manualmente:
 
 ```dotenv
-GEMINI_API_KEY=su_clave
-GEMINI_MODEL=gemini-2.5-flash
+NVIDIA_API_KEY=nvapi-su_clave
+NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
 JARVIS_NAME=Señor
 JARVIS_AUTO_UPDATE=0
 JARVIS_VOICE_MODE=edge
 JARVIS_TTS_VOICE=es-MX-JorgeNeural
 ```
 
-Se puede usar `gemini-2.5-pro` si está disponible para su cuenta. La clave es local y debe protegerse como un secreto; no la distribuya en un ejecutable ni la suba al repositorio. No hay autenticación remota ni proxy incluidos.
+Se puede usar otro modelo NIM disponible para su cuenta con `NVIDIA_MODEL`. La clave es local y debe protegerse como un secreto; no la distribuya en un ejecutable ni la suba al repositorio. No hay autenticación remota ni proxy incluidos.
 
 ## Uso y seguridad
 
-Al iniciar se anuncia «Activando protocolos de seguridad...» y se pide una confirmación inicial, guardada en `.jarvis-state.json`. Borre este archivo para volver a solicitarla. Escriba un mensaje o `/voz` para hablar, `/actualizar` para actualizar y `/salir` para cerrar. Las respuestas se muestran por texto y se intenta reproducirlas por voz. Una autorización opcional permite de una vez búsquedas, música, abrir sitios y aplicaciones compatibles, agenda, archivos, volumen y brillo, Gmail, resumen inicial y actualizaciones automáticas. Los comandos de terminal, control directo de interfaz e imágenes siguen requiriendo autorización por acción. Las herramientas se ejecutan con los permisos del usuario; no lo ejecute como administrador. Revise cada comando y ruta: no hay sandbox ni lista negra capaz de hacer seguro un shell arbitrario. Los resultados de herramientas y archivos pueden contener información privada enviada a Gemini, y las instrucciones maliciosas en datos externos siguen siendo un riesgo. La búsqueda web devuelve fragmentos no confiables para que el modelo los resuma; no descarga páginas completas.
+Al iniciar se anuncia «Activando protocolos de seguridad...» y se pide una confirmación inicial, guardada en `.jarvis-state.json`. Borre este archivo para volver a solicitarla. Escriba un mensaje o `/voz` para hablar, `/actualizar` para actualizar y `/salir` para cerrar. Las respuestas se muestran por texto y se intenta reproducirlas por voz. Una autorización opcional permite de una vez búsquedas, música, abrir sitios y aplicaciones compatibles, agenda, archivos, volumen y brillo, Gmail, resumen inicial y actualizaciones automáticas. Los comandos de terminal, control directo de interfaz e imágenes siguen requiriendo autorización por acción. Las herramientas se ejecutan con los permisos del usuario; no lo ejecute como administrador. Revise cada comando y ruta: no hay sandbox ni lista negra capaz de hacer seguro un shell arbitrario. Los resultados de herramientas y archivos pueden contener información privada enviada a NVIDIA, y las instrucciones maliciosas en datos externos siguen siendo un riesgo. La búsqueda web devuelve fragmentos no confiables para que el modelo los resuma; no descarga páginas completas.
 
 ## Administración en Kali
 
@@ -112,7 +112,7 @@ El chat comienza oculto: pulse 💬 para mostrarlo u ocultarlo. Pulse 🎙 para 
 
 Pida a JARVIS que prepare el mensaje e indique el número con código de país. En modo voz JARVIS lee el número y el texto completo (hasta 700 caracteres) y pregunta si autoriza abrir el borrador; en chat muestra los datos para aprobar. Esto se solicita para cada mensaje. Tras confirmarlo abre un borrador mediante `wa.me` en el navegador. Requiere WhatsApp Web o la aplicación vinculada. **No envía el mensaje por sí sola**: revise destinatario y contenido y pulse Enviar. JARVIS no tiene acceso a sus contactos y no debe inventar números. La apertura del navegador tampoco confirma que el mensaje haya sido entregado.
 
-Si aparece un error Gemini, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.
+Si aparece un error NVIDIA, la interfaz muestra su código HTTP y una explicación general sin exponer la clave ni el contenido de la respuesta. El código no demuestra por sí solo la causa exacta; compruebe modelo, acceso y cuota de la cuenta según el caso.
 
 ## Clima visual
 
@@ -130,7 +130,7 @@ Los destinatarios, asuntos, mensajes y fechas pendientes se guardan sin cifrar e
 
 ## Proveedor NVIDIA NIM
 
-Puede seleccionar NVIDIA en vez de Gemini, tanto en chat como en voz. Cree una clave nueva en NVIDIA y añada en su `.env` local:
+NVIDIA NIM es el proveedor de IA de JARVIS, tanto en chat como en voz. Cree una clave nueva en [build.nvidia.com](https://build.nvidia.com) (API Keys) y añada en su `.env` local:
 
 ```dotenv
 JARVIS_PROVIDER=nvidia
@@ -138,7 +138,7 @@ NVIDIA_API_KEY=su_clave_nueva
 NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b
 ```
 
-No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Los permisos de herramientas son los mismos que con Gemini. Para regresar a Gemini, use `JARVIS_PROVIDER=gemini`. **No hay cambio automático entre proveedores**, y la memoria local de conversaciones es compartida entre proveedores. WhatsApp abre un borrador; no lo envía automáticamente.
+No comparta ni suba la clave. Si se expone, revóquela y cree otra. Reinicie JARVIS tras editar `.env`. El modelo y sus herramientas dependen de la disponibilidad y los permisos de su cuenta NVIDIA; el ejemplo no garantiza acceso ni cuota gratuita. Se envían conversación y resultados de herramientas a NVIDIA. Los permisos de herramientas son los mismos que siempre. **NVIDIA NIM es el único proveedor en el código**; la memoria local de conversaciones es local y no depende del proveedor. WhatsApp abre un borrador; no lo envía automáticamente.
 
 ### Núcleo expresivo
 
@@ -163,7 +163,7 @@ JARVIS **no se reentrena** ni cambia por sí solo; aprende en el sentido de que 
 - **Aprendizaje automático (activado por defecto):** cada pocas conversaciones que hagan llegar contenido al modelo, JARVIS extrae de ellas hechos estables y duraderos sobre ti declarados por ti mismo (gustos, rutina, contexto, trato preferido) y los incorpora al perfil. Nada se almacena sin pasar por el filtro: no se guardan estados momentáneos, tareas ni datos que solo dijo el asistente.
 - **Al decir «recuerda que …»** (por voz o chat): JARVIS lo guarda en el acto y confirma con «Hecho, señor».
 - **Todo lo aprendido es visible y editable:** abre **Memoria** → «Preferencias»; ahí aparece junto con lo que escribiste tú (marcado con fecha). Puedes editar o borrar cualquier línea; nada se oculta. «Borrar conversaciones y preferencias» elimina también lo aprendido y el **registro de acciones** (`.jarvis-actions.jsonl`).
-- **Privacidad:** lo aprendido vive solo en tu equipo. El extractor se ejecuta con el proveedor de IA configurado (Gemini o NVIDIA) y solo sobre conversaciones que llegaron al modelo de todas formas; no sobre acciones locales cortas. Usa tokens solo cuando toque el turno de aprendizaje.
+- **Privacidad:** lo aprendido vive solo en tu equipo. El extractor se ejecuta con el proveedor de IA configurado (NVIDIA) y solo sobre conversaciones que llegaron al modelo de todas formas; no sobre acciones locales cortas. Usa tokens solo cuando toque el turno de aprendizaje.
 - **Desactivar:** pon `JARVIS_LEARNING=0` en el entorno para apagar la extracción automática (el «recuerda que …» explícito sigue funcionando). Volver a activarlo: quita esa variable o ponla en 1.
 - Sigue siendo el mismo modelo: más contexto sobre ti, no una mente más inteligente ni capacidades nuevas.
 
@@ -320,13 +320,13 @@ La ventana principal de JARVIS (`python gui.py`) **es** la pantalla HUD de la re
 
 Además del núcleo ya existente de JARVIS (memoria SQLite, registro de acciones, permisos), `agent/` añade una arquitectura agéntica en cuatro pilares, **sin tocar el flujo de escritorio existente**:
 
-- **`agent/core.py` — Sistema 2 (lento):** `Orchestrator` toma un objetivo, lo descompone en pasos tipados (`GeminiDecomposer`, ≤8 pasos, JSON estricto; sin clave o sin LLM degrada a un único paso honesto) y **lo ejecuta solo cuando se le pide explícitamente**. Cada paso va por el registro de herramientas; los pasos peligrosos requieren tu confirmación (por defecto, denegado). El resultado queda anotado en la memoria como decisión.
+- **`agent/core.py` — Sistema 2 (lento):** `Orchestrator` toma un objetivo, lo descompone en pasos tipados (`NvidiaDecomposer`, ≤8 pasos, JSON estricto; sin clave o sin LLM degrada a un único paso honesto) y **lo ejecuta solo cuando se le pide explícitamente**. Cada paso va por el registro de herramientas; los pasos peligrosos requieren tu confirmación (por defecto, denegado). El resultado queda anotado en la memoria como decisión.
 - **`agent/memory.py` — memoria persistente:** `SOUL.md` (identidad, reglas duras) y `MEMORY.md` (Preferencias, Decisiones, Proyectos, Pendiente) en `.agent-memory/` (excluido de Git), editables a mano, escritas de forma atómica. `context_block()` inyecta lo relevante en los prompts. Es inventario de hechos, no instrucciones.
 - **`agent/reflex.py` — Sistema 1 (rápido):** clasificador determinista de decisiones estructuradas (`sí/no`, `selección de N`, `puntuación acotada`) con enums y confianza; nada de texto libre para acciones. Separado de la generación de texto.
 - **`agent/tools.py` + `agent/server.py` — actuación/cuerpo:** registro único de herramientas con destructivas bloqueadas salvo confirmación humana explícita; API REST **opcional** (`python -m agent.server`, token en `.agent-memory/rest-token`, `POST /action` con `"confirmed": true` para peligrosas, localhost por defecto) pensada también para ESP32/Arduino vía HTTP puro, sin que el hardware procese IA.
 - **`agent/heartbeats.py` — heartbeats:** comprobador en segundo plano (jobs registrados, intervalo, pausa/reanudación, registro de errores). No registra nada por defecto: la autonomía exige registrarla tú.
 
-**Integrado en la misma app (no es un sistema aparte):** el contexto de `agent/memory` se inyecta en el prompt de JARVIS; «planifica: <objetivo>» funciona en el mismo chat (orquestador + Gemini + confirmación para acciones peligrosas, incluidas en el mismo diálogo de autorización); «Borrar» limpia también `MEMORY.md` y el registro de acciones; las autorizaciones de chat aceptan palabras naturales («vale», «claro», «ok»…) manteniendo el rechazo por defecto; y un monitor de disco local (cada 15 min, sin red, solo registra transiciones a bajo espacio) corre dentro del proceso. No es conciencia ni autonomía sin límites: nada actúa sin permiso.
+**Integrado en la misma app (no es un sistema aparte):** el contexto de `agent/memory` se inyecta en el prompt de JARVIS; «planifica: <objetivo>» funciona en el mismo chat (orquestador + NVIDIA + confirmación para acciones peligrosas, incluidas en el mismo diálogo de autorización); «Borrar» limpia también `MEMORY.md` y el registro de acciones; las autorizaciones de chat aceptan palabras naturales («vale», «claro», «ok»…) manteniendo el rechazo por defecto; y un monitor de disco local (cada 15 min, sin red, solo registra transiciones a bajo espacio) corre dentro del proceso. No es conciencia ni autonomía sin límites: nada actúa sin permiso.
 
 
 ## WhatsApp (Meta Cloud API, opt-in)

@@ -76,7 +76,7 @@ def main():
             check(f'import {module}', True)
         except Exception as exc:
             check(f'import {module}', False, f'{type(exc).__name__}: {exc}')
-    check('GEMINI_API_KEY configurada (no se muestra)', bool(os.environ.get('GEMINI_API_KEY')) or (ROOT / '.env').exists(),
+    check('NVIDIA_API_KEY configurada (no se muestra)', bool(os.environ.get('NVIDIA_API_KEY')) or (ROOT / '.env').exists(),
           optional=True)
     check('whatsapp configurado (opcional)', __import__('whatsapp_cloud').is_configured(),
           'sin WHATSAPP_*; el resto funciona igual', optional=True)
@@ -118,7 +118,6 @@ def main():
     # ---- medición en vivo (opcional) ----
     if args.live:
         print('\nMedición en vivo (consume tu cuota de IA):')
-        os.environ.setdefault('JARVIS_PROVIDER', 'gemini')
         try:
             from provider import create_brain
             from system_control import SystemController

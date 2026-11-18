@@ -1,6 +1,6 @@
 """Sistema 2 — the slow, deliberate planner and executor.
 
-Honest scope: decomposition requires an LLM and is injected (GeminiDecomposer);
+Honest scope: decomposition requires an LLM and is injected (NvidiaDecomposer);
 without one, plan() degrades to a single-step plan rather than inventing
 subtasks. Execution is explicit (never triggered by the planner itself), every
 step goes through the tool registry, and dangerous steps need a human approval
@@ -18,6 +18,7 @@ from enum import Enum
 
 from agent.memory import PersistentMemory
 from agent.tools import ToolRegistry, build_default_registry
+from nvidia_brain import NVIDIA_URL, DEFAULT_MODEL
 
 
 class StepStatus(Enum):
@@ -58,32 +59,43 @@ def naive_decompose(goal):
     return [{'description': goal, 'tool': None, 'args': {}}]
 
 
-class GeminiDecomposer:
-    """Asks the configured Gemini model to split a goal into ≤8 typed steps."""
+class NvidiaDecomposer:
+    """Asks the configured NVIDIA NIM model to split a goal into ≤8 typed steps."""
 
-    def __init__(self, model='gemini-2.5-flash'):
-        self.model = model
+    def __init__(self, model=None):
+        import os
+        self.model = model or os.getenv('NVIDIA_MODEL', DEFAULT_MODEL)
 
     def __call__(self, goal):
         import os
-        from google import genai
-        from google.genai import types
-        api_key = os.environ.get('GEMINI_API_KEY')
+        import requests
+        api_key = os.environ.get('NVIDIA_API_KEY')
         if not api_key:
             return naive_decompose(goal)  # no key → honest fallback, not fabricated steps
-        client = genai.Client(api_key=api_key)
         prompt = (
             'Divide el siguiente objetivo del usuario en una lista JSON de pasos independientes. '
             'Responde SOLO con un array JSON: [{"description": str, "tool": str|null, "args": object}]. '
             'Máximo 8 pasos. Si un paso no requiere una herramienta, usa tool null. '
             f'Objetivo: {goal}'
         )
-        response = client.models.generate_content(
-            model=self.model, contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type='application/json'))
         try:
-            data = json.loads(response.text)
-        except (ValueError, AttributeError):
+            response = requests.post(NVIDIA_URL,
+                                     headers={'Authorization': 'Bearer ' + api_key,
+                                              'Accept': 'application/json'},
+                                     json={'model': self.model,
+                                           'messages': [{'role': 'user', 'content': prompt}],
+                                           'temperature': 0, 'max_tokens': 800, 'stream': False},
+                                     timeout=45)
+            if not 200 <= response.status_code < 300:
+                return naive_decompose(goal)
+            content = response.json()['choices'][0]['message']['content']
+        except Exception:
+            return naive_decompose(goal)
+        # Strip code fences and keep only the JSON array, if present.
+        start, end = content.find('['), content.rfind(']') if content else -1
+        try:
+            data = json.loads(content[start:end + 1] if start != -1 and end != -1 else content)
+        except (ValueError, TypeError):
             return naive_decompose(goal)
         steps = []
         for item in data[:8] if isinstance(data, list) else []:

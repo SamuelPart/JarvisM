@@ -1,9 +1,10 @@
-"""Gemini conversation and explicitly authorized function calling."""
-from __future__ import annotations
-import json
-from google import genai
-from google.genai import types
-from permissions import authorize_tool
+"""Shared tool schema and instructions for JARVIS.
+
+INSTRUCTIONS and TOOLS are provider-agnostic plain data. The Gemini
+provider was removed; NVIDIA NIM is the single AI provider, so nothing
+here imports provider SDKs.
+"""
+
 
 INSTRUCTIONS = '''Eres J.A.R.V.I.S., educado, eficiente, analítico y leal. Dirígete al usuario como {name}.
 Verifica los resultados de las herramientas antes de afirmar que una acción se completó. No describas ni leas en voz alta el proceso interno de verificación; informa brevemente el resultado o el fallo. Responde en español de forma directa y breve, normalmente una o dos frases; evita listas, despedidas y consejos innecesarios salvo que el usuario los pida o sean necesarios para seguridad o claridad.
@@ -18,9 +19,32 @@ Para analizar imágenes de archivos solicitadas por el usuario usa inspect_image
 Para planes consulta list_reminders para la agenda local y list_calendar_events para Google Calendar si está configurado; utiliza current_time para interpretar hoy y los intervalos con zona. Son fuentes distintas y los resultados pueden estar limitados; nunca inventes eventos. Para eliminar un recordatorio local consulta list_reminders, identifica inequívocamente el solicitado y usa delete_reminder con su ID real. Si hay uno solo no pidas datos adicionales; si hay varios con el mismo nombre pregunta solo de qué hora. Los ID y fechas ISO son datos internos: jamás pidas al usuario que los proporcione. Si una hora coincide con varios días, pregunta solo el día necesario. No afirmes que se eliminó sin respuesta exitosa; esto no borra eventos de Google Calendar. Para recordatorios con expresiones relativas como dentro de diez minutos calcula la fecha y hora local a partir de current_time; no pidas al usuario escribir fechas técnicas. Pide aclaración solo si falta el momento o es ambiguo. Si el usuario habla de mover la carpeta de JARVIS o la carpeta personal, usa project_location para resolver los nombres y no pidas una ruta que ya puedes obtener. No intentes mover la carpeta del proyecto mientras está en ejecución; informa claramente que puede romper el entorno y que todavía requiere un traslado seguro con JARVIS cerrado. No afirmes que se creó sin confirmación y respuesta exitosa.'''
 
 
+
+class ToolParameters:
+    """Minimal JSON-schema-style parameter holder.
+
+    Keeps the historical ``parameters.model_dump(mode='json', exclude_none=True)``
+    call site in ``nvidia_brain`` working without any SDK dependency.
+    """
+
+    def __init__(self, properties, required=()):
+        self.properties = properties
+        self.required = list(required)
+
+    def model_dump(self, mode='json', exclude_none=True):
+        props = {key: {'type': kind.lower(), 'description': desc}
+                 for key, (kind, desc) in self.properties.items()}
+        return {'type': 'object', 'properties': props, 'required': list(self.required)}
+
+
+class Tool:
+    def __init__(self, name, description, parameters):
+        self.name, self.description, self.parameters = name, description, parameters
+
+
 def declaration(name, description, properties, required=()):
-    return types.FunctionDeclaration(name=name, description=description,
-        parameters=types.Schema(type='OBJECT', properties={key: types.Schema(type=kind, description=desc) for key, (kind, desc) in properties.items()}, required=list(required)))
+    return Tool(name, description, ToolParameters(properties, required))
+
 
 TOOLS = [
     declaration('install_program', 'Instala un único paquete APT en Linux mediante pkexec. Requiere autorización específica y autenticación del sistema; utiliza solo un nombre de paquete exacto, pregunta si no se conoce.', {'package': ('STRING', 'Nombre exacto del paquete APT, sin opciones')}, ['package']),
@@ -68,45 +92,3 @@ TOOLS = [
     declaration('volume_brightness', 'Ajusta volumen o brillo entre 0 y 100 cuando el sistema lo permita.', {'target': ('STRING', 'volume o brightness'), 'value': ('INTEGER', 'Porcentaje')}, ['target', 'value']),
 ]
 
-
-class Brain:
-    def __init__(self, api_key, controller, approve, name='Señor', model='gemini-2.5-flash', client=None, max_steps=12):
-        if not api_key and client is None: raise ValueError('Configure GEMINI_API_KEY en .env.')
-        self.client = client or genai.Client(api_key=api_key)
-        self.controller, self.approve, self.model = controller, approve, model
-        self.instructions = INSTRUCTIONS.format(name=name)
-        self.history = []
-        self.max_steps = max_steps
-        self.allowed = {d.name for d in TOOLS}
-
-    def ask(self, text):
-        self.history.append(types.Content(role='user', parts=[types.Part.from_text(text=text)]))
-        for _ in range(self.max_steps):
-            response = self.client.models.generate_content(
-                model=self.model, contents=self.history,
-                config=types.GenerateContentConfig(system_instruction=self.instructions,
-                    tools=[types.Tool(function_declarations=TOOLS)], automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)))
-            if not response.candidates or not response.candidates[0].content:
-                return 'Señor, no recibí una respuesta disponible del modelo.'
-            content = response.candidates[0].content
-            self.history.append(content)  # Preserve thought signatures and complete model content.
-            calls = [part.function_call for part in (content.parts or []) if part.function_call]
-            if not calls:
-                return ''.join(part.text or '' for part in (content.parts or [])).strip() or 'Señor, no recibí texto de respuesta.'
-            results = []
-            for call in calls:
-                name, args = call.name, dict(call.args or {})
-                try:
-                    if name not in self.allowed: raise ValueError('Herramienta no autorizada.')
-                    if not authorize_tool(name, args, self.approve):
-                        result = {'error': 'El usuario rechazó la acción.'}
-                    else:
-                        result = getattr(self.controller, name)(**args)
-                except Exception as exc:
-                    result = {'error': f'{type(exc).__name__}: {exc}'}
-                # Function responses must be paired with all calls, including denied calls.
-                payload = json.dumps(result, ensure_ascii=False, default=str)
-                if len(payload) > 16000: result = {'result_truncated': payload[:16000]}
-                results.append(types.Part.from_function_response(name=name, response=result))
-            self.history.append(types.Content(role='user', parts=results))
-        return 'Señor, he pausado la tarea al alcanzar el límite de acciones. Indíqueme si desea continuar.'
