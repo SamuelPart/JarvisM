@@ -19,8 +19,8 @@ JARVIS se distribuye como **código fuente** (no hay instalador empaquetado `.ex
 
 **Windows (tú, ahora)**
 1. Ve a https://github.com/SamuelPart/JarvisM y pulsa **Code → Download ZIP** (o clona: `git clone https://github.com/SamuelPart/JarvisM.git`). Descomprime en, por ejemplo, `C:\JARVIS`.
-2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv` e instala las dependencias; **no pide claves**: la clave NVIDIA se pone luego en Ajustes).
-3. Arranca con `venv\Scripts\python.exe gui.py`.
+2. Abre CMD en esa carpeta y ejecuta `install.bat` (crea `venv`, instala las dependencias y **crea un icono «JARVIS» en el escritorio**; **no pide claves**: la clave NVIDIA se pone luego en Ajustes).
+3. Abre el icono **JARVIS** del escritorio (o `venv\Scripts\pythonw.exe gui.py` — pythonw abre la ventana sin terminal).
 
 **Linux**
 ```bash
@@ -132,7 +132,7 @@ Los destinatarios, asuntos, mensajes y fechas pendientes se guardan sin cifrar e
 
 NVIDIA NIM es el proveedor de IA de JARVIS, tanto en chat como en voz. Cree una clave nueva en [build.nvidia.com](https://build.nvidia.com) (API Keys).
 
-**En la aplicación de escritorio, la clave va en Ajustes → «Proveedor de IA», no en `.env`.** Abra JARVIS, abra **Ajustes**, pegue su clave `nvapi-…` en el campo «Proveedor de IA (NVIDIA)» y pulse **Guardar**: se aplica al instante, sin reiniciar. Se guarda únicamente en este equipo, en el archivo oculto `.jarvis-provider.json` (permisos de solo-dueño cuando el sistema lo permite; está excluido de Git por `.gitignore`) y viaja solo a `integrate.api.nvidia.com` dentro de la cabecera `Authorization`. El campo nunca la muestra; para cambiarla, pegue otra; para borrarla, marque «Borrar la clave guardada».
+**En la aplicación de escritorio, la clave va en Ajustes → «Proveedor de IA», no en `.env`.** Abra JARVIS, abra **Ajustes**, pegue su clave `nvapi-…` en el campo «Proveedor de IA (NVIDIA)» y pulse **Guardar**: se aplica al instante, sin reiniciar. Se guarda únicamente en este equipo, en el archivo oculto `.jarvis-provider.json` (permisos de solo-dueño cuando el sistema lo permite; está excluido de Git por `.gitignore`) y viaja solo a `integrate.api.nvidia.com` dentro de la cabecera `Authorization`. **La clave se conserva entre reinicios y actualizaciones (`git pull --ff-only` no la toca) hasta que la cambies o pulses «Borrar la clave guardada»; nada la borra automáticamente.** El campo nunca la muestra; para cambiarla, pegue otra; para borrarla, marque «Borrar la clave guardada».
 
 La consola (`main.py`) y `benchmark.py` pueden usar `NVIDIA_API_KEY` en `.env` como alternativa; si existen ambas, **Ajustes tiene prioridad** sobre `.env`. `NVIDIA_MODEL` sigue viniendo del entorno si desea cambiarlo (`NVIDIA_MODEL=nvidia/nemotron-3.5-bolt-e4b` por defecto). La visión (imágenes y capturas, `NVIDIA_VISION_MODEL` aparte) usa la misma clave de Ajustes, o `NVIDIA_VISION_API_KEY`/`NVIDIA_API_KEY` del entorno si las define.
 

@@ -1,5 +1,12 @@
 """Interfaz de escritorio de JARVIS. Ejecutar con `python gui.py`."""
 from __future__ import annotations
+import os
+import sys
+# pythonw.exe (doble clic, sin terminal) deja stdout/stderr en None; redirige a devnull para que los prints no fallen.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w', buffering=1)
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w', buffering=1)
 import faulthandler
 import json
 import math
@@ -457,11 +464,11 @@ class VisualSettingsDialog(QDialog):
         provider_title = QLabel('Proveedor de IA (NVIDIA)')
         provider_title.setObjectName('dialogTitle')
         layout.addWidget(provider_title)
-        provider_info = QLabel('JARVIS habla con NVIDIA NIM con tu propia clave. Se guarda solo en este equipo (archivo oculto .jarvis-provider.json) y viaja únicamente a NVIDIA en la cabecera Authorization. Nunca se imprime ni se sube a Git.')
+        provider_info = QLabel('JARVIS habla con NVIDIA NIM con tu propia clave. Se guarda solo en este equipo (archivo oculto .jarvis-provider.json) y viaja únicamente a NVIDIA en la cabecera Authorization. Nunca se imprime ni se sube a Git. Se conserva entre reinicios y actualizaciones, hasta que la cambies o pulses «Borrar la clave guardada».')
         provider_info.setWordWrap(True)
         layout.addWidget(provider_info)
         saved = bool(load_key())
-        self.provider_status = QLabel('Estado: ● clave guardada (oculta)' if saved else 'Estado: ○ sin clave configurada')
+        self.provider_status = QLabel('Estado: ● clave guardada (se conserva hasta que la cambies o borres)' if saved else 'Estado: ○ sin clave configurada')
         layout.addWidget(self.provider_status)
         self.nvidia_key_field = QLineEdit()
         self.nvidia_key_field.setEchoMode(QLineEdit.EchoMode.Password)
